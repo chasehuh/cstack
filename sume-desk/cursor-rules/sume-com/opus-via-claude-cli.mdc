@@ -1,0 +1,17 @@
+---
+description: Opus subagents — pointer to shared orchestration SoT (Claude Code CLI)
+alwaysApply: true
+---
+
+# Opus subagents → shared SoT
+
+Do not fork Opus routing or monitoring here. Source of truth:
+
+`~/.agents/skills/sume-main-agent-orchestration/SKILL.md`
+
+§ **Opus transport — Claude Code CLI** and § **Cursor-only — Opus /
+background-worker monitoring**.
+
+From a Cursor main agent: Opus workers use `claude-human-stream` (background
+Shell); monitor via completion notification — no polling watchers. Other
+harnesses ignore Cursor-only sections.

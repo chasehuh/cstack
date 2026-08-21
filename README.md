@@ -1,64 +1,40 @@
-# chase-skills
+# cstack
 
-Reusable Claude Code skills for code review, PR management, and production audits.
+Chase’s **Sume desk pack**. Clone + `./install.sh` and any agent (Cursor,
+Claude Code, Codex) can run the same flow we use on `sume-com`.
 
-## Skills
+The old review/merge/audit skills that used to live in this repo are
+**deprecated and removed**. Do not restore them.
 
-| Skill | Description | Usage |
-|-------|-------------|-------|
-| `/merge` | Review, fix, and merge multiple PRs in one shot | `$merge 94 96 95` |
-| `/audit` | Production readiness scan → GitHub issues | `$audit` or `$audit src/lib/` |
-| `/propose` | Feature idea → implementation-ready issue | `$propose add typing indicators` |
-| `/generate-pr` | GitHub issue → merge-ready PR | `$generate-pr 39` |
-| `/review` | Pre-landing PR review (dependency of merge/audit) | `$review` |
-
-## Setup
-
-### Option 1: Symlink into your project
+## Install
 
 ```bash
-# Link all skills at once
-ln -s /path/to/chase-skills/.claude/skills/* /your-project/.claude/skills/
-
-# Or link individual skills
-ln -s /path/to/chase-skills/.claude/skills/merge /your-project/.claude/skills/merge
+git clone git@github.com:chasehuh/cstack.git
+cd cstack
+chmod +x install.sh
+./install.sh --sume-com ~/sume/sume-com   # second arg optional
 ```
 
-### Option 2: Use `--add-dir`
+Requires: `git`, `rsync`, `gh`, Graphite `gt`, Claude Code `claude` on PATH
+for Opus/Fable workers.
 
-```bash
-claude --add-dir /path/to/chase-skills
-```
+**Never commit secrets.** Desk keys stay in `~/.sume/ops/` on the machine.
 
-### Option 3: Personal skills (available in all projects)
-
-```bash
-# Copy to personal Claude skills directory
-cp -r .claude/skills/* ~/.claude/skills/
-```
-
-## Directory Structure
-
-Skills are duplicated in both `.claude/skills/` (Claude Code native) and `.agents/skills/` (gstack/plugin compatibility):
+## Layout
 
 ```
-chase-skills/
-├── .claude/skills/     # Claude Code native path
-│   ├── merge/
-│   ├── audit/
-│   ├── propose/
-│   ├── generate-pr/
-│   └── review/
-└── .agents/skills/     # gstack/plugin compatibility
-    ├── merge/
-    ├── audit/
-    ├── propose/
-    ├── generate-pr/
-    └── review/
+AGENTS.md                 # first file a raw agent reads
+install.sh
+docs/FLOW.md              # map of rules → when
+sume-desk/
+  skills/                 # SoT (orchestration, gt-mq, mega-issue)
+  cursor-rules/user/      # ~/.cursor/rules
+  cursor-rules/sume-com/  # <repo>/.cursor/rules
 ```
 
-## Dependencies
+## Flow in one line
 
-- `review` is required by `merge`, `audit`, and `generate-pr` (they read `review/checklist.md`)
-- GitHub CLI (`gh`) is required for all skills
-- Node.js/npm for `merge` and `audit` (typecheck, tests)
+Discuss → lock → GitHub issue → `claude-human-stream` (Fable/Opus) →
+fresh clone `gt submit` → `gt merge` (MQ) → STOP → Grok lands `main`.
+
+Details: `docs/FLOW.md` then the two SKILL.md files after install.

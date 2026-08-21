@@ -1,0 +1,18 @@
+---
+description: sume-com Studio Agent work targets development only until release
+alwaysApply: true
+---
+
+# Dev-only until release
+
+Until the user explicitly says otherwise:
+
+- Treat **development / `www.dev.sume.com` / Railway `development`** as the
+  only environment for Studio Agent cutover, smoke, flags, and ops.
+- Do **not** enable production feature flags, production cutovers, or production
+  releases for Studio Agent work.
+- Production release comes **much later**, after the agent is considered
+  complete. Do not push for prod release while iterating on the agent.
+
+When checking DB/migrations, Redis, poll-worker, or Vercel env for this work,
+default to **development / non-prod**, not production.

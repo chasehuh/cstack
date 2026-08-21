@@ -1,0 +1,38 @@
+---
+description: Prefix renamed chat titles with [workspace-folder] for pinned-thread clarity
+alwaysApply: true
+---
+
+# Chat title — workspace folder prefix
+
+When renaming a chat thread (user asks to rename, or you call `rename_chat`),
+**always put the current workspace folder name first** in brackets:
+
+```text
+[<workspace-folder>] <short title>
+```
+
+## How to derive the prefix
+
+- Use the **basename of the Cursor workspace / project root** (the folder
+  opened as the project), not the git remote org and not a random topic tag.
+- Examples:
+  - Workspace `/Users/…/sume/sume-com` → `[sume-com] …`
+  - Workspace `/Users/…/other-app` → `[other-app] …`
+- Keep the bracket token stable for that workspace. Do not invent alternate
+  spellings (`[sume]`, `[SumeCom]`, etc.) when the folder is `sume-com`.
+
+## Rules
+
+- Prefix is **required** on every rename; never drop it when the topic changes.
+- Put the folder token **first**; then a short human title.
+- Do not rename proactively — only when the user asks (or product policy
+  already requires a rename). When you do rename, still apply this prefix.
+- If the title already starts with the correct `[folder]`, keep it and only
+  update the part after the prefix.
+
+## Examples
+
+- `[sume-com] Org pooled wallet BP`
+- `[sume-com] Railway avatar lookup`
+- `[docs-site] Nav collapse`

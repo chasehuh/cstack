@@ -1,0 +1,24 @@
+---
+description: Agents UI taste — avoid shouting labels and match Images hover chrome
+alwaysApply: true
+---
+
+# Agents UI taste (founder preferences)
+
+When designing or polishing Agents / dashboard chrome:
+
+## Labels
+
+- Do **not** use all-caps section labels via `text-transform: uppercase` or
+  copy like `PROMPT`, `FEATURED`, `DETAILS`.
+- Prefer sentence case: `Prompt`, `Featured`, `Details`.
+- Avoid dense “design-system” chrome that shouts (uppercase micro-labels,
+  pill clusters, excessive badges).
+
+## `/images` tile hover
+
+- Hover actions are three icons, in order:
+  1. **Download**
+  2. **Copy** — real image-byte clipboard copy (URL copy for video)
+  3. **Regenerate** — composer prefill (`onRecreate`), RefreshCw icon
+- Do not overload Copy to mean Regenerate.

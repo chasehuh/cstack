@@ -1,0 +1,13 @@
+---
+description: Before opening a PR, run CI changed Format/Typecheck/Test/Build locally
+alwaysApply: true
+---
+
+# CI local preflight
+
+Before `gh pr create` / claiming CI-ready: run the same changed gates CI uses.
+Vitest alone is not enough. Prefer
+`CI_BASE_SHA=<merge-base> node scripts/ci-{format,typecheck,test,build}-changed.mjs`.
+Do **not** default to full `pnpm -r build`.
+
+Source of truth: [`docs/operations/ci-local-preflight.md`](../../docs/operations/ci-local-preflight.md)

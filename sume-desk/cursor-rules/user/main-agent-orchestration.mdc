@@ -1,0 +1,58 @@
+---
+description: Default Sume main-agent orchestration — read the shared SoT skill
+alwaysApply: true
+---
+
+# Main agent orchestration (pointer)
+
+This rule is a pointer only. The single source of truth for main-agent /
+worker orchestration, worker language rules, coding-model routing, and
+background-worker monitoring is:
+
+`~/.agents/skills/sume-main-agent-orchestration/SKILL.md`
+
+Read that file before delegating work, checking worker status, summarizing
+workers, or choosing a model/transport for a worker.
+
+Harness notes (do not fork policy here):
+
+- Codex and Claude Code read the same SoT via `~/.codex/AGENTS.md` /
+  `~/.claude/CLAUDE.md`.
+- Sections marked **Cursor-only** in the SoT apply only when this Cursor chat
+  is the main agent. Other harnesses ignore those sections.
+- Cursor-only Opus workers: `claude-human-stream` in a background Shell;
+  monitor via completion notification (no polling watchers). See SoT
+  § "Cursor-only — Opus / background-worker monitoring".
+- **Chase work loop (always apply on user install):**
+  `~/.cursor/rules/sume-chase-work-loop.mdc`
+  (discuss → lock → mega-issue → Opus through MQ enqueue → Grok land).
+  SoT § "Chase work loop — discuss → lock → mega-issue → Opus → Grok".
+- **Opus Shell cookbook (always apply on user install):**
+  `~/.cursor/rules/opus-background-terminal.mdc`
+  (`block_until_ms: 0`, prompt file, `cd` not `--cwd`, `--resume`, no Task;
+  Shell `description` / terminal title = `Opus : <job-slug> (#N)` =
+  board Job; **default:** Opus fresh-clone → `gt submit` → poll
+  **`gt merge --dry-run` every 15–30s** → ready → immediate `gt merge` →
+  STOP, then Grok land babysit; see SoT Graphite hard lock +
+  “Review CI ready-signal”).
+- **Graphite CI ready-signal (always apply on user install):**
+  `~/.cursor/rules/graphite-ci-ready.mdc`
+  (`gt merge --dry-run` poll ≤30s → merge — not `gh pr checks` /
+  `sleep 60+` loops).
+- **Graphite MQ enqueue playbook (always apply on user install):**
+  `~/.agents/skills/sume-gt-mq/SKILL.md` — required before any
+  `gt submit` / `gt merge` / MQ unstick / land handoff.
+- **Active workers Canvas (always apply on user install):**
+  `~/.cursor/rules/active-workers-canvas.mdc`
+  (maintain `canvases/active-workers-board.canvas.tsx` on launch /
+  completion / steer; reconcile terminals ∩ live processes; Job column
+  matches terminal title).
+
+Re-install the pointer with
+`~/.agents/skills/sume-main-agent-orchestration/install-cursor-rule.sh --user`
+and/or pass repo paths. Edit the SoT skill for policy; keep
+`sume-chase-work-loop.mdc`, `opus-background-terminal.mdc`,
+`graphite-ci-ready.mdc`, and `active-workers-canvas.mdc` in sync when the
+loop, Shell recipe, Graphite ready-signal, or board policy changes.
+Enqueue/land ops SoT: `~/.agents/skills/sume-gt-mq/SKILL.md`
+(`install-symlinks.sh` in that skill dir).

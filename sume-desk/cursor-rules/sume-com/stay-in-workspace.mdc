@@ -1,0 +1,27 @@
+---
+description: Use worktrees for code changes, but never relocate this Cursor chat root
+alwaysApply: true
+---
+
+# Stay in this workspace
+
+Default checkout for this chat: `/Users/huhchaewon/sume/sume-com`.
+
+## Required for code changes
+
+- Use a fresh git worktree for implementation (branch + isolated tree).
+- Do all edits, installs, tests, and commits inside that worktree via shell
+  `working_directory` or absolute paths.
+
+## Forbidden unless the user explicitly asks
+
+- Do **not** call `move_agent_to_root` or `move_agent_to_cloned_root`.
+- Do **not** relocate this chat’s Cursor project/workspace root to a worktree,
+  clone, or sibling directory.
+- Do **not** treat `worktree-task`, “fresh worktree”, or PR/merge skills as
+  permission to switch the agent root.
+
+## If isolation is needed
+
+Create the worktree, keep this chat rooted here, and operate on the worktree
+path from tools/shell. Report the worktree path in status updates.

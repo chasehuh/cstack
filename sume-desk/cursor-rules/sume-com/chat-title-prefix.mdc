@@ -1,0 +1,15 @@
+---
+description: Chat titles use [sume-com] prefix (see global Cursor rule)
+alwaysApply: true
+---
+
+# Chat title prefix (sume-com)
+
+Global rule: `~/.cursor/rules/chat-title-folder-prefix.mdc`
+
+In this workspace the folder basename is `sume-com`, so rename titles as:
+
+- `[sume-com] Map system`
+- `[sume-com] Railway avatar lookup`
+
+Do not drop the `[sume-com]` prefix when updating the title for a new topic.

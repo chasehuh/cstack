@@ -1,0 +1,68 @@
+---
+description: Graphite ready-signal for CI — use gt dry-run poll, not gh pr checks
+alwaysApply: true
+---
+
+# Graphite CI ready-signal (Cursor / Opus / Grok)
+
+Policy SoT for enqueue/land ops:  
+`~/.agents/skills/sume-gt-mq/SKILL.md`  
+§ **"Ready-signal + poll loop"**
+
+Also in orchestration:  
+`~/.agents/skills/sume-main-agent-orchestration/SKILL.md`  
+§ **"Review CI ready-signal (Chase lock 2026-08-07)"**.
+
+## Locked (2026-08-07)
+
+After **`gt submit`** / **`gt submit --stack`**, decide “may enqueue” from
+the **Graphite-ready author clone**:
+
+| Prefer | Avoid as primary |
+|--------|------------------|
+| **`gt merge --dry-run`** → ready → **immediate** `gt merge` | `gh pr checks` + `sleep` loops |
+| `gt info` / `gt log` → **`(Ready to merge)`** / as stack | Waiting on ignored Vercel rows |
+| Poll sleep **15–30s** (default **20s**) | Default **`sleep 60` / `75` / `180`** |
+| Break the loop on dry-run ready | Fixed `for … sleep` after already green |
+| **`Required checks failed` → break + act** (rerun/fix) | Dry-run sleep while already failed |
+
+Still waiting: dry-run not ready / `gt` shows **`(Waiting on CI...)`** with
+**no** failed checks.
+
+**Failed ≠ waiting (Chase lock 2026-08-08):** if dry-run says
+`Required checks failed` / `Failed CI`, **stop the wait loop immediately**.
+Do not keep polling for Ready. Same session: ≤2 `gh run rerun --failed` for
+known flake, else minimal CI unblock → `gt submit` → dry-run → merge (or
+`HANDOFF: grok-ci-merge`). SoT: `sume-gt-mq` § Ready-signal + § F.
+
+## Repo-wide CI flake (Chase lock 2026-08-07)
+
+Ops detail: **`sume-gt-mq` § F**.
+
+If required Test fails with **shifting timeouts** / same signature on
+**unrelated** PRs / local suite green in seconds:
+
+1. **≤2** `gh run rerun` attempts on the same head
+2. Then ship a **minimal CI unblock** (e.g. package `testTimeout`) via
+   fresh-clone `gt submit` — product scope stays locked
+3. **Forbidden:** endless `gh run rerun` with zero code change
+4. Still blocked → `HANDOFF: grok-ci-merge`
+
+## Why
+
+Graphite docs: post-submit `gt log` includes PR status
+([visualize a stack](https://graphite.com/docs/visualize-stack)); merge
+waits on GitHub checks
+([merge PRs](https://graphite.com/docs/merge-pull-requests)).  
+`gh pr checks` inside Claude tool shells can **401** and also surfaces
+non-required noise (`Graphite / mergeability_check`, cancelled Vercel).  
+Long sleep defaults lag minutes after the stack is already Ready.
+
+## Fallback only
+
+If `gt` is broken: filter `gh pr view --json statusCheckRollup` to
+Format / Typecheck / Test / Build / validate / Graphite CI optimizer.
+**401 ≠ pending.** Prefer fix `gt auth` and return to `gt merge --dry-run`.
+
+Keep `sume-chase-work-loop.mdc` + `opus-background-terminal.mdc` GRAPHITE
+blocks in sync with **`sume-gt-mq`** + the orchestration delegation checklist.

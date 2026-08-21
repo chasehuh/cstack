@@ -1,0 +1,32 @@
+---
+description: Production testing must stay on Sumelabs org + chase@sume.com only
+alwaysApply: true
+---
+
+# Production testing — Sumelabs only (Chase lock 2026-08-12)
+
+When Chase authorizes **testing in production** (or any `api.sume.com` /
+`www.sume.com` smoke that spends or mutates), including **prod Formats API**:
+
+1. **Organization:** only `@sumelabs` / Sumelabs. Never another org — those are
+   real customer workspaces. If the active Clerk/org context is not Sumelabs,
+   **STOP**.
+2. **Account:** only `chase@sume.com` inside that Sumelabs org.
+3. **API key:** only the key in the local SoT files below. Do not invent or use
+   another `sume_live_*` key for this lane. Chase replaced the key **2026-08-21**
+   — load the env file; do not reuse a key from older chat/ops dumps.
+
+## Secret / policy SoT (local, not in git)
+
+- `~/.sume/ops/sumelabs-prod-testing.md` — policy
+- `~/.sume/ops/sumelabs-prod-testing.env` — key (`SUME_PROD_TEST_API_KEY`)
+- Repo mirror (gitignored): `sume-com/.sume/ops/sumelabs-prod-testing.{md,env}`
+
+Load with `set -a; source ~/.sume/ops/sumelabs-prod-testing.env; set +a` when
+running authorized prod smokes.
+
+## Still true
+
+- Prefer `api.dev` / `www.dev` unless Chase explicitly says prod test.
+- Never paste the live key into issues, PRs, commits, or chat dumps.
+- Do not Rotate / delete / grant against non-Sumelabs scopes.

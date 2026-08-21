@@ -1,0 +1,205 @@
+---
+description: Opus via claude-human-stream background Shell (Cursor main agent cookbook)
+alwaysApply: true
+---
+
+# Opus via background Shell (Cursor main agent)
+
+When this Cursor chat is the **main agent** and needs **Claude Opus**, do
+**not** use Cursor `Task` / `claude-opus-*`. Use the local Claude Code wrapper
+in a **background Shell**. Policy SoT:
+`~/.agents/skills/sume-main-agent-orchestration/SKILL.md`
+(§ "Opus transport" + § "Cursor-only — Opus / background-worker monitoring").
+
+Session shape with Chase (discuss → mega-issue → this Opus handoff → Grok
+land): `~/.cursor/rules/sume-chase-work-loop.mdc`.
+
+## Binary
+
+- PATH: `claude-human-stream` →
+  `~/.agents/skills/sume-main-agent-orchestration/bin/claude-human-stream.sh`
+- There is **no** `--cwd` flag. `cd` in the shell command first.
+- Wrapper flags go **before** the prompt; extra `claude` flags go **after**:
+  `claude-human-stream --name X --resume UUID "prompt" --model opus`
+
+## Correct launch pattern (copy this)
+
+1. Write the English worker prompt to a file (long prompts break quoting):
+
+```bash
+cat > /tmp/sume-opus-prompts/<job-slug>.md <<'EOF'
+# Opus: …
+Work in **English**. …
+EOF
+```
+
+`<job-slug>` = 2–4 kebab tokens describing the job (aim for 3), e.g.
+`format-uifix-pdp` — **not** issue-only (`2000`). Optional issue suffix:
+`format-uifix-pdp-2000`. SoT: orchestration skill § "Worker slug naming".
+
+2. Start with Shell **`block_until_ms: 0`** (background immediately).
+
+   **Terminal title = Shell `description` (required).** Cursor shows this in
+   the “N Terminals Running” list — not `--name` alone. Always set
+   `description` to the **same string** the Active workers board Job column
+   uses:
+
+   ```text
+   Opus : <job-slug> (#<issue>)
+   ```
+
+   Examples: `Opus : dashboard-ui-chrome (#2819)`,
+   `Opus : sentry-cutover-stack (#2828)`.
+   No issue yet: `Opus : <job-slug>` (add `(#N)` as soon as the issue exists).
+   **Resume / steer:** reuse the **exact same** title — never prose like
+   “Relaunch dead…”, “Comment Filter flyout…”, or a bare `# Reopen…` command
+   comment (those become unreadable `Cursor (#…)` rows).
+
+```bash
+# Shell tool: description = "Opus : <job-slug> (#<issue>)"
+cd /Users/huhchaewon/sume/sume-com && claude-human-stream \
+  --name <job-slug> \
+  "$(cat /tmp/sume-opus-prompts/<job-slug>.md)"
+```
+
+Resume (same Claude session — prefer this over a new worker):
+
+```bash
+# Shell tool: description = same "Opus : <job-slug> (#<issue>)" as the live job
+cd /Users/huhchaewon/sume/sume-com && claude-human-stream \
+  --name <job-slug> \
+  --resume <session_uuid> \
+  "$(cat /tmp/sume-opus-prompts/<follow-up>.md)"
+```
+
+Use the **same `cd` repo path** the original session used, or resume fails.
+
+3. **One short smoke check only** (optional): `AwaitShell` / read the terminal
+   until `📎 session_id=` appears (~10–20s). Store that uuid in-thread.
+   Then **stop waiting**. Do not poll for completion.
+
+4. Tell the user briefly:
+   - what started + title (`Opus : <job-slug> (#N)`) / `--name`
+   - `session_id=…`
+   - live log: wrapper prints `live_log: …/opus-live/<stamp>-<name>.log`
+   - watch: `tail -f ~/.agents/skills/sume-main-agent-orchestration/state/opus-live/LATEST.log`
+
+5. End your turn or do other work. Completion arrives as a **system
+   notification** on the background Shell task — that is the monitor.
+
+## On completion notification
+
+1. Read the finished terminal file (or live log).
+2. Use only `📎 session_id=` + the `—— final ——` block (not the whole tool dump).
+3. Brief user status in their language.
+4. Immediately run any **already-authorized** follow-up (e.g. "끝나면 resume로
+   mega-issue → BP → PR"). Do not re-ask.
+
+## Status when the user asks "어때?"
+
+One-shot only — `tail` ~20–40 lines of the live log or terminal file, summarize.
+No `sleep` loops, no repeated `AwaitShell` polling.
+
+## Recover a forgotten session_id
+
+```bash
+claude-human-stream --sessions
+# or: rg 'session_id=' ~/.agents/skills/sume-main-agent-orchestration/state/opus-live/
+# or: rg '📎 session_id=' <finished-terminal>.txt
+```
+
+Prefer `--resume <uuid>` over `--continue` (continue = most recent in **this cwd** only).
+
+## When steering a live Opus session
+
+If you `--resume` with a **STEERING UPDATE** that replaces an in-flight mandate,
+**kill the previous background Shell** for that worker (its `pid` from the
+terminals file / process tree) so two wrappers do not fight over the same
+Claude session. Keep only the steered Shell alive. Do this in the same turn
+as the steer launch — do not leave the old terminal running.
+
+## Forbidden (this is why other threads fail)
+
+| Bad | Why | Do instead |
+|-----|-----|------------|
+| Cursor `Task` + `claude-opus-*` | Wrong transport; burns Cursor Opus | `claude-human-stream` Shell |
+| Shell with default/long `block_until_ms` | Job is minutes–hours; tool times out / looks "stuck" | `block_until_ms: 0` |
+| `AwaitShell` / sleep until done | Turns main into a polling loop; user said not to wait | Completion notification |
+| `claude-human-stream --cwd …` | Flag does not exist | `cd … && claude-human-stream` |
+| Fresh Opus when user said "resume" | Loses audit/BP context | `--resume <uuid>` same cwd |
+| Inline mega-prompt in Shell arg | Quoting/length failures | `/tmp/…/*.md` + `$(cat …)` |
+| Dump full Opus tool log into chat | Noise | `—— final ——` only |
+| Claim done before notification | False completion | Wait for `exit_code` / final block |
+| `--name 2000` / issue-only labels | Chase can't skim terminal list | `format-uifix-pdp` (+ optional `-2000`) |
+| Prose / command Shell `description` | UI shows “Create arch…” / `Cursor (#…)` ≠ board job | `description`: `Opus : <job-slug> (#N)` |
+
+## Parallelism
+
+- Multiple Opus jobs: multiple background Shells, distinct `--name`s.
+- Grok/Composer implementers: Cursor `Task` (`cursor-grok-4.5-high-fast` /
+  explore) — also background; different transport from Opus.
+- Do not block the user turn on a background Opus unless they explicitly
+  asked to wait, or the next action is hard-blocked on that result.
+
+## Handoff after Opus enqueues MQ (**default**)
+
+**Chase lock (2026-08-05):** Opus authors through **Graphite MQ enqueue**;
+Grok **lands**. Always hand off land babysit unless the user explicitly said
+Opus owns land for that task.
+
+1. Opus: **fresh clone only** → fix → local green → Graphite open → CI →
+   enqueue → **STOP**.
+   - **Always:** `gt create` → **`gt submit`** (required). Treat `gt` like
+     `gh` — first-class, not optional.
+   - **Forbidden:** `git worktree add` under the shared Cursor checkout for
+     any `gt` command (shared `.git` trunk poisons submit — #2383).
+   - **Forbidden:** `gh pr create` on `sume-com` (single or stack). If
+     `gt submit` fails (“trunk out of date”), new fresh clone →
+     cherry-pick/track → `gt submit`. Never fall back to `gh`.
+   - **After submit:** SAME session — poll **`gt merge --dry-run`** every
+     **15–30s** (default **20s**; **never** default `sleep 60+`) until
+     ready — **not** `gh pr checks` loops (**no minute cap**) → on dry-run
+     ready **immediately** **`gt merge --no-interactive`** (same clone).
+     Fallback: `gh pr edit <N> --add-label merge-queue`.
+   - **On dry-run `Required checks failed`:** **break immediately** — do
+     **not** keep polling Ready. Act: ≤2 `gh run rerun --failed` for known
+     flake, else minimal CI unblock → `gt submit` → dry-run → merge.
+     **Forbidden:** sleep/dry-run-only while last dry-run already failed.
+   - **Repo CI flake:** shifting timeouts / same fail on unrelated PRs →
+     **≤2 reruns**, then **minimal CI unblock commit** allowed (e.g. vitest
+     `testTimeout`). **Forbidden:** endless `gh run rerun` with no code
+     change. Still blocked → `HANDOFF: grok-ci-merge` (`sume-gt-mq` § F).
+   - **PR-A/B/C train:** all layers in one session → `gt submit --stack` →
+     dry-run ready → **`gt merge`** for the whole train. Do **not** “open A
+     only → merge → resume for B”.
+   - **STOP** immediately after enqueue confirmed (QUEUED / label /
+     Graphite activity). Do **not** babysit MQ draft CI / `main` tip /
+     restack-while-merging.
+   - Opus prompt **must** include: `Required skill: read
+     ~/.agents/skills/sume-gt-mq/SKILL.md before any gt submit/merge` plus
+     the GRAPHITE hard-lock block from orchestration § "Delegation checklist"
+     / `sume-gt-mq` (incl. **poll ≤30s + dry-run → merge**, **no exit
+     before enqueue evidence**).
+   - Follow BP / issue locks exactly.
+   - Done report: clone path + Graphite URL + GitHub PR URL + enqueue
+     evidence + `HANDOFF: grok-land`.
+2. Main agent: on Opus completion (enqueue done), launch **Grok 4.5** Cursor
+   `Task` (**always `run_in_background: true`**) to babysit land → deploy.
+   - **Default:** MQ already enqueued — watch draft CI → confirm `main` tip
+     `(#N)` → issue comment / authorized ops. Do **not** re-enqueue.
+   - **Fallback** (`HANDOFF: grok-ci-merge`): Opus could not enqueue → CI
+     green → `gh pr edit <N> --add-label merge-queue` (no clone) → land.
+   - If Opus only opened via `gh pr create`: **reject** — repair with
+     fresh-clone `gt submit` before enqueue.
+   - After restack: **`gt submit` again**, then Opus (or fallback Grok)
+     re-enqueues.
+   - Landed = commit on `main` with `(#N)`; Graphite FF may show GitHub
+     `CLOSED` / `mergedAt: null`.
+   - Never mid-stack GitHub-only squash; never sibling `main` PRs on one train.
+3. Do **not** leave Opus long-polling land after enqueue. If an Opus session
+   is already on land babysit, **kill that Shell** and reassign to Grok
+   (same turn). Grok must not idle-loop on “already merging” — surface the
+   MQ draft URL and only intervene on red/failure.
+
+Policy SoT: `sume-main-agent-orchestration` § Pipeline 1 + hard model rules +
+§ "PR trains and Graphite (`gt`)". **Enqueue/land ops:** `sume-gt-mq`.

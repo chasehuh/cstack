@@ -1,0 +1,324 @@
+---
+name: sume-gt-mq
+description: >-
+  Sume Graphite (`gt`) author → MQ enqueue → land ownership playbook for
+  sumelabs/sume-com. Use whenever creating/updating PRs with Graphite, waiting
+  on review CI, running `gt submit` / `gt merge`, adding `merge-queue`,
+  unsticking BLOCKED PRs with zero CI after restack, or handing off Grok land
+  babysit. Hard rules against gh pr create, shared-checkout worktrees, and
+  exiting before enqueue evidence.
+---
+
+# Sume Graphite MQ (`sume-gt-mq`)
+
+**Operational SoT** for `gt` submit → Ready → enqueue → land on `sume-com`.
+
+Product / train policy summary still lives in:
+
+`~/.agents/skills/sume-main-agent-orchestration/SKILL.md`
+§ **"PR trains and Graphite (`gt`)"**
+
+**Do not fork rules.** If this file and orchestration disagree on ops, **this
+file wins for enqueue/land mechanics**; update orchestration to point here.
+
+Repo ops doc: `docs/operations/pr-stack-and-merge-queue.md` (in sume-com).
+
+---
+
+## When you MUST read this skill
+
+Read this file **before** any of:
+
+- `gt create` / `gt submit` / `gt submit --stack`
+- Waiting on review CI / “Ready to merge”
+- `gt merge` / `merge-queue` label
+- Restack / sync after trunk moves
+- Unstick BLOCKED / CI-missing PRs
+- Writing `HANDOFF: grok-land` or `HANDOFF: grok-ci-merge`
+- Main agent launching Opus/Grok for PR trains
+
+Main-agent Opus prompts on `sume-com` must say:
+
+```text
+Required skill: read ~/.agents/skills/sume-gt-mq/SKILL.md before gt submit/merge.
+```
+
+---
+
+## Roles (no fighting)
+
+| Role | Owns | Must not |
+|------|------|----------|
+| **Opus** (author session) | Fresh clone → code → `gt submit` → wait **`gt` Ready** → **`gt merge`** → enqueue evidence → **STOP** | Exit before enqueue; land babysit; touch other trains’ PRs |
+| **Grok land** | One **owned PR set** only; draft CI → `main` tip `(#N)`; unstick **that** set | Re-enqueue if already queued; `gt track` thrash; other stacks |
+| **Main agent** | Launch / steer / board; launch Grok after enqueue | Mid-flight label/empty-commit on a live owner’s PRs (unless owner dead) |
+
+**Ownership rule:** one job slug ↔ one PR stack. Parallel trains = parallel
+owners. Never two workers `gt merge` / empty-commit / restack the same head.
+
+---
+
+## Hard locks (sume-com)
+
+1. **Fresh clone only** for all `gt` commands  
+   e.g. `/tmp/sume-com-<job-slug>`.  
+   **Forbidden:** `git worktree add` under the shared Cursor checkout (#2383).
+2. **Forbidden:** `gh pr create` (single or stack) as author path.  
+   Publish **only** via `gt submit`.
+3. **`gt submit` fails** (trunk out of date / poisoned) → **new fresh clone** →
+   cherry-pick/track → `gt submit`. Never `gh pr create`.
+4. After restack/sync: **`gt submit` again** before enqueue.
+5. **Primary ready-signal = `gt merge --dry-run` / `gt` Ready**, not
+   `gh pr checks` loops. Poll **15–30s** (default 20s); dry-run ready →
+   merge **immediately** (see Ready-signal + poll loop +
+   `graphite-ci-ready.mdc`).
+6. **Opus default enqueue:** `gt merge --no-interactive` (same clone).  
+   Fallback: `gh pr edit <N> --add-label merge-queue`.
+7. **STOP after enqueue confirmed.** Grok owns land unless Chase said otherwise.
+
+---
+
+## Exit rules (Chase lock 2026-08-07 — failure mode)
+
+These are **failed handoffs**, not “still waiting”:
+
+| Bad | Why | Required |
+|-----|-----|----------|
+| Arm `Monitor` / `ScheduleWakeup` / background `until` then **end the session** with “I’ll enqueue when green” | Wrapper exits; enqueue never runs | **Stay in-session** until `gt merge` (or label fallback) **succeeds** and enqueue evidence is in the done report — **no minute cap** |
+| Done report without enqueue evidence | Looks green, MQ empty | Evidence required (below) |
+| `HANDOFF: grok-land` when never enqueued | Grok assumes queued | Use `HANDOFF: grok-ci-merge` **only** if submit done but enqueue truly blocked |
+
+**Allowed while waiting:** tight poll in the **same** live session (below).  
+**Forbidden:** “wakeup in 20 min” / Monitor / “I’ll merge when checks settle”
+then process exit before enqueue.
+
+---
+
+## Ready-signal + poll loop (Chase lock 2026-08-07)
+
+From the **Graphite-ready author clone**. **Primary ready probe =
+`gt merge --dry-run`** (also accept `gt info` / `gt log` Ready).
+
+| Signal | Action |
+|--------|--------|
+| `gt merge --dry-run` → ready / `Your stack is ready to merge` | **Immediately** `gt merge --no-interactive` (no extra sleep) |
+| `gt info` / `gt log` → **`(Ready to merge)`** or **`(Ready to merge as stack)`** | Same — merge now |
+| `(Waiting on CI...)` only (no failed) | Sleep **15–30s** (default **20s**), re-probe dry-run |
+| **`Required checks failed`** / `Failed CI` / dry-run ERROR with failed checks | **Break immediately — do NOT sleep.** Act (below). Never treat failed as “still waiting.” |
+
+### On dry-run CI **failed** (Chase lock 2026-08-08 — snappy)
+
+`Waiting on CI` ≠ `Required checks failed`. The second will **never** become
+Ready by polling. Same session, same turn:
+
+1. Stop the wait loop (**no** further `sleep` / dry-run-only iterations).
+2. Known repo flake (EPIPE / shifting timeouts / same sig on unrelated PRs):
+   `gh run rerun --failed` **≤2** on that head — then resume dry-run poll.
+3. Still red → **minimal CI unblock** (§ F) → `gt submit` → dry-run → merge.
+4. Still blocked → `HANDOFF: grok-ci-merge` with evidence. Do **not** sit in
+   dry-run until Ready.
+
+**Forbidden:** dry-run poll / `for i in 1..N; sleep` while the last dry-run
+already said **Required checks failed**. That is the “infinite wait for a
+Ready that never comes” failure mode.
+
+### Poll cookbook (required shape)
+
+```bash
+# After gt submit / gt submit --stack — SAME session, no minute cap:
+while true; do
+  out=$(gt merge --dry-run --no-interactive 2>&1 || true)
+  echo "$out" | tail -20
+  if echo "$out" | grep -qiE 'ready to merge|already merging|already in the merge queue'; then
+    break
+  fi
+  # FAILED ≠ waiting — act immediately (rerun ≤2 / unblock / handoff). Do not sleep.
+  if echo "$out" | grep -qiE 'Required checks failed|Failed CI|checks failed'; then
+    echo "CI_FAILED — break wait; act (rerun/fix), do not keep polling Ready"
+    exit 2
+  fi
+  sleep 20   # 15–30s ONLY — never default to sleep 60+
+done
+gt merge --no-interactive
+```
+
+(`exit 2` = leave the wait loop into the failure handler in the same session —
+rerun / unblock / handoff — not “end the Opus job empty-handed.”)
+
+**Hard poll rules:**
+
+1. **Cap sleep at 30s** per iteration (prefer 20s). **Forbidden default:**
+   `sleep 60` / `sleep 75` / `sleep 180` wait loops.
+2. On dry-run **ready** → **break immediately** → real `gt merge`. Do not
+   finish a fixed `for i in 1..N` that keeps sleeping after green.
+3. On dry-run **Required checks failed** → **break immediately** → act
+   (rerun/fix). Do not keep sleeping “until Ready.”
+4. Prefer dry-run over grepping `gt log` for a single PR’s Ready string
+   (stack tip Ready is what enqueue needs).
+5. **Forbidden primary wait:** `sleep N; gh pr checks`.
+
+**Ignore as “CI red”:** ignored/cancelled Vercel rows; alone
+`mergeStateStatus=UNSTABLE`; alone pending `Graphite / mergeability_check`
+when `gt` already says Ready / dry-run ready.
+
+**`gh pr checks`:** fallback only if `gt` broken. Filter required jobs
+(Format / Typecheck / Test / Build / validate / Graphite CI optimizer).  
+**HTTP 401 ≠ pending** — fix auth, return to `gt`.
+
+---
+
+## Canonical flow
+
+```text
+fresh clone → gt init → gt create → commit(s) → gt submit [--stack]
+  → poll gt merge --dry-run every 15–30s (same session, no minute cap)
+  → dry-run ready → gt merge --no-interactive immediately
+  → enqueue evidence → STOP → HANDOFF: grok-land
+```
+
+Stack: **all layers one session** → `gt submit --stack` → one `gt merge` for
+the train. Do not “land A only → resume for B”.
+
+---
+
+## Enqueue evidence (required in done report)
+
+At least one of:
+
+- Graphite / `gt` output showing queued / merge requested
+- `merge-queue` label present on the PR(s)
+- Graphite activity / MQ draft reference
+
+Plus: clone path + Graphite URL + GitHub PR URL(s) + `HANDOFF: grok-land`
+(or `grok-ci-merge`).
+
+---
+
+## Unstick playbook (owned stack only)
+
+### A. After lower PR lands / restack: `mergeStateStatus=BLOCKED`, **zero CI.yml checks**
+
+Symptom: head only has Vercel + Graphite mergeability; Format/Test/… missing.
+
+1. Confirm ownership (your slug’s PRs).
+2. In Graphite-ready clone (or push access to head): **empty commit** + push to
+   re-fire `ci.yml` (same pattern as wallet #2769).
+3. Wait `gt` Ready → ensure `merge-queue` still on → enqueue if not queued.
+4. Do not open a new PR.
+
+### B. Superseded / cancelled validate “fail”
+
+Ignore cancelled runs on old SHAs. Judge current head + `gt` Ready.
+
+### C. Mid-stack Graphite CI optimizer `skipping`
+
+Expected on intermediate stack PRs. Tip / `gt` Ready is SoT.
+
+### D. MQ draft red
+
+Grok land: fix or bounce to Opus. Do not thrash restack while Graphite says
+already merging unless entry failed / evicted.
+
+### E. Graphite FF land
+
+`CLOSED` + `mergedAt: null` can still be landed. Truth = `main` tip `(#N)`.
+
+### F. Repo-wide CI flake blocking enqueue (Chase lock 2026-08-07)
+
+Incident class: Opus `sentry-cutover-stack` / `studio-stream-arch-100k`
+sat in endless `gh run rerun` while `studio-agent-core` Vitest **5s
+timeouts** / EPIPE / pool death hit **unrelated PRs** the same way. Product
+diff was green locally; enqueue never happened.
+
+**Diagnosis (do this first, ≤2 evidence points):**
+
+- Fail set **shifts** across reruns (different files each time), or
+- Same timeout/EPIPE signature on an **unrelated** PR touching the same
+  package, or
+- Local package suite green in seconds while CI blows 5s defaults
+
+→ Treat as **repo flake / runner overload**, not “keep retrying my product
+PR forever.”
+
+**Allowed after 1–2 failed reruns (same head):**
+
+1. **Minimal CI unblock commit** on the owned train (fresh clone →
+   `gt create` / amend tip → `gt submit` again), e.g.:
+   - package `vitest.config` `testTimeout` bump for known load-flake suites
+   - isolate/timeout only the known `sandbox-runner.*` class
+   - empty commit to re-fire CI **only** if prior run was cancelled/missing
+     jobs (playbook A) — not as a substitute for a real flake fix
+2. Keep scope **CI-only**. Do not expand product locks to “fix CI.”
+3. Then return to dry-run poll → `gt merge`.
+
+**Forbidden:**
+
+- Infinite / double-digit `gh run rerun --failed` with **zero code change**
+- Simultaneous mass-reruns of many PRs that overload the self-hosted pool
+- Calling flake “not my problem” then **STOP without enqueue** and no
+  `HANDOFF: grok-ci-merge` — either unblock or hand off explicitly
+- Large suite rewrites / unrelated refactors as “CI fix”
+
+**Handoff:** If you still cannot enqueue after a minimal unblock + green
+(or Chase killed the loop): done report with flake evidence →
+**`HANDOFF: grok-ci-merge`**.
+
+---
+
+## Grok land (after enqueue)
+
+1. **Do not re-enqueue** if already queued.
+2. Own **only** the handed-off PR numbers.
+3. Watch MQ draft CI; act on red only.
+4. Confirm `git log origin/main` contains `(#N)`.
+5. Issue comment + STOP.
+
+`HANDOFF: grok-ci-merge`: wait ready → **label** (no clone for `gt merge`) →
+land. If PR never Graphite-bound → reject; repair with fresh-clone `gt submit`
+first.
+
+Grok Tasks: **always background** (`run_in_background: true`) when launched
+from Cursor main agent.
+
+---
+
+## Delegation block (paste into Opus prompts)
+
+```text
+Required skill: read ~/.agents/skills/sume-gt-mq/SKILL.md before any gt submit/merge.
+
+GRAPHITE (hard lock):
+- Fresh clone only for all gt commands (e.g. /tmp/sume-com-<job-slug>).
+- Forbidden: git worktree under the shared Cursor checkout for gt.
+- Forbidden: gh pr create (single or stack). Publish ONLY via gt submit.
+- If gt submit fails: new fresh clone → cherry-pick/track → gt submit. Never gh.
+- After gt submit: SAME session — poll `gt merge --dry-run --no-interactive`
+  every 15–30s (default 20s; NEVER sleep 60+ as the wait loop). Primary
+  ready-signal is dry-run ready / gt Ready — NOT `gh pr checks` loops.
+  When dry-run says ready → immediately `gt merge --no-interactive` (break;
+  do not keep sleeping). Fallback: merge-queue label.
+- When dry-run says **Required checks failed** / Failed CI → **break
+  immediately** (do NOT keep polling Ready). Act: ≤2 `gh run rerun --failed`
+  for known flake, else minimal CI unblock → `gt submit` → dry-run → merge.
+  **Forbidden:** sleep/dry-run-only while last dry-run already failed.
+- Repo CI flake (shifting timeouts / same fail on unrelated PRs): **≤2
+  reruns**, then **minimal CI unblock commit** allowed (e.g. vitest
+  testTimeout). **Forbidden:** endless `gh run rerun` with no code change.
+  If still blocked → HANDOFF: grok-ci-merge (see this skill § F).
+- Forbidden: ScheduleWakeup/Monitor/background-wait then exit before enqueue
+  evidence; “I’ll merge when checks settle” then end session. Stay in-session
+  until enqueue confirmed (no minute cap).
+- STOP immediately after enqueue confirmed. Do NOT babysit MQ draft / main tip.
+- Own only this train’s PRs. Do not touch other stacks.
+- Done report: clone path + Graphite URL + GitHub PR URL(s) + enqueue evidence
+  + STOP. HANDOFF: grok-land
+```
+
+---
+
+## Pointers
+
+- Orchestration (routing, Chase loop): `sume-main-agent-orchestration`
+- Cursor ready-signal rule: `~/.cursor/rules/graphite-ci-ready.mdc`
+- Opus Shell cookbook: `~/.cursor/rules/opus-background-terminal.mdc`
+- Chase loop: `~/.cursor/rules/sume-chase-work-loop.mdc`

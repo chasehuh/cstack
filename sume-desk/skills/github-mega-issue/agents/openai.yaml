@@ -1,0 +1,3 @@
+display_name: GitHub Mega Issue
+short_description: Draft high-context GitHub issues
+default_prompt: Create a detailed implementation-ready GitHub issue for this feature, including repo context, source-of-truth docs, schemas, risks, and acceptance criteria.
