@@ -22,6 +22,8 @@ Then **read**, in this order:
 1. `~/.agents/skills/sume-main-agent-orchestration/SKILL.md` (policy SoT)
 2. `~/.agents/skills/sume-gt-mq/SKILL.md` before any `gt submit` / `gt merge`
 3. `docs/FLOW.md` (this pack’s map of files → when to apply)
+4. `docs/TOKENMAXXING.md` — this machine’s `claude` is a **tokenmaxxing**
+   supervisor (Chase/dev Max pool), not a single login and not an API key
 
 Do **not** fork those skills into chat memory. Edit the files in this repo
 and re-run `./install.sh`.
@@ -33,6 +35,9 @@ and re-run `./install.sh`.
 - Do not silently implement what Chase expected on the Opus/Fable loop.
 - Cursor main agent: Opus/Fable = `claude-human-stream` in a **background**
   Shell (`block_until_ms: 0`). Never Cursor `Task` + `claude-opus-*`.
+  That wrapper must hit **tokenmaxxing’s** `claude` (`~/.config/tokenmaxxing/bin`
+  ahead of the real CLI). Quota swap is automatic; expired parked tokens are
+  not — see `docs/TOKENMAXXING.md`.
 - Terminal title / board Job = `Opus : <job-slug> (#N)` or `Fable : …`.
 - `sume-com` PRs: fresh clone + `gt create` + `gt submit`. **Forbidden:**
   `gh pr create`. After submit: `gt merge --dry-run` every 15–30s →

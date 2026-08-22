@@ -92,7 +92,20 @@ if [ -x "$HOME/.agents/skills/sume-main-agent-orchestration/check-wiring.sh" ]; 
 fi
 
 echo ""
+echo "== tokenmaxxing (local Claude supervisor) =="
+if command -v tokenmaxxing >/dev/null 2>&1; then
+  tokenmaxxing doctor || true
+  echo "Claude workers use tokenmaxxing — see docs/TOKENMAXXING.md"
+else
+  echo "NOTE: tokenmaxxing not on PATH. Opus/Fable expect the supervisor"
+  echo "      (~/.config/tokenmaxxing/bin ahead of real claude)."
+  echo "      Install: bun add -g tokenmaxxing && tokenmaxxing init"
+  echo "      Docs: $ROOT/docs/TOKENMAXXING.md"
+fi
+
+echo ""
 echo "Installed. Next: open sume-com in Cursor and read AGENTS.md in this repo."
 echo "SoT: ~/.agents/skills/sume-main-agent-orchestration/SKILL.md"
 echo "gt:  ~/.agents/skills/sume-gt-mq/SKILL.md"
-echo "Do not copy API keys / PEMs into this repo."
+echo "Claude: docs/TOKENMAXXING.md (tokenmaxxing pool, not a single login)"
+echo "Do not copy API keys / PEMs / tokenmaxxing accounts.json into this repo."

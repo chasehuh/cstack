@@ -53,6 +53,20 @@ duplicate the full SKILL into the `.mdc`.
 | `chat-title-prefix.mdc` | `[sume-com] …` |
 | `opus-via-claude-cli.mdc` | Pointer: Opus transport = shared SoT |
 
+## Layer 3 — local Claude (tokenmaxxing)
+
+`claude` on this desk is **[tokenmaxxing](https://github.com/anaclumos/tokenmaxxing)**:
+a supervisor in front of Claude Code that pools subscription accounts and
+swaps near 5h / weekly limits. `claude-human-stream` uses that `claude`.
+
+SoT: **`docs/TOKENMAXXING.md`**. Short version:
+
+- PATH: `~/.config/tokenmaxxing/bin` **before** the real CLI
+- Pool (Chase machine): `chase@sume.com` + `dev@sume.com`, Max 20x
+- `tokenmaxxing doctor` / `status` before blaming the wrapper
+- Do not commit tokens or paste `accounts.json`
+- `./install.sh` does **not** install tokenmaxxing; it only checks if present
+
 ## Transport (Cursor main agent)
 
 ```text
@@ -89,7 +103,8 @@ is the monitor.
 ## Host binaries the flow assumes
 
 - `gh`, `gt` (Graphite CLI), `git`, `pnpm`
-- Claude Code CLI (`claude`) for `claude-human-stream`
+- Claude Code CLI via **tokenmaxxing** (`claude` supervisor on PATH) for
+  `claude-human-stream` — see `docs/TOKENMAXXING.md`
 - Cursor (for Task = Grok land / Explore only)
 
 `./install.sh` links `claude-human-stream` to `~/.local/bin` if that dir exists

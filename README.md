@@ -15,10 +15,11 @@ chmod +x install.sh
 ./install.sh --sume-com ~/sume/sume-com   # second arg optional
 ```
 
-Requires: `git`, `rsync`, `gh`, Graphite `gt`, Claude Code `claude` on PATH
-for Opus/Fable workers.
+Requires: `git`, `rsync`, `gh`, Graphite `gt`, and **tokenmaxxing-wrapped**
+`claude` on PATH for Opus/Fable workers (see `docs/TOKENMAXXING.md`).
 
 **Never commit secrets.** Desk keys stay in `~/.sume/ops/` on the machine.
+Tokenmaxxing credentials stay in `~/.config/tokenmaxxing/` + keychain.
 
 ## Layout
 
@@ -26,6 +27,7 @@ for Opus/Fable workers.
 AGENTS.md                 # first file a raw agent reads
 install.sh
 docs/FLOW.md              # map of rules → when
+docs/TOKENMAXXING.md      # local Claude = tokenmaxxing supervisor
 sume-desk/
   skills/                 # SoT (orchestration, gt-mq, mega-issue)
   cursor-rules/user/      # ~/.cursor/rules
@@ -38,3 +40,4 @@ Discuss → lock → GitHub issue → `claude-human-stream` (Fable/Opus) →
 fresh clone `gt submit` → `gt merge` (MQ) → STOP → Grok lands `main`.
 
 Details: `docs/FLOW.md` then the two SKILL.md files after install.
+Local Claude quota: `docs/TOKENMAXXING.md`.

@@ -156,8 +156,14 @@ unless the user explicitly said Opus owns land too.
 
 When the main agent needs an **Opus** worker/subagent:
 
-1. Run **Claude Code CLI** on the local machine (`claude` on PATH; currently
-   npm `@anthropic-ai/claude-code`). Default local config already targets Opus
+1. Run **Claude Code CLI** on the local machine (`claude` on PATH). On the
+   Sume desk that binary is the **tokenmaxxing supervisor**
+   (`~/.config/tokenmaxxing/bin/claude`), which wraps npm
+   `@anthropic-ai/claude-code` and swaps Chase/dev Max accounts near quota.
+   Desk write-up: `chasehuh/cstack` → `docs/TOKENMAXXING.md`.
+   `tokenmaxxing doctor` must keep the supervisor ahead of the real CLI.
+   Do not set `ANTHROPIC_API_KEY` to bypass the pool.
+   Default local config already targets Opus
    (`~/.claude/settings.json` → `"model": "opus[1m]"`, high effort).
 2. Prefer the human-readable wrapper (stream-json under the hood, printable lines).
    Canonical path (lives with this SoT skill):
