@@ -16,7 +16,7 @@
 #   claude-human-stream --resume <uuid> --fork-session "Try a different approach"
 #
 # Extra claude flags still go after the prompt:
-#   claude-human-stream "…" --model opus --effort high
+#   claude-human-stream "…" --model opus --effort medium
 #
 # List recent Opus launches recorded by this wrapper:
 #   claude-human-stream --sessions
@@ -59,7 +59,7 @@ Fork (new session id, copy of history) while resuming:
   claude-human-stream --resume <uuid> --fork-session "Try a different approach"
 
 Extra claude flags still go after the prompt:
-  claude-human-stream "…" --model opus --effort high
+  claude-human-stream "…" --model opus --effort medium
 
 List recent Opus launches recorded by this wrapper:
   claude-human-stream --sessions
@@ -192,6 +192,18 @@ if [[ "$FORK" -eq 1 ]]; then
 fi
 if [[ -n "$NAME" ]]; then
   CLAUDE_ARGS+=(--name "$NAME")
+fi
+
+# Default effort medium unless the caller already passed --effort.
+has_effort=0
+for a in "${EXTRA[@]+"${EXTRA[@]}"}"; do
+  if [[ "$a" == "--effort" || "$a" == --effort=* ]]; then
+    has_effort=1
+    break
+  fi
+done
+if [[ "$has_effort" -eq 0 ]]; then
+  EXTRA=(--effort medium "${EXTRA[@]+"${EXTRA[@]}"}")
 fi
 
 # Passthrough remaining claude flags (after prompt).

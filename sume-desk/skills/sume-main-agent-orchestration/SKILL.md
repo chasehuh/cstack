@@ -164,7 +164,7 @@ When the main agent needs an **Opus** worker/subagent:
    `tokenmaxxing doctor` must keep the supervisor ahead of the real CLI.
    Do not set `ANTHROPIC_API_KEY` to bypass the pool.
    Default local config already targets Opus
-   (`~/.claude/settings.json` → `"model": "opus[1m]"`, high effort).
+   (`~/.claude/settings.json` → `"model": "opus[1m]"`, `"effortLevel": "medium"`).
 2. Prefer the human-readable wrapper (stream-json under the hood, printable lines).
    Canonical path (lives with this SoT skill):
    `~/.agents/skills/sume-main-agent-orchestration/bin/claude-human-stream.sh "<delegation prompt>"`

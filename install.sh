@@ -32,9 +32,15 @@ link_skill() {
   local src="$DESK/skills/$name"
   [ -d "$src" ] || return 0
   mkdir -p "$HOME/.agents/skills"
-  rm -rf "$HOME/.agents/skills/$name"
+  # Sync pack files without wiping local runtime state/ (opus-live logs, sessions).
   mkdir -p "$HOME/.agents/skills/$name"
-  rsync -a "$src/" "$HOME/.agents/skills/$name/"
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -a --delete --exclude state/ "$src/" "$HOME/.agents/skills/$name/"
+  else
+    # cp fallback: refresh tracked files, keep state/
+    find "$HOME/.agents/skills/$name" -mindepth 1 -maxdepth 1 ! -name state -exec rm -rf {} +
+    cp -a "$src/." "$HOME/.agents/skills/$name/"
+  fi
   for dest in "$HOME/.cursor/skills" "$HOME/.claude/skills" "$HOME/.codex/skills"; do
     mkdir -p "$dest"
     ln -sfn "$HOME/.agents/skills/$name" "$dest/$name"
@@ -49,7 +55,11 @@ link_skill github-mega-issue
 
 echo "== user Cursor rules =="
 mkdir -p "$HOME/.cursor/rules"
-rsync -a "$DESK/cursor-rules/user/" "$HOME/.cursor/rules/"
+if command -v rsync >/dev/null 2>&1; then
+  rsync -a "$DESK/cursor-rules/user/" "$HOME/.cursor/rules/"
+else
+  cp -a "$DESK/cursor-rules/user/." "$HOME/.cursor/rules/"
+fi
 # Keep pointer template in sync with the installed skill
 if [ -x "$HOME/.agents/skills/sume-main-agent-orchestration/install-cursor-rule.sh" ]; then
   "$HOME/.agents/skills/sume-main-agent-orchestration/install-cursor-rule.sh" --user
@@ -58,7 +68,11 @@ fi
 if [ -n "$SUME_COM" ]; then
   echo "== sume-com repo rules → $SUME_COM =="
   mkdir -p "$SUME_COM/.cursor/rules"
-  rsync -a "$DESK/cursor-rules/sume-com/" "$SUME_COM/.cursor/rules/"
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -a "$DESK/cursor-rules/sume-com/" "$SUME_COM/.cursor/rules/"
+  else
+    cp -a "$DESK/cursor-rules/sume-com/." "$SUME_COM/.cursor/rules/"
+  fi
   "$HOME/.agents/skills/sume-main-agent-orchestration/install-cursor-rule.sh" "$SUME_COM"
 fi
 
