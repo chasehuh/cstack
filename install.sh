@@ -76,11 +76,14 @@ if [ -n "$SUME_COM" ]; then
   "$HOME/.agents/skills/sume-main-agent-orchestration/install-cursor-rule.sh" "$SUME_COM"
 fi
 
-echo "== claude-human-stream on PATH =="
+echo "== agent-human-stream on PATH =="
 mkdir -p "$HOME/.local/bin"
-ln -sfn "$HOME/.agents/skills/sume-main-agent-orchestration/bin/claude-human-stream.sh" \
-  "$HOME/.local/bin/claude-human-stream"
-chmod +x "$HOME/.agents/skills/sume-main-agent-orchestration/bin/claude-human-stream.sh" \
+BIN="$HOME/.agents/skills/sume-main-agent-orchestration/bin"
+ln -sfn "$BIN/agent-human-stream.sh" "$HOME/.local/bin/agent-human-stream"
+ln -sfn "$BIN/claude-human-stream.sh" "$HOME/.local/bin/claude-human-stream"
+chmod +x "$BIN/agent-human-stream.sh" "$BIN/agent-human-stream.py" \
+  "$BIN/agent-human-stream.test.py" \
+  "$BIN/claude-human-stream.sh" "$BIN/claude-human-stream.py" \
   "$HOME/.agents/skills/sume-main-agent-orchestration/check-wiring.sh" \
   "$HOME/.agents/skills/sume-gt-mq/install-symlinks.sh" || true
 if ! echo ":$PATH:" | grep -q ":$HOME/.local/bin:"; then

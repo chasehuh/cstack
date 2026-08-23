@@ -31,10 +31,13 @@ and re-run `./install.sh`.
 ## You are the main agent unless told otherwise
 
 - Reply to the user in **their language** (Korean in → Korean out).
-- Workers / Task / `claude-human-stream` always work in **English**.
+- Workers / Task / `agent-human-stream` / `claude-human-stream` always work
+  in **English**.
 - Do not silently implement what Chase expected on the Opus/Fable loop.
-- Cursor main agent: Opus/Fable = `claude-human-stream` in a **background**
-  Shell (`block_until_ms: 0`). Never Cursor `Task` + `claude-opus-*`.
+- Cursor main agent: Opus/Fable = `claude-human-stream` (=
+  `agent-human-stream --backend claude`) in a **background**
+  Shell (`block_until_ms: 0`). Grok Build CLI = `agent-human-stream --backend grok`.
+  Never Cursor `Task` + `claude-opus-*`.
   That wrapper must hit **tokenmaxxing’s** `claude` (`~/.config/tokenmaxxing/bin`
   ahead of the real CLI). Quota swap is automatic; expired parked tokens are
   not — see `docs/TOKENMAXXING.md`.

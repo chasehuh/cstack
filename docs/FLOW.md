@@ -7,7 +7,8 @@ If this file and a skill disagree, the skill wins; fix this map.
 
 Discuss (same language as Chase) → lock nouns/defaults/non-goals →
 **GitHub mega-issue** (`github-mega-issue` skill) → **Fable/Opus**
-(`claude-human-stream`, job slug 2–4 kebab tokens) → fresh `/tmp` clone →
+(`claude-human-stream` = `agent-human-stream --backend claude`, job slug
+2–4 kebab tokens) → fresh `/tmp` clone →
 `gt create` → `gt submit` → poll `gt merge --dry-run` 15–30s →
 `gt merge` (MQ) → **STOP** → **Grok** land (`main` tip `(#N)`).
 
@@ -57,7 +58,9 @@ duplicate the full SKILL into the `.mdc`.
 
 `claude` on this desk is **[tokenmaxxing](https://github.com/anaclumos/tokenmaxxing)**:
 a supervisor in front of Claude Code that pools subscription accounts and
-swaps near 5h / weekly limits. `claude-human-stream` uses that `claude`.
+swaps near 5h / weekly limits. `claude-human-stream` /
+`agent-human-stream --backend claude` uses that `claude`.
+Local Grok Build (`grok` CLI) uses `agent-human-stream --backend grok`.
 
 SoT: **`docs/TOKENMAXXING.md`**. Short version:
 
@@ -104,8 +107,10 @@ is the monitor.
 
 - `gh`, `gt` (Graphite CLI), `git`, `pnpm`
 - Claude Code CLI via **tokenmaxxing** (`claude` supervisor on PATH) for
-  `claude-human-stream` — see `docs/TOKENMAXXING.md`
+  `claude-human-stream` / `agent-human-stream --backend claude` —
+  see `docs/TOKENMAXXING.md`
+- Grok Build CLI (`grok` on PATH) for `agent-human-stream --backend grok`
 - Cursor (for Task = Grok land / Explore only)
 
-`./install.sh` links `claude-human-stream` to `~/.local/bin` if that dir exists
-or is created.
+`./install.sh` links `agent-human-stream` and `claude-human-stream` to
+`~/.local/bin`.

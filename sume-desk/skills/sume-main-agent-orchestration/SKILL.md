@@ -131,26 +131,36 @@ After sending the delegation, keep the worker in background mode by default.
 Do not immediately wait on it unless the current user turn is blocked on that
 result.
 
-## Coding Worker Model Routing (Opus 5 / Grok 4.5 / Composer)
+## Coding Worker Model Routing (Fable / Opus / Grok)
 
 This section is the source of truth for which model runs which stage of the
 GitHub mega-issue → implement → PR → merge flow in Sume repos. Every coding
 delegation must pick the model and **transport** explicitly according to these
 rules.
 
+**Chase lock (2026-08-23) — default author is Opus.** Coding models are only
+**Fable / Opus / Grok**. If Chase does **not** name a model, launch **Opus**
+(`claude-human-stream`, default `--model opus`). Use **Fable** only when Chase
+says Fable / `--model fable`. **Grok** is land/ops (and explicit Grok author
+asks). Composer remains explore-only.
+
 | Role | Model | Transport (from a Cursor main agent) |
 |------|-------|--------------------------------------|
-| Opus 5 (design / RCA / mega-issue / **code → MQ enqueue**) | Claude Opus via Claude Code subscription | **`claude-human-stream`** wrapper (background Shell). Do **not** use Cursor `Task` with `claude-opus-5-*`. |
-| Grok 4.5 (**land babysit / deploy / ops** — mainly non-coding) | Cursor Grok | Cursor `Task` with `cursor-grok-4.5-high-fast` (or newest Grok Fast slug) |
+| Opus (default author: design / RCA / mega-issue / **code → MQ enqueue**) | Claude Opus via Claude Code subscription | **`claude-human-stream`**. Do **not** use Cursor `Task` with `claude-opus-*`. |
+| Fable (author only if Chase named Fable) | Claude Fable via same wrapper | **`claude-human-stream --model fable`**. Same Graphite enqueue path as Opus. |
+| Grok (**MQ land babysit / deploy / ops**; author only if Chase said Grok) | Cursor Grok | Cursor `Task` (newest Grok Fast slug) |
 | Composer (explore only) | Composer | Cursor `Task` with `composer-*` / `explore` |
 
-**Default split (Chase lock, 2026-08-05):** Opus owns PR authoring **through
-Graphite MQ enqueue** (**fresh clone** → code → local green → `gt create` →
-**`gt submit`** → wait **`gt` Ready to merge** (**no minute cap**) → **`gt merge`**
-in that same clone — **never** `gh pr create` on `sume-com`). As soon as
-enqueue is confirmed, **STOP** and hand **land babysit** (+ deploy) to Grok.
-Do **not** leave Opus watching MQ draft CI / `main` tip / restack-while-merging
-unless the user explicitly said Opus owns land too.
+**MQ babysit is always Grok** after **Opus or Fable** enqueue. Do **not** leave
+Opus/Fable watching MQ draft CI / `main` tip / restack-while-merging unless
+Chase explicitly said that session owns land (`merge까지` / `landing까지`).
+
+**Default split (Chase lock, 2026-08-05 + 2026-08-23):** The author (Opus, or
+Fable if named) owns PR authoring **through Graphite MQ enqueue** (**fresh
+clone** → code → local green → `gt create` → **`gt submit`** → wait **`gt`
+Ready to merge** (**no minute cap**) → **`gt merge`** in that same clone —
+**never** `gh pr create` on `sume-com`). As soon as enqueue is confirmed,
+**STOP** and hand **land babysit** (+ deploy) to Grok.
 
 ### Opus transport — Claude Code CLI (required)
 
@@ -165,10 +175,14 @@ When the main agent needs an **Opus** worker/subagent:
    Do not set `ANTHROPIC_API_KEY` to bypass the pool.
    Default local config already targets Opus
    (`~/.claude/settings.json` → `"model": "opus[1m]"`, `"effortLevel": "medium"`).
+   `claude-human-stream` / `agent-human-stream --backend claude` injects
+   `--effort` when omitted: **Opus → medium**, **Fable → high**
+   (override with an explicit `--effort`).
 2. Prefer the human-readable wrapper (stream-json under the hood, printable lines).
-   Canonical path (lives with this SoT skill):
-   `~/.agents/skills/sume-main-agent-orchestration/bin/claude-human-stream.sh "<delegation prompt>"`
-   PATH symlink: `claude-human-stream` → that script (`~/.local/bin`).
+   Canonical launcher: `agent-human-stream` (Claude + Grok Build).
+   Opus/Fable alias: `claude-human-stream` → `--backend claude`.
+   Path: `~/.agents/skills/sume-main-agent-orchestration/bin/agent-human-stream.sh`
+   PATH: `~/.local/bin/agent-human-stream` and `claude-human-stream`.
    Optional: `--name <slug>` before the prompt (shown in Claude `/resume`
    picker). **Required naming:** 2–4 kebab tokens that describe the *job*,
    not just the issue number — see § "Worker slug naming" below. Pass extra
@@ -198,6 +212,28 @@ When the main agent needs an **Opus** worker/subagent:
 6. Do **not** route Opus work through Cursor `Task` / `claude-opus-5-thinking-high`
    anymore — that burns Cursor-side Opus routing; Claude Code subscription is
    the Opus path.
+
+### Agent human stream — Claude + Grok Build
+
+Canonical wrapper for **headless** Claude Code and **Grok Build** (`grok` CLI):
+
+```bash
+agent-human-stream --name <job-slug> "…" --model opus          # auto → claude
+agent-human-stream --backend grok --name <job-slug> "…"        # Grok Build
+agent-human-stream --resume <uuid> "Follow-up …"               # backend from registry
+```
+
+- `claude-human-stream` stays the Opus/Fable command. It execs
+  `agent-human-stream --backend claude`. Do not break existing recipes.
+- `--backend auto` (default): `grok*` model → grok; opus/fable/sonnet/haiku
+  → claude; `--resume` uses the last `backend` recorded for that session.
+- Claude: `stream-json` + tokenmaxxing `claude`. Grok: `streaming-messages-json`
+  (`--permission-mode bypassPermissions --always-approve`). The formatter also
+  reads Grok native ACP `streaming-json`.
+- Same live log dir (`state/opus-live/`) and registry (`state/opus-sessions.jsonl`)
+  with a `backend` field. Resume hint prints `agent-human-stream --backend …`.
+- This is **local Grok Build CLI**, not Cursor `Task` land babysit. Land still
+  uses Cursor Grok unless Chase said to author on the `grok` CLI.
 
 ### Cursor-only — Opus / background-worker monitoring
 
@@ -333,6 +369,12 @@ whenever this chat has background workers.
   status.
 - **Truth:** alive terminal PIDs ∩ live `claude -p` / Grok Tasks (opus-live
   logs enrich only — do not count finished jobs as live).
+- **Three lanes (Chase lock 2026-08-23):** `지금` (live) → **`스테이징`**
+  (worker finished / landed, **waiting Chase confirm**) → `확인됨` (only after
+  Chase says so). Never drop a finished train straight into `확인됨`.
+- **Issue / PR detail on staging + live:** issue state (OPEN/CLOSED) and
+  **why it is still OPEN** (residual, confirm, other slices). PR number, MQ /
+  `main` tip `(#N)`, Graphite FF `CLOSED`+`mergedAt: null` if that is the truth.
 - Link the absolute `.canvas.tsx` path when mentioning the board in chat.
 - Read `~/.cursor/skills-cursor/canvas/SKILL.md` before creating/editing.
 

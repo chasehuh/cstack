@@ -2,7 +2,9 @@
 
 This desk does **not** run bare `claude` against a single Anthropic login.
 On Chase’s machine, **`claude` on PATH is the tokenmaxxing supervisor**.
-`claude-human-stream` (Fable/Opus workers) goes through that same binary.
+`claude-human-stream` / `agent-human-stream --backend claude` (Fable/Opus
+workers) go through that same binary. Grok Build is a different CLI (`grok`)
+and uses `agent-human-stream --backend grok`.
 
 Upstream: [anaclumos/tokenmaxxing](https://github.com/anaclumos/tokenmaxxing)
 (Bun global, `tokenmaxxing` on PATH). Subscription accounts only — not API keys.
@@ -16,8 +18,8 @@ Opus / Fable workers burn Claude Code Max quota (5h session + weekly).
 Two Max 20x logins share the load. Near quota, tokenmaxxing swaps the
 live credential at a turn boundary. The wrapper session is **not** restarted.
 
-`claude-human-stream` must keep seeing **the supervisor** as `claude`,
-not the raw npm CLI.
+`agent-human-stream --backend claude` must keep seeing **the supervisor**
+as `claude`, not the raw npm CLI.
 
 ## PATH (hard)
 
@@ -25,7 +27,7 @@ This order is required (already in Chase’s `~/.zshrc` / launchd PATH):
 
 ```text
 ~/.config/tokenmaxxing/bin   ← supervisor named `claude`
-~/.local/bin                 ← `claude-human-stream`, `tokenmaxxing`
+~/.local/bin                 ← `agent-human-stream`, `claude-human-stream`, `tokenmaxxing`
 real @anthropic-ai/claude-code
 ```
 
@@ -73,7 +75,9 @@ issues, or chat.
 
 ## What agents should do
 
-- Launch Fable/Opus as today: `cd <repo> && claude-human-stream …`.
+- Launch Fable/Opus as today: `cd <repo> && claude-human-stream …`
+  (or `agent-human-stream --backend claude …`).
+- Grok Build headless: `cd <repo> && agent-human-stream --backend grok …`.
   Do not set `ANTHROPIC_API_KEY` to bypass the pool.
 - If a worker dies with quota / 429 / “usage limit”: run `tokenmaxxing status`.
   If the active account is exhausted and the other is fresh, `tokenmaxxing switch`.

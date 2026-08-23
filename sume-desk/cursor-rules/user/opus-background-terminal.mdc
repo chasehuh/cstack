@@ -16,10 +16,13 @@ land): `~/.cursor/rules/sume-chase-work-loop.mdc`.
 
 ## Binary
 
-- PATH: `claude-human-stream` →
-  `~/.agents/skills/sume-main-agent-orchestration/bin/claude-human-stream.sh`
+- Unified wrapper: `agent-human-stream` (Claude Code + Grok Build).
+  `claude-human-stream` is a `--backend claude` alias.
+  Grok Build CLI: `agent-human-stream --backend grok --name X "prompt"`
+- PATH: `claude-human-stream` / `agent-human-stream` →
+  `~/.agents/skills/sume-main-agent-orchestration/bin/*.sh`
 - There is **no** `--cwd` flag. `cd` in the shell command first.
-- Wrapper flags go **before** the prompt; extra `claude` flags go **after**:
+- Wrapper flags go **before** the prompt; extra `claude` / `grok` flags go **after**:
   `claude-human-stream --name X --resume UUID "prompt" --model opus`
 
 ## Correct launch pattern (copy this)

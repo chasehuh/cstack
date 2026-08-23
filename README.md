@@ -36,7 +36,8 @@ sume-desk/
 
 ## Flow in one line
 
-Discuss → lock → GitHub issue → `claude-human-stream` (Fable/Opus) →
+Discuss → lock → GitHub issue → `agent-human-stream` / `claude-human-stream`
+(Fable/Opus; Grok Build via `--backend grok`) →
 fresh clone `gt submit` → `gt merge` (MQ) → STOP → Grok lands `main`.
 
 Details: `docs/FLOW.md` then the two SKILL.md files after install.
