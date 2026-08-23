@@ -26,12 +26,14 @@ silently become the sole implementer for work Chase expected on that flow.
 |-----|------|
 | Chase | Product locks, “go / defer / merge까지” |
 | Main (this chat) | Discuss (match Chase’s language), survey, issue, launch workers, brief status |
-| Opus | BP (if needed) → **fresh clone** → code → `gt create` → **`gt submit`** → **`gt` Ready to merge** → **`gt merge`** (MQ enqueue) → **STOP** |
-| Grok Task | After enqueue: MQ draft → land on `main` → authorized ops. Fallback: CI → **`merge-queue` label** → land |
+| Opus | **Default author** if Chase did not name a model. BP → fresh clone → `gt submit` → `gt merge` (MQ) → **STOP** |
+| Fable | Author **only** when Chase said Fable. Same enqueue path as Opus → **STOP** |
+| Grok | **Always** MQ land babysit after Opus **or** Fable enqueue (`agent-human-stream --backend grok`). Also author if Chase said Grok. Never Cursor `Task`. |
 | Composer | Explore only |
 
-**Default land owner = Grok** after Opus enqueues MQ. Only leave land on Opus
-when Chase explicitly said so for that task (e.g. “merge까지” / “landing까지”).
+**Default author = Opus.** **Default land owner = Grok** after Opus/Fable
+enqueue. Only leave land on Opus/Fable when Chase said `merge까지` /
+`landing까지` for that task.
 
 ## Step-by-step
 
@@ -57,7 +59,7 @@ Capture in issue/BP, not chat memory only:
 Pick a **job slug** first (2–4 kebab tokens, aim for 3) — e.g.
 `format-uifix-pdp`, `format-float-request`. Optional issue suffix only
 (`…-2000`). Never `--name 2000` alone. Same stem for the prompt file and
-Grok `Task` slug.
+Grok land prompt (`/tmp/sume-grok-prompts/<job-slug>.md`).
 
 **Terminal + board title (required):** Shell `description` (and Active
 workers board Job column) must be:
@@ -127,7 +129,8 @@ first-class like `gh` — never author with `gh pr create` on `sume-com`.
 1. Read `—— final ——` (+ `session_id`) only.
 2. Brief status in Chase’s language.
 3. If MQ enqueued (or PRs open) and land ≠ Opus: **launch Grok land babysit
-   immediately** (authorized by this loop — do not re-ask “머지할까요?”).
+   immediately** via `agent-human-stream --backend grok` (authorized by this
+   loop — do not re-ask “머지할까요?”). Never Cursor `Task` / `cursor-grok-*`.
 4. Stack / PR → Graphite MQ. **Opus should already have enqueued** via
    `gt merge` (fallback label). Grok watches draft CI → confirm land via
    `main` tip (`(#N)`), not GitHub `mergedAt` (Graphite FF often leaves
@@ -151,7 +154,7 @@ workers: follow Chase constraints (e.g. **api.dev curl, not MCP** when said).
 |-----|------------|
 | Main implements the whole feature Chase meant for Opus | Issue → Opus |
 | PR with no issue when mega-issue flow was requested | File issue first |
-| Opus left babysitting land after MQ enqueue | Grok Task land handoff |
+| Opus left babysitting land after MQ enqueue | Grok Shell land (`agent-human-stream --backend grok`) |
 | Grok re-enqueues when Opus already queued | Watch draft / act only on failure |
 | MCP “diagnosis” for Format/API smoke after Chase forbade it | `curl` api.dev |
 | Re-ask merge after default handoff | Just launch Grok |

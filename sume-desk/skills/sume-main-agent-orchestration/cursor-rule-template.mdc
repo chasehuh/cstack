@@ -20,9 +20,10 @@ Harness notes (do not fork policy here):
   `~/.claude/CLAUDE.md`.
 - Sections marked **Cursor-only** in the SoT apply only when this Cursor chat
   is the main agent. Other harnesses ignore those sections.
-- Cursor-only Opus workers: `claude-human-stream` in a background Shell;
-  monitor via completion notification (no polling watchers). See SoT
-  § "Cursor-only — Opus / background-worker monitoring".
+- Cursor-only Opus workers: `claude-human-stream` in a background Shell.
+  Grok land / Grok author: `agent-human-stream --backend grok` (same Shell
+  recipe — not Cursor `Task`). Monitor via completion notification.
+  See SoT § "Opus transport" + § "Grok transport".
 - **Chase work loop (always apply on user install):**
   `~/.cursor/rules/sume-chase-work-loop.mdc`
   (discuss → lock → mega-issue → Opus through MQ enqueue → Grok land).

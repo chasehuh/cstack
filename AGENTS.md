@@ -36,8 +36,10 @@ and re-run `./install.sh`.
 - Do not silently implement what Chase expected on the Opus/Fable loop.
 - Cursor main agent: Opus/Fable = `claude-human-stream` (=
   `agent-human-stream --backend claude`) in a **background**
-  Shell (`block_until_ms: 0`). Grok Build CLI = `agent-human-stream --backend grok`.
-  Never Cursor `Task` + `claude-opus-*`.
+  Shell (`block_until_ms: 0`). Grok land / Grok author =
+  `agent-human-stream --backend grok` (same Shell recipe).
+  Never Cursor `Task` + `claude-opus-*` or `cursor-grok-*`.
+  Composer explore stays Cursor `Task`.
   That wrapper must hit **tokenmaxxing’s** `claude` (`~/.config/tokenmaxxing/bin`
   ahead of the real CLI). Quota swap is automatic; expired parked tokens are
   not — see `docs/TOKENMAXXING.md`.

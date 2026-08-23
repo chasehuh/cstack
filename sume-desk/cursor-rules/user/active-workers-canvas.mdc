@@ -6,8 +6,9 @@ alwaysApply: true
 # Active workers Canvas (Cursor main agent)
 
 When this Cursor chat is the **Sume main agent** and has (or just had)
-background workers — Opus via `claude-human-stream`, Grok/Composer via
-`Task` — keep a live board canvas updated.
+background workers — Opus via `claude-human-stream`, Grok via
+`agent-human-stream --backend grok`, Composer via `Task` — keep a live
+board canvas updated.
 
 ## Canvas path
 
@@ -23,7 +24,7 @@ When you mention the board to the user, link that absolute `.canvas.tsx` path.
 
 Update the canvas whenever any of these happen:
 
-1. **Launch** an Opus Shell or Grok/Composer `Task`
+1. **Launch** an Opus/Grok Shell or Composer `Task`
 2. **Completion / abort** notification for a worker Shell or Task
 3. **Steer / kill / resume** that changes which workers are live
 4. User asks worker status (“터미널 뭐 돌아?”, “어때?”, board check)
@@ -36,22 +37,36 @@ later nice-to-have. Keep it short: reconcile → rewrite canvas → brief chat.
 Live count = intersection of:
 
 - Cursor terminals with **alive PID** + still-running worker command
-- Live `claude -p` / `claude-human-stream` processes (and live Grok Tasks)
+- Live `claude-human-stream` / `agent-human-stream` / `grok -p` processes
 - Recent `opus-live` logs only as enrichment — **not** as proof of liveness
 
-Drop finished workers from the “live” table immediately (move to
-“just finished” if useful). Stale terminal files marked `running` with no
+Drop finished workers from the “live” table immediately — move them to
+**스테이징**, not `확인됨`. Stale terminal files marked `running` with no
 process = omit.
+
+## Three lanes (Chase lock 2026-08-23)
+
+| Lane | Korean header | When |
+|------|----------------|------|
+| Live | `지금` | Process still running |
+| Staging | `스테이징` | Worker done / PR landed / MQ done — **Chase has not confirmed** |
+| Confirmed | `확인됨` | Chase explicitly confirmed (or older archive already confirmed) |
+
+**Never** auto-promote staging → confirmed. Chase must say so.
 
 ## Columns to keep current
 
-For each live worker: **Job title** (see below), terminal id, issue, started
-(KST), elapsed, model (`Claude Opus` / `Fable` / `Grok 4.5 Task`), transport
-(`Shell → claude-human-stream` vs Cursor Task), `session_id` / agent id,
-PR URLs, latest log signal (“now”).
+**Live:** Job title (see below), terminal id, issue, started (KST), model
+(`Opus` / `Fable` / `Grok`), transport, `session_id` / agent id, latest signal.
 
-Snapshot timestamp in the canvas header. Board language: English is fine
-(ops artifact); user chat stays in the user’s language.
+**Staging (required detail):** Job, issue **state** (OPEN/CLOSED), **why OPEN**
+if open (residual / confirm / other slices on the same mega-issue), PR +
+MQ/`main` tip `(#N)`, Graphite FF quirk if GitHub `CLOSED`/`mergedAt: null`.
+Do not leave a one-line “done” with no issue/PR status.
+
+Snapshot timestamp in the canvas header. Visible board copy follows
+`canvas-user-language` (Chase / Korean chat → Korean). Identifiers stay
+English (`#4338`, slugs). User chat stays in the user’s language.
 
 ## Job title = terminal title = board Job (Chase lock 2026-08-07)
 
@@ -63,7 +78,7 @@ board **Job** column must use the **same string**.
 |------|----------------------------------|
 | Opus Shell | `Opus : <job-slug> (#<issue>)` |
 | Opus, no issue yet | `Opus : <job-slug>` |
-| Grok land / CI Task | `Grok : <job-slug> (#<issue>)` |
+| Grok Build Shell | `Grok : <job-slug> (#<issue>)` |
 | Composer explore | `Explore : <job-slug>` (optional `#N`) |
 
 Examples: `Opus : dashboard-ui-chrome (#2819)`,

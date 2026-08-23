@@ -277,8 +277,9 @@ PR forever.”
 land. If PR never Graphite-bound → reject; repair with fresh-clone `gt submit`
 first.
 
-Grok Tasks: **always background** (`run_in_background: true`) when launched
-from Cursor main agent.
+Grok land from a Cursor main agent: **`agent-human-stream --backend grok`**
+in a background Shell (`block_until_ms: 0`, title `Grok : <job-slug> (#N)`).
+Do **not** use Cursor `Task` / `cursor-grok-*` for land.
 
 ---
 

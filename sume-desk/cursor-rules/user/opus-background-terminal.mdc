@@ -126,6 +126,7 @@ as the steer launch — do not leave the old terminal running.
 | Bad | Why | Do instead |
 |-----|-----|------------|
 | Cursor `Task` + `claude-opus-*` | Wrong transport; burns Cursor Opus | `claude-human-stream` Shell |
+| Cursor `Task` + `cursor-grok-*` | Wrong transport; Grok Build is the desk harness | `agent-human-stream --backend grok` |
 | Shell with default/long `block_until_ms` | Job is minutes–hours; tool times out / looks "stuck" | `block_until_ms: 0` |
 | `AwaitShell` / sleep until done | Turns main into a polling loop; user said not to wait | Completion notification |
 | `claude-human-stream --cwd …` | Flag does not exist | `cd … && claude-human-stream` |
@@ -138,10 +139,11 @@ as the steer launch — do not leave the old terminal running.
 
 ## Parallelism
 
-- Multiple Opus jobs: multiple background Shells, distinct `--name`s.
-- Grok/Composer implementers: Cursor `Task` (`cursor-grok-4.5-high-fast` /
-  explore) — also background; different transport from Opus.
-- Do not block the user turn on a background Opus unless they explicitly
+- Multiple Opus / Grok Build jobs: multiple background Shells, distinct `--name`s.
+- Grok land / Grok author: **`agent-human-stream --backend grok`** (same
+  Shell recipe). Do **not** use Cursor `Task` / `cursor-grok-*`.
+- Composer explore: Cursor `Task` (`explore`) — also background.
+- Do not block the user turn on a background worker unless they explicitly
   asked to wait, or the next action is hard-blocked on that result.
 
 ## Handoff after Opus enqueues MQ (**default**)
@@ -186,8 +188,9 @@ Opus owns land for that task.
    - Follow BP / issue locks exactly.
    - Done report: clone path + Graphite URL + GitHub PR URL + enqueue
      evidence + `HANDOFF: grok-land`.
-2. Main agent: on Opus completion (enqueue done), launch **Grok 4.5** Cursor
-   `Task` (**always `run_in_background: true`**) to babysit land → deploy.
+2. Main agent: on Opus completion (enqueue done), launch **Grok Build** via
+   `agent-human-stream --backend grok` (**Shell `block_until_ms: 0`**,
+   title `Grok : <job-slug> (#N)`) to babysit land → deploy.
    - **Default:** MQ already enqueued — watch draft CI → confirm `main` tip
      `(#N)` → issue comment / authorized ops. Do **not** re-enqueue.
    - **Fallback** (`HANDOFF: grok-ci-merge`): Opus could not enqueue → CI

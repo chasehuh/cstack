@@ -73,14 +73,13 @@ wants "엄청 해상도 높게", "가능한 최대한 많은 컨텍스트", "sou
 When this skill runs inside the Sume main-agent orchestration flow, follow
 `sume-main-agent-orchestration` § "Coding Worker Model Routing":
 
-- Heavy / ambiguous work: **Opus 5** drafts this mega-issue (design + RCA)
-  via Claude Code `claude-human-stream` (not Cursor `Task` Opus);
-  implementation is then delegated to **Grok 4.5** Cursor `Task`
-  (worktree → PR → merge).
-- Clear / well-scoped work: **Grok 4.5** writes the mega-issue itself and
-  continues straight into implementation.
-- Never implement code with Opus 5. Composer must not write issues at all
-  (exploration only).
+- Heavy / ambiguous work: **Opus** drafts this mega-issue (design + RCA)
+  via `claude-human-stream` (not Cursor `Task` Opus) and implements through
+  MQ enqueue. After enqueue, **Grok Build** lands via
+  `agent-human-stream --backend grok` (not Cursor `Task`).
+- Clear / well-scoped work Chase assigned to Grok: **Grok Build**
+  (`agent-human-stream --backend grok`) may write the mega-issue and implement.
+- Composer must not write issues (exploration only).
 - Full routing/transport SoT:
   `~/.agents/skills/sume-main-agent-orchestration/SKILL.md`
 

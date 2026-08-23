@@ -110,7 +110,8 @@ is the monitor.
   `claude-human-stream` / `agent-human-stream --backend claude` —
   see `docs/TOKENMAXXING.md`
 - Grok Build CLI (`grok` on PATH) for `agent-human-stream --backend grok`
-- Cursor (for Task = Grok land / Explore only)
+- Cursor `Task` = Composer explore only
+- Grok land / Grok author = `agent-human-stream --backend grok` (not Task)
 
 `./install.sh` links `agent-human-stream` and `claude-human-stream` to
 `~/.local/bin`.

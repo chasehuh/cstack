@@ -1,6 +1,6 @@
 ---
 name: sume-main-agent-orchestration
-description: Sume-specific main-agent orchestration workflow. Use when the user wants the current thread to coordinate workers/subagents (Cursor Task, Claude, or Codex), track their status, delegate tasks, compact finished workers, create Linear/GitHub issues, or summarize what main_agent and workers are doing instead of directly implementing code. Includes Opus 5 / Grok 4.5 / Composer coding-model routing for mega-issue → implement → PR → merge.
+description: Sume-specific main-agent orchestration workflow. Use when the user wants the current thread to coordinate workers/subagents (Claude Code, Grok Build via agent-human-stream, Composer Task, or Codex), track their status, delegate tasks, compact finished workers, create Linear/GitHub issues, or summarize what main_agent and workers are doing instead of directly implementing code. Includes Fable / Opus / Grok Build routing for mega-issue → implement → PR → merge.
 ---
 
 # Sume Main Agent Orchestration
@@ -148,7 +148,7 @@ asks). Composer remains explore-only.
 |------|-------|--------------------------------------|
 | Opus (default author: design / RCA / mega-issue / **code → MQ enqueue**) | Claude Opus via Claude Code subscription | **`claude-human-stream`**. Do **not** use Cursor `Task` with `claude-opus-*`. |
 | Fable (author only if Chase named Fable) | Claude Fable via same wrapper | **`claude-human-stream --model fable`**. Same Graphite enqueue path as Opus. |
-| Grok (**MQ land babysit / deploy / ops**; author only if Chase said Grok) | Cursor Grok | Cursor `Task` (newest Grok Fast slug) |
+| Grok (**MQ land babysit / deploy / ops**; author only if Chase said Grok) | Grok Build CLI (`grok` on PATH) | **`agent-human-stream --backend grok`**. Do **not** use Cursor `Task` with `cursor-grok-*`. |
 | Composer (explore only) | Composer | Cursor `Task` with `composer-*` / `explore` |
 
 **MQ babysit is always Grok** after **Opus or Fable** enqueue. Do **not** leave
@@ -232,8 +232,45 @@ agent-human-stream --resume <uuid> "Follow-up …"               # backend from 
   reads Grok native ACP `streaming-json`.
 - Same live log dir (`state/opus-live/`) and registry (`state/opus-sessions.jsonl`)
   with a `backend` field. Resume hint prints `agent-human-stream --backend …`.
-- This is **local Grok Build CLI**, not Cursor `Task` land babysit. Land still
-  uses Cursor Grok unless Chase said to author on the `grok` CLI.
+- **Land and explicit Grok author use this wrapper.** Do **not** launch
+  Cursor `Task` / `cursor-grok-*` for land babysit or Grok-authored trains.
+  Composer explore stays Cursor `Task`.
+
+### Grok transport — Grok Build CLI (required)
+
+When the main agent needs a **Grok** worker (default **land babysit**, or
+author only if Chase named Grok):
+
+1. Run **Grok Build** on the local machine (`grok` on PATH, currently
+   `~/.grok/bin/grok` via `~/.local/bin/grok`). Not Cursor `Task`.
+2. Launch with the same human-stream wrapper:
+   `agent-human-stream --backend grok --name <job-slug> "<prompt>"`
+   Extra `grok` flags go **after** the prompt (`--model grok-4.6`, `--effort`,
+   `--max-turns`, …).
+3. **Cursor-only:** same monitor as Opus — Shell `block_until_ms: 0`,
+   `description`: `Grok : <job-slug> (#N)`, capture `📎 session_id=`, read
+   only `—— final ——`. Resume:
+   `agent-human-stream --backend grok --resume <uuid> "…"`.
+4. Prompt file: `/tmp/sume-grok-prompts/<job-slug>.md` (English). Same job
+   slug stem as the Opus train when this is land babysit.
+5. Do **not** route Grok land/author through Cursor `Task` / `cursor-grok-*`.
+
+Copy-paste:
+
+```bash
+mkdir -p /tmp/sume-grok-prompts
+cat > /tmp/sume-grok-prompts/<job-slug>.md <<'EOF'
+# Grok Build: land #<issue>
+Work in **English**.
+Issue: <url>
+PRs: <urls>
+HANDOFF: grok-land
+Required skill: read ~/.agents/skills/sume-gt-mq/SKILL.md
+EOF
+# Shell description: Grok : <job-slug> (#N)
+cd /path/to/repo && agent-human-stream --backend grok --name <job-slug> \
+  "$(cat /tmp/sume-grok-prompts/<job-slug>.md)"
+```
 
 ### Cursor-only — Opus / background-worker monitoring
 
@@ -295,8 +332,8 @@ follow-up already authorized (do not re-ask).
    `--name format-uifix-pdp` — never issue-only like `--name 2000`.
    Shell tool **`description`** (Cursor terminal title) must be
    `Opus : <job-slug> (#<issue>)` — same string as the Active workers board
-   Job column. Cursor `Task` workers (Grok / Composer) use
-   `Grok : <job-slug> (#N)` / `Explore : <job-slug>` the same way.
+   Job column. Grok Build Shell uses `Grok : <job-slug> (#N)`. Composer
+   `Task` uses `Explore : <job-slug>` the same way.
 2. **After spawn — make progress human-visible:** briefly tell the user what
    started **and** where to watch. The wrapper tees the human stream to
    `~/.agents/skills/sume-main-agent-orchestration/state/opus-live/<stamp>-<name>.log`
@@ -347,6 +384,7 @@ follow-up already authorized (do not re-ask).
    exact result, or the user explicitly says to wait / check now.
 8. **Bad patterns (forbidden):**
    - Cursor `Task` + `claude-opus-*` for Opus work
+   - Cursor `Task` + `cursor-grok-*` for Grok land / Grok author
    - Shell with default/long `block_until_ms` (job looks stuck / times out)
    - `claude-human-stream --cwd …` (flag does not exist — `cd` first)
    - inventing a second watcher / `AwaitShell` poll loop / `sleep` until done
@@ -367,8 +405,9 @@ whenever this chat has background workers.
 - **Refresh same turn** on: worker launch, completion/abort notification,
   steer/kill/resume that changes the live set, or when the user asks worker
   status.
-- **Truth:** alive terminal PIDs ∩ live `claude -p` / Grok Tasks (opus-live
-  logs enrich only — do not count finished jobs as live).
+- **Truth:** alive terminal PIDs ∩ live `claude-human-stream` /
+  `agent-human-stream` / `grok -p` processes (opus-live logs enrich only —
+  do not count finished jobs as live).
 - **Three lanes (Chase lock 2026-08-23):** `지금` (live) → **`스테이징`**
   (worker finished / landed, **waiting Chase confirm**) → `확인됨` (only after
   Chase says so). Never drop a finished train straight into `확인됨`.
@@ -415,7 +454,7 @@ table.
 |------|-------------|
 | Opus Shell | `Opus : <job-slug> (#<issue>)` |
 | Opus, no issue yet | `Opus : <job-slug>` |
-| Grok Task | `Grok : <job-slug> (#<issue>)` |
+| Grok Build Shell | `Grok : <job-slug> (#<issue>)` |
 | Composer explore | `Explore : <job-slug>` |
 
 Examples: `Opus : dashboard-ui-chrome (#2819)`,
@@ -432,7 +471,7 @@ the **identical** title as the live job.
 | **Chase (user)** | Product intent, locks, approvals ("그렇게 가자", merge 여부) |
 | **Main agent** (usually Cursor Grok) | Discuss in Chase’s language; survey code; draft/file issues; launch workers; status; never silently steal Opus’s implementation |
 | **Opus** (`claude-human-stream`) | BP when needed; implement in **fresh clone**; **`gt create` → `gt submit` → `gt` Ready → `gt merge` (MQ enqueue)**; **STOP** after enqueue. Never `gh pr create`. |
-| **Grok Task** | After enqueue: MQ draft CI → land on `main` → issue comment → authorized deploy/ops. Fallback: CI → label enqueue → land if Opus could not enqueue. |
+| **Grok** (`agent-human-stream --backend grok`) | After enqueue: MQ draft CI → land on `main` → issue comment → authorized deploy/ops. Fallback: CI → label enqueue → land if Opus could not enqueue. Also author if Chase named Grok. |
 | **Composer** | Explore only |
 
 #### Canonical steps
@@ -479,7 +518,8 @@ migrations, "figure out why and design the fix" asks.
      fails;
    - **STOP after enqueue confirmed** — do not babysit MQ draft / land;
      **never** fall back to `gh pr create`.
-2. **Grok 4.5** — land ops (**via Cursor Task**), as soon as Opus reports
+2. **Grok Build** — land ops (**via `agent-human-stream --backend grok`**,
+   same background-Shell recipe as Opus), as soon as Opus reports
    MQ enqueued (or on Opus completion notification):
    - babysit **MQ draft CI → land on `main` → deploy babysit** (and
      authorized flags / Railway checks);
@@ -927,8 +967,11 @@ Grok for land.
 ### Hard model rules
 
 - **Opus workers run via `claude-human-stream`, not Cursor Task.** From a Cursor
-  main agent, never spawn Opus via `Task`/`claude-opus-5-*`; use the wrapper
+  main agent, never spawn Opus via `Task`/`claude-opus-*`; use the wrapper
   (not bare `stream-json` / not plain `text` for long jobs).
+- **Grok workers run via `agent-human-stream --backend grok`, not Cursor Task.**
+  From a Cursor main agent, never spawn land/author Grok via `Task` /
+  `cursor-grok-*`. Composer explore stays `Task`.
 - **Opus owns PR authoring through MQ enqueue by default** (design/RCA when
   needed, then code through **fresh-clone `gt create` → `gt submit` → CI →
   `gt merge`**). Do **not** default Opus onto MQ draft / land / deploy babysit

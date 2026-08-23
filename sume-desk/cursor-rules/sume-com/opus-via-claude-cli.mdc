@@ -13,5 +13,7 @@ Do not fork Opus routing or monitoring here. Source of truth:
 background-worker monitoring**.
 
 From a Cursor main agent: Opus workers use `claude-human-stream` (background
-Shell); monitor via completion notification — no polling watchers. Other
-harnesses ignore Cursor-only sections.
+Shell). Grok land / Grok author use `agent-human-stream --backend grok`
+(same Shell recipe — not Cursor `Task`). Monitor via completion
+notification — no polling watchers. Other harnesses ignore Cursor-only
+sections.
