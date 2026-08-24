@@ -53,7 +53,7 @@ Harness notes (do not fork policy here):
   (questions about shipped code → `origin/main`, not dirty local main).
 - **Worker reasoning effort (always apply on user install):**
   `~/.cursor/rules/worker-reasoning-effort.mdc`
-  (code: opus mid / fable high / grok xhigh; research: grok mid,
+  (code: opus medium / fable high / grok xhigh; research: grok medium,
   opus+fable low).
 
 Re-install the pointer with

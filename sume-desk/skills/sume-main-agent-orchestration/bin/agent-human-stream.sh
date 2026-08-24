@@ -22,6 +22,15 @@ SKILL_DIR="$(cd "$ROOT/.." && pwd)"
 REGISTRY="${AGENT_HUMAN_STREAM_REGISTRY:-${CLAUDE_HUMAN_STREAM_REGISTRY:-$SKILL_DIR/state/opus-sessions.jsonl}}"
 LIVE_DIR="${AGENT_HUMAN_STREAM_LIVE_DIR:-${CLAUDE_HUMAN_STREAM_LIVE_DIR:-$SKILL_DIR/state/opus-live}}"
 
+# Grok Build CLI: xhigh|high|medium|low. Desk shorthand `mid` → `medium`.
+# Opus/Fable are unchanged (they already take medium|high|low).
+_grok_effort_wire() {
+  case "$1" in
+    mid|MID|Mid) printf '%s' medium ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
 usage() {
   cat <<'EOF'
 Human-readable wrapper around Claude Code and Grok Build headless NDJSON.
@@ -43,12 +52,14 @@ Auto backend (default):
 Claude (tokenmaxxing `claude` on this desk):
   claude -p … --output-format stream-json --verbose --permission-mode bypassPermissions
   Default --effort when omitted (code lane): opus → medium, fable → high,
-  grok → xhigh. Research must pass --effort (grok mid / opus+fable low).
+  grok → xhigh. Research must pass --effort (grok medium / opus+fable low).
 
 Grok Build (`grok` on PATH):
   grok -p … --output-format streaming-messages-json --permission-mode bypassPermissions --always-approve
   Native ACP streaming-json is also accepted by the formatter if you pass
   --output-format streaming-json after the prompt.
+  Grok --effort enum: xhigh, high, medium, low (not mid).
+  Alias: grok --effort mid → medium before invoking grok.
 
 Resume:
   --resume <uuid>   | AGENT_RESUME_SESSION / CLAUDE_RESUME_SESSION / GROK_RESUME_SESSION
@@ -167,6 +178,43 @@ if [[ "$LIST_SESSIONS" -eq 1 ]]; then
 fi
 
 if [[ "$SELF_TEST" -eq 1 ]]; then
+  _got="$(_grok_effort_wire mid)"
+  if [[ "$_got" != "medium" ]]; then
+    echo "self-test: grok effort alias mid → medium failed (got ${_got})" >&2
+    exit 1
+  fi
+  for _keep in medium high low xhigh; do
+    _got="$(_grok_effort_wire "$_keep")"
+    if [[ "$_got" != "$_keep" ]]; then
+      echo "self-test: grok effort ${_keep} should pass through (got ${_got})" >&2
+      exit 1
+    fi
+  done
+  _tmp=$(mktemp -d)
+  cat > "$_tmp/grok" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "${GROK_ARGV_FILE:?}"
+echo '{"type":"result","session_id":"00000000-0000-0000-0000-000000000000","result":"ok"}'
+EOF
+  chmod +x "$_tmp/grok"
+  GROK_ARGV_FILE="$_tmp/argv.txt" \
+    AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg.jsonl" \
+    AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live" \
+    PATH="$_tmp:$PATH" \
+    "$SOURCE" --backend grok "self-test mid alias" --effort mid >/dev/null
+  if ! grep -qx 'medium' "$_tmp/argv.txt"; then
+    echo "self-test: grok argv missing effort medium:" >&2
+    cat "$_tmp/argv.txt" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  if grep -qx 'mid' "$_tmp/argv.txt"; then
+    echo "self-test: grok argv still has bare mid:" >&2
+    cat "$_tmp/argv.txt" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  rm -rf "$_tmp"
   exec python3 "$ROOT/agent-human-stream.test.py"
 fi
 
@@ -316,9 +364,9 @@ if [[ "$BACKEND" == "claude" && "$_has_effort" -eq 0 ]]; then
   EXTRA+=(--effort "$_effort")
   echo "effort: ${_effort} (default for model=${_resolved_model:-opus}; override with --effort)" >&2
 elif [[ "$BACKEND" == "grok" && "$_has_effort" -eq 0 ]]; then
-  _effort="${AGENT_HUMAN_STREAM_EFFORT_GROK:-xhigh}"
+  _effort="$(_grok_effort_wire "${AGENT_HUMAN_STREAM_EFFORT_GROK:-xhigh}")"
   EXTRA+=(--effort "$_effort")
-  echo "effort: ${_effort} (default for grok code lane; research → --effort mid)" >&2
+  echo "effort: ${_effort} (default for grok code lane; research → --effort medium)" >&2
 fi
 
 # Grok does not accept Claude-only --verbose / stream-json name.
@@ -346,6 +394,29 @@ if [[ "$BACKEND" == "grok" && ${#EXTRA[@]} -gt 0 ]]; then
       --output-format=stream-json)
         _filtered+=(--output-format streaming-messages-json)
         echo "note: mapping --output-format stream-json → streaming-messages-json" >&2
+        _i=$((_i + 1))
+        continue
+        ;;
+      --effort|--reasoning-effort)
+        _val="${EXTRA[$((_i + 1))]:-}"
+        _wire="$(_grok_effort_wire "$_val")"
+        if [[ "$_wire" != "$_val" ]]; then
+          echo "note: mapping grok --effort ${_val} → ${_wire} (Grok CLI enum)" >&2
+        fi
+        _filtered+=("$_a" "$_wire")
+        _effort="$_wire"
+        _i=$((_i + 2))
+        continue
+        ;;
+      --effort=*|--reasoning-effort=*)
+        _flag="${_a%%=*}"
+        _val="${_a#*=}"
+        _wire="$(_grok_effort_wire "$_val")"
+        if [[ "$_wire" != "$_val" ]]; then
+          echo "note: mapping grok --effort ${_val} → ${_wire} (Grok CLI enum)" >&2
+        fi
+        _filtered+=("${_flag}=${_wire}")
+        _effort="$_wire"
         _i=$((_i + 1))
         continue
         ;;

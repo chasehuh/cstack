@@ -173,12 +173,15 @@ Pass `--effort` from the **job lane**. Cursor rule:
 
 | Lane | Opus | Fable | Grok |
 |------|------|-------|------|
-| **Code** (implement, PR, land, deploy, RCA that edits) | `medium` (mid) | `high` | `xhigh` |
-| **Research** (조사 / open-source scan / no code change) | `low` | `low` | `mid` |
+| **Code** (implement, PR, land, deploy, RCA that edits) | `medium` | `high` | `xhigh` |
+| **Research** (조사 / open-source scan / no code change) | `low` | `low` | `medium` |
 
 **Default research owner is Grok.** Most 조사 goes to
-`agent-human-stream --backend grok … --effort mid`. Opus/Fable research
+`agent-human-stream --backend grok … --effort medium`. Opus/Fable research
 only when Chase names them — still `--effort low`.
+
+Grok CLI enum is `xhigh|high|medium|low` (not `mid`). The wrapper maps
+alias `mid` → `medium` for `--backend grok` only so old launches still work.
 
 Wrapper default when `--effort` is omitted = **code lane** (Opus
 `medium`, Fable `high`, Grok `xhigh`). Research **must** pass `--effort`.
@@ -277,7 +280,7 @@ author only if Chase named Grok):
    `agent-human-stream --backend grok --name <job-slug> "<prompt>"`
    Extra `grok` flags go **after** the prompt (`--model grok-4.6`, `--effort`,
    `--max-turns`, …). Omitted `--effort` → **`xhigh`** (code/land).
-   Research → **`--effort mid`**.
+   Research → **`--effort medium`**.
 3. **Cursor-only:** same monitor as Opus — Shell `block_until_ms: 0`,
    `description`: `Grok : <job-slug> (#N)`, capture `📎 session_id=`, read
    only `—— final ——`. Resume:
