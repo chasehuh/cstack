@@ -42,7 +42,8 @@ Auto backend (default):
 
 Claude (tokenmaxxing `claude` on this desk):
   claude -p … --output-format stream-json --verbose --permission-mode bypassPermissions
-  Default --effort when omitted: opus → medium, fable → high
+  Default --effort when omitted (code lane): opus → medium, fable → high,
+  grok → xhigh. Research must pass --effort (grok mid / opus+fable low).
 
 Grok Build (`grok` on PATH):
   grok -p … --output-format streaming-messages-json --permission-mode bypassPermissions --always-approve
@@ -314,10 +315,10 @@ if [[ "$BACKEND" == "claude" && "$_has_effort" -eq 0 ]]; then
   esac
   EXTRA+=(--effort "$_effort")
   echo "effort: ${_effort} (default for model=${_resolved_model:-opus}; override with --effort)" >&2
-elif [[ "$BACKEND" == "grok" && "$_has_effort" -eq 0 && -n "${AGENT_HUMAN_STREAM_EFFORT_GROK:-}" ]]; then
-  _effort="$AGENT_HUMAN_STREAM_EFFORT_GROK"
+elif [[ "$BACKEND" == "grok" && "$_has_effort" -eq 0 ]]; then
+  _effort="${AGENT_HUMAN_STREAM_EFFORT_GROK:-xhigh}"
   EXTRA+=(--effort "$_effort")
-  echo "effort: ${_effort} (AGENT_HUMAN_STREAM_EFFORT_GROK)" >&2
+  echo "effort: ${_effort} (default for grok code lane; research → --effort mid)" >&2
 fi
 
 # Grok does not accept Claude-only --verbose / stream-json name.

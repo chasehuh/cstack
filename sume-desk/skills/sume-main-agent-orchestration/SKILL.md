@@ -78,6 +78,17 @@ The main agent may directly execute tiny coordination tasks such as reading a
 thread, creating a Linear issue, or checking a command result. It should not
 silently take over a code implementation that the user expected to be delegated.
 
+### Code SoT when answering (Chase lock 2026-08-24)
+
+Shared Cursor / local `main` is **usually dirty**. When the user **asks a
+question** about shipped product code (not “what’s in this dirty tree?”):
+
+- Read **`origin/main`** (`git fetch` if needed, then
+  `git show origin/main:<path>` / `git grep … origin/main --`).
+- Do not treat the chat workspace working tree as current trunk.
+- Implementation still uses a fresh worktree/clone. Cursor user rule:
+  `~/.cursor/rules/origin-main-sot.mdc`.
+
 ### Workers / Subagents
 
 Workers (Cursor Task subagents, Claude/Codex worker threads) should:
@@ -155,6 +166,24 @@ asks). Composer remains explore-only.
 Opus/Fable watching MQ draft CI / `main` tip / restack-while-merging unless
 Chase explicitly said that session owns land (`merge까지` / `landing까지`).
 
+### Worker reasoning effort (Chase lock 2026-08-24)
+
+Pass `--effort` from the **job lane**. Cursor rule:
+`~/.cursor/rules/worker-reasoning-effort.mdc`.
+
+| Lane | Opus | Fable | Grok |
+|------|------|-------|------|
+| **Code** (implement, PR, land, deploy, RCA that edits) | `medium` (mid) | `high` | `xhigh` |
+| **Research** (조사 / open-source scan / no code change) | `low` | `low` | `mid` |
+
+**Default research owner is Grok.** Most 조사 goes to
+`agent-human-stream --backend grok … --effort mid`. Opus/Fable research
+only when Chase names them — still `--effort low`.
+
+Wrapper default when `--effort` is omitted = **code lane** (Opus
+`medium`, Fable `high`, Grok `xhigh`). Research **must** pass `--effort`.
+Mixed research-then-implement in one worker → code lane.
+
 **Default split (Chase lock, 2026-08-05 + 2026-08-23):** The author (Opus, or
 Fable if named) owns PR authoring **through Graphite MQ enqueue** (**fresh
 clone** → code → local green → `gt create` → **`gt submit`** → wait **`gt`
@@ -177,7 +206,8 @@ When the main agent needs an **Opus** worker/subagent:
    (`~/.claude/settings.json` → `"model": "opus[1m]"`, `"effortLevel": "medium"`).
    `claude-human-stream` / `agent-human-stream --backend claude` injects
    `--effort` when omitted: **Opus → medium**, **Fable → high**
-   (override with an explicit `--effort`).
+   (code lane). Research → pass `--effort low`. See § "Worker reasoning
+   effort".
 2. Prefer the human-readable wrapper (stream-json under the hood, printable lines).
    Canonical launcher: `agent-human-stream` (Claude + Grok Build).
    Opus/Fable alias: `claude-human-stream` → `--backend claude`.
@@ -246,7 +276,8 @@ author only if Chase named Grok):
 2. Launch with the same human-stream wrapper:
    `agent-human-stream --backend grok --name <job-slug> "<prompt>"`
    Extra `grok` flags go **after** the prompt (`--model grok-4.6`, `--effort`,
-   `--max-turns`, …).
+   `--max-turns`, …). Omitted `--effort` → **`xhigh`** (code/land).
+   Research → **`--effort mid`**.
 3. **Cursor-only:** same monitor as Opus — Shell `block_until_ms: 0`,
    `description`: `Grok : <job-slug> (#N)`, capture `📎 session_id=`, read
    only `—— final ——`. Resume:
@@ -744,30 +775,17 @@ prefer **`gt merge --dry-run`**, also `gt info` / `gt log` Ready (docs:
 
 | Signal | Meaning | Action |
 |--------|---------|--------|
-| `gt merge --dry-run` → `Your stack is ready to merge` | Enqueueable | **Immediately** `gt merge --no-interactive` |
+| `gt merge --dry-run` → **`Your stack is ready to merge`** | Enqueueable | **Immediately** `gt merge --no-interactive` |
 | `gt info` / `gt log` → **`(Ready to merge)`** / **`(Ready to merge as stack)`** | Graphite says review gates met | Same — merge now |
 | **`(Waiting on CI...)`** only (no failed) | Still running | Sleep **15–30s** (default **20s**), re-probe dry-run — **no minute cap** |
+| **`Cannot determine if stack is ready to merge`** | CLI undecided — **not Ready** | Do **not** `gt merge`. One-shot required GH probe; green → `merge-queue` label (`sume-gt-mq`) |
+| `not ready to merge` | Not ready | Sleep, re-probe |
 | **`Required checks failed`** / `Failed CI` | Will never Ready by waiting | **Break immediately** — rerun ≤2 / unblock / handoff (`sume-gt-mq`) |
 
-**Cookbook (same Graphite-ready clone):**
-
-```bash
-# After gt submit --stack / gt submit — SAME session:
-while true; do
-  out=$(gt merge --dry-run --no-interactive 2>&1 || true)
-  echo "$out" | tail -20
-  if echo "$out" | grep -qiE 'ready to merge|already merging|already in the merge queue'; then
-    break
-  fi
-  # FAILED ≠ waiting (Chase 2026-08-08) — act; do not sleep for Ready
-  if echo "$out" | grep -qiE 'Required checks failed|Failed CI|checks failed'; then
-    echo "CI_FAILED — break wait; act (rerun/fix)"
-    exit 2
-  fi
-  sleep 20   # 15–30s ONLY — never default sleep 60+
-done
-gt merge --no-interactive             # enqueue MQ immediately
-```
+**Ready match is affirmative only.** Forbidden: `grep -qiE 'ready to merge'`
+(false-matches `Cannot determine if stack is ready to merge` and
+`not ready to merge`). Cookbook SoT: **`sume-gt-mq`** § Ready-signal + poll
+loop. Do not copy an older substring grep from this file or from logs.
 
 **Forbidden as the primary CI wait path on `sume-com`:**
 
@@ -904,8 +922,12 @@ GRAPHITE (hard lock):
 - After gt submit: SAME session — poll `gt merge --dry-run --no-interactive`
   every 15–30s (default 20s; NEVER sleep 60+ as the wait loop). Primary
   ready-signal is dry-run ready / gt Ready — NOT `gh pr checks` loops.
-  When dry-run says ready → immediately `gt merge --no-interactive` (break;
-  do not keep sleeping). Fallback: merge-queue label.
+  Ready = ONLY `Your stack is ready to merge` or `(Ready to merge)` /
+  as stack. Forbidden grep: substring `ready to merge` (false-matches
+  `Cannot determine if stack is ready to merge` and `not ready to merge`).
+  Affirmative ready → immediately `gt merge --no-interactive`.
+  Cannot determine → do NOT gt merge; one-shot required GH probe; if
+  green/CLEAN → merge-queue label. Already queued → STOP.
 - When dry-run says **Required checks failed** / Failed CI → **break
   immediately** (do NOT keep polling Ready). Act: ≤2 `gh run rerun --failed`
   for known flake, else minimal CI unblock → `gt submit` → dry-run → merge.

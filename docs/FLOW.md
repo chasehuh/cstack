@@ -40,6 +40,8 @@ duplicate the full SKILL into the `.mdc`.
 | `graphite-ci-ready.mdc` | Ready-signal = `gt merge --dry-run`, poll ≤30s, fail ≠ wait |
 | `active-workers-canvas.mdc` | Cursor board `canvases/active-workers-board.canvas.tsx`; Job = terminal title |
 | `chat-title-folder-prefix.mdc` | Rename chats `[workspace-folder] …` |
+| `origin-main-sot.mdc` | Code Q&A reads `origin/main`, not dirty local main |
+| `worker-reasoning-effort.mdc` | Code: opus mid / fable high / grok xhigh. Research: grok mid (opus+fable low) |
 
 ## Layer 2 — `sume-com` repo rules (install into `<sume-com>/.cursor/rules/`)
 

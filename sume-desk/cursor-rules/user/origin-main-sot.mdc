@@ -1,0 +1,23 @@
+---
+description: Answer code questions from origin/main — local main is usually dirty
+alwaysApply: true
+---
+
+# Read SoT is `origin/main`
+
+The Cursor checkout’s `main` / working tree is **usually dirty or drifted**.
+When the user **asks a question** about how the product works (survey,
+“이게 어디야?”, RCA, “origin에 있어?”):
+
+- Treat **`origin/main`** as the source of truth. `git fetch origin main`
+  if the remote tip may be stale, then read with
+  `git show origin/main:<path>` / `git grep … origin/main --`.
+- Do **not** treat this workspace’s working tree or local `HEAD` as current
+  shipped code unless they explicitly asked about **uncommitted / this
+  checkout** work.
+- Implementation still happens in a **fresh worktree or clone**. This rule
+  is for **reads while answering**, not for committing from `origin/main`
+  in the shared Cursor tree.
+
+Same idea as stay-in-workspace: the chat stays rooted here; the **code SoT
+for Q&A** is the remote trunk, not the dirty local main.

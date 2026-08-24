@@ -1,0 +1,25 @@
+---
+description: Worker reasoning effort — code vs research by model
+alwaysApply: true
+---
+
+# Worker reasoning effort (Chase lock 2026-08-24)
+
+When launching Opus / Fable / Grok via `claude-human-stream` /
+`agent-human-stream`, pass `--effort` from the **job lane**, not vibes.
+
+| Lane | Opus | Fable | Grok |
+|------|------|-------|------|
+| **Code** (implement, PR, land, deploy, RCA that edits) | `medium` (mid) | `high` | `xhigh` |
+| **Research** (조사, open-source scan, no code change) | `low` | `low` | `mid` |
+
+**Default research owner is Grok.** Opus/Fable research only when Chase
+names them — still `low`.
+
+Wrapper default when `--effort` is omitted = **code lane**
+(Opus `medium`, Fable `high`, Grok `xhigh`). Research launches **must**
+pass `--effort` (`mid` for Grok, `low` for Opus/Fable). Mixed
+research-then-implement in one worker → code lane.
+
+SoT: `~/.agents/skills/sume-main-agent-orchestration/SKILL.md`
+§ "Worker reasoning effort".

@@ -44,6 +44,13 @@ Harness notes (do not fork policy here):
   `~/.cursor/rules/active-workers-canvas.mdc`
   (maintain `canvases/active-workers-board.canvas.tsx` on launch /
   completion / steer; reconcile terminals ∩ live processes).
+- **Read SoT is `origin/main` (always apply on user install):**
+  `~/.cursor/rules/origin-main-sot.mdc`
+  (questions about shipped code → `origin/main`, not dirty local main).
+- **Worker reasoning effort (always apply on user install):**
+  `~/.cursor/rules/worker-reasoning-effort.mdc`
+  (code: opus mid / fable high / grok xhigh; research: grok mid,
+  opus+fable low).
 
 Re-install the pointer with
 `~/.agents/skills/sume-main-agent-orchestration/install-cursor-rule.sh --user`
