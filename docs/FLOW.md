@@ -39,8 +39,9 @@ duplicate the full SKILL into the `.mdc`.
 | `sume-chase-work-loop.mdc` | Discuss → issue → Opus enqueue → Grok land |
 | `opus-background-terminal.mdc` | `claude-human-stream` recipe: prompt file, `cd` not `--cwd`, `block_until_ms: 0`, title = Job |
 | `graphite-ci-ready.mdc` | Ready-signal = `gt merge --dry-run`, poll ≤30s, fail ≠ wait |
-| `active-workers-canvas.mdc` | Cursor board `canvases/active-workers-board.canvas.tsx`; Job = terminal title |
-| `end-of-turn-worker-brief.mdc` | Every turn ends with a worker-status table |
+| `status-board.mdc` | Status board: `지금` / `스테이징` / `백로그` (24h) / `확인됨` (Chase confirm = resolve) |
+| `active-workers-canvas.mdc` | Canvas surface of the status board |
+| `end-of-turn-worker-brief.mdc` | Every turn reprints the status board in chat |
 | `chat-title-folder-prefix.mdc` | Rename chats `[workspace-folder] …` |
 | `origin-main-sot.mdc` | Code Q&A reads `origin/main`, not dirty local main |
 | `worker-reasoning-effort.mdc` | Code: opus medium / fable high / grok xhigh. Research: grok medium (opus+fable low) |

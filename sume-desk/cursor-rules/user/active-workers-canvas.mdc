@@ -1,14 +1,16 @@
 ---
-description: Maintain the Active workers Canvas board whenever Opus/Grok workers change
+description: Status board canvas — same lanes as status-board.mdc
 alwaysApply: true
 ---
 
-# Active workers Canvas (Cursor main agent)
+# Status board canvas (Cursor main agent)
 
-When this Cursor chat is the **Sume main agent** and has (or just had)
-background workers — Opus via `claude-human-stream`, Grok via
-`agent-human-stream --backend grok`, Composer via `Task` — keep a live
-board canvas updated.
+Visual of the **status board**. Lanes, confirm, 24h backlog, Job titles,
+and truth source live in:
+
+`~/.cursor/rules/status-board.mdc`
+
+Do not invent a second list.
 
 ## Canvas path
 
@@ -17,85 +19,22 @@ board canvas updated.
 Example for `sume-com`:
 `/Users/huhchaewon/.cursor/projects/Users-huhchaewon-sume-sume-com/canvases/active-workers-board.canvas.tsx`
 
-Create it if missing (read `~/.cursor/skills-cursor/canvas/SKILL.md` first).
-When you mention the board to the user, link that absolute `.canvas.tsx` path.
+Create if missing (read `~/.cursor/skills-cursor/canvas/SKILL.md` first).
+Link that absolute `.canvas.tsx` path when you mention the board.
 
-## When to refresh (same turn — do not skip)
+## When to refresh (same turn)
 
-Update the canvas whenever any of these happen:
+1. Launch / completion / abort / steer / kill / resume
+2. A Job **enters 스테이징** or ages into **백로그** (≥24h, no confirm)
+3. Chase **confirms** (resolve → `확인됨`)
+4. User asks board / worker status
 
-1. **Launch** an Opus/Grok Shell or Composer `Task`
-2. **Completion / abort** notification for a worker Shell or Task
-3. **Steer / kill / resume** that changes which workers are live
-4. User asks worker status (“터미널 뭐 돌아?”, “어때?”, board check)
+Reconcile → rewrite canvas → chat reprint (`end-of-turn-worker-brief.mdc`).
 
-Do the refresh in the **same turn** as the status/handoff reply — not as a
-later nice-to-have. Keep it short: reconcile → rewrite canvas → brief chat.
-
-**Every turn** also ends with the chat table in
-`end-of-turn-worker-brief.mdc`.
-
-## Truth source (anti-overcount)
-
-Live count = intersection of:
-
-- Cursor terminals with **alive PID** + still-running worker command
-- Live `claude-human-stream` / `agent-human-stream` / `grok -p` processes
-- Recent `opus-live` logs only as enrichment — **not** as proof of liveness
-
-Drop finished workers from the “live” table immediately — move them to
-**스테이징**, not `확인됨`. Stale terminal files marked `running` with no
-process = omit.
-
-## Three lanes (Chase lock 2026-08-23)
-
-| Lane | Korean header | When |
-|------|----------------|------|
-| Live | `지금` | Process still running |
-| Staging | `스테이징` | Worker done / PR landed / MQ done — **Chase has not confirmed** |
-| Confirmed | `확인됨` | Chase explicitly confirmed (or older archive already confirmed) |
-
-**Never** auto-promote staging → confirmed. Chase must say so.
-
-## Columns to keep current
-
-**Live:** Job title (see below), terminal id, issue, started (KST), model
-(`Opus` / `Fable` / `Grok`), transport, `session_id` / agent id, latest signal.
-
-**Staging (required detail):** Job, issue **state** (OPEN/CLOSED), **why OPEN**
-if open (residual / confirm / other slices on the same mega-issue), PR +
-MQ/`main` tip `(#N)`, Graphite FF quirk if GitHub `CLOSED`/`mergedAt: null`.
-Do not leave a one-line “done” with no issue/PR status.
-
-Snapshot timestamp in the canvas header. Visible board copy follows
-`canvas-user-language` (Chase / Korean chat → Korean). Identifiers stay
-English (`#4338`, slugs). User chat stays in the user’s language.
-
-## Job title = terminal title = board Job (Chase lock 2026-08-07)
-
-Chase maps workers from the Cursor terminal list. Those rows use the Shell
-tool’s **`description`** (stored as terminal `title`). The Active workers
-board **Job** column must use the **same string**.
-
-| Kind | Exact `description` / board Job |
-|------|----------------------------------|
-| Opus Shell | `Opus : <job-slug> (#<issue>)` |
-| Opus, no issue yet | `Opus : <job-slug>` |
-| Grok Build Shell | `Grok : <job-slug> (#<issue>)` |
-| Composer explore | `Explore : <job-slug>` (optional `#N`) |
-
-Examples: `Opus : dashboard-ui-chrome (#2819)`,
-`Grok : dashboard-ui-chrome (#2819)`.
-
-- `--name` / Task slug stem stays the bare kebab (`dashboard-ui-chrome`).
-- **Forbidden board/terminal labels:** prose (“Create arch mega-issue…”,
-  “Relaunch dead #2820…”), command-comment leaks (`Cursor (# Reopen…)`).
-- On resume/steer: keep the **same** title as the live job.
+Snapshot timestamp in the header. Visible copy follows Chase’s language.
+Identifiers stay English.
 
 ## Non-goals
 
-- Not a substitute for completion-notification monitoring (still no
-  `AwaitShell` poll loops).
-- Do not block the turn on perfect design polish — accuracy of the live
-  set beats pretty layout.
-- Codex / Claude Code as main agent: ignore this rule (Cursor-only).
+- Not a substitute for completion-notification monitoring
+- Codex / Claude Code as main agent: ignore (Cursor-only)

@@ -43,14 +43,14 @@ Harness notes (do not fork policy here):
 - **Graphite MQ enqueue playbook (always apply on user install):**
   `~/.agents/skills/sume-gt-mq/SKILL.md` — required before any
   `gt submit` / `gt merge` / MQ unstick / land handoff.
-- **Active workers Canvas (always apply on user install):**
+- **Status board (always apply on user install):**
+  `~/.cursor/rules/status-board.mdc`
+  (`지금` / `스테이징` / `백로그` after 24h / `확인됨` only on Chase
+  confirm). Canvas + end-of-turn chat are the two surfaces.
+- **Status board canvas (always apply on user install):**
   `~/.cursor/rules/active-workers-canvas.mdc`
-  (maintain `canvases/active-workers-board.canvas.tsx` on launch /
-  completion / steer; reconcile terminals ∩ live processes; Job column
-  matches terminal title).
-- **End-of-turn worker brief (always apply on user install):**
+- **End-of-turn board reprint (always apply on user install):**
   `~/.cursor/rules/end-of-turn-worker-brief.mdc`
-  (every turn: one markdown table of live workers).
 - **Read SoT is `origin/main` (always apply on user install):**
   `~/.cursor/rules/origin-main-sot.mdc`
   (questions about shipped code → `origin/main`, not dirty local main).
@@ -63,9 +63,9 @@ Re-install the pointer with
 `~/.agents/skills/sume-main-agent-orchestration/install-cursor-rule.sh --user`
 and/or pass repo paths. Edit the SoT skill for policy; keep
 `sume-chase-work-loop.mdc`, `opus-background-terminal.mdc`,
-`graphite-ci-ready.mdc`, `active-workers-canvas.mdc`, and
-`end-of-turn-worker-brief.mdc` in sync when the
-loop, Shell recipe, Graphite ready-signal, board, or end-of-turn
-brief policy changes.
+`graphite-ci-ready.mdc`, `status-board.mdc`,
+`active-workers-canvas.mdc`, and `end-of-turn-worker-brief.mdc` in sync
+when the loop, Shell recipe, Graphite ready-signal, or status board
+changes.
 Enqueue/land ops SoT: `~/.agents/skills/sume-gt-mq/SKILL.md`
 (`install-symlinks.sh` in that skill dir).

@@ -1,0 +1,92 @@
+---
+description: Status board — 지금 / 스테이징 / 백로그 / 확인됨 (chat + canvas)
+alwaysApply: true
+---
+
+# Status board (Cursor main agent)
+
+One board. Two surfaces (same rows, same Job titles):
+
+| Surface | Where |
+|---------|--------|
+| Chat | Every turn — markdown tables (`end-of-turn-worker-brief.mdc`) |
+| Canvas | `canvases/active-workers-board.canvas.tsx` (`active-workers-canvas.mdc`) |
+
+Do not keep a second list. The canvas is the durable board; chat reprints
+it at end of turn. Chat copy = Chase’s language. Identifiers stay English.
+
+This is **not** a poll loop. One-shot reconcile, then rewrite both
+surfaces if the set changed.
+
+## Lanes (Chase lock 2026-08-25)
+
+| Lane | Korean | When |
+|------|--------|------|
+| Live | `지금` | Process still running |
+| Staging | `스테이징` | Work **finished** (worker done / PR / MQ / issue filed). **Chase has not confirmed.** |
+| Backlog | `백로그` | Sat in `스테이징` **≥ 24 hours** with no confirm |
+| Confirmed | `확인됨` | Chase **explicitly** confirmed — that is the only **resolve** |
+
+Clock for the 24h move: **entered staging** (worker process ended / train
+left `지금`). Not launch time.
+
+**Never** auto-resolve. Finished ≠ confirmed. `스테이징` / `백로그` →
+`확인됨` only when Chase says so (컨펌, 확인, resolve, LGTM on that Job).
+
+Confirm is per Job (or Chase names the issue). Do not clear the whole
+board because one train was confirmed.
+
+## Truth (anti-overcount)
+
+`지금` = intersection of:
+
+- Cursor terminals with **alive PID** + still-running worker command
+- Live `claude-human-stream` / `agent-human-stream` / `grok -p`
+
+Logs enrich only — not proof of liveness. Stale `running` terminal, no
+process = omit from `지금`. Finished → `스테이징` **same turn**, not
+`확인됨`.
+
+## Chat tables (every turn)
+
+Print **`지금`** and **`스테이징`** every turn. Print **`백로그`** when
+it has rows (or one `없음` row if you need to show the lane is empty
+after a 24h move). **`확인됨`** only when something resolved **this
+turn**, or Chase asked for the full board.
+
+### 지금
+
+| Job | Issue | 모델 | session_id | 시그널 |
+|-----|-------|------|------------|--------|
+
+Empty → one row `—` / `없음`.
+
+### 스테이징
+
+| Job | Issue | 왜 여기 | 노트 |
+|-----|-------|---------|------|
+
+Required: issue OPEN/CLOSED, **why still OPEN** if open, PR + MQ/`main`
+tip `(#N)`, Graphite FF quirk if needed. Not a one-line “done”.
+
+Include **entered staging** (KST) so the 24h clock is visible.
+
+### 백로그
+
+Same columns as 스테이징 + **staged since**. Still waiting for Chase
+confirm — just aged out of 스테이징.
+
+## Job title = terminal title (Chase lock 2026-08-07)
+
+| Kind | Exact Job |
+|------|-----------|
+| Opus | `Opus : <job-slug> (#<issue>)` |
+| Grok | `Grok : <job-slug> (#<issue>)` |
+| Explore | `Explore : <job-slug>` |
+
+Resume/steer keeps that string. No prose titles.
+
+## Non-goals
+
+- Not completion-notification monitoring (no `AwaitShell` poll loops)
+- Codex / Claude Code as main agent: ignore (Cursor-only)

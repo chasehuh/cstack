@@ -320,7 +320,9 @@ Cursor also installs a detailed always-apply cookbook at
 `~/.cursor/rules/opus-background-terminal.mdc` — keep that file in sync when
 this recipe changes. Active workers board policy lives at
 `~/.cursor/rules/active-workers-canvas.mdc` (see subsection below).
-End-of-turn chat tables: `~/.cursor/rules/end-of-turn-worker-brief.mdc`.
+Status board (lanes + confirm + 24h backlog):
+`~/.cursor/rules/status-board.mdc`. Chat reprint:
+`~/.cursor/rules/end-of-turn-worker-brief.mdc`.
 
 #### Copy-paste Cursor Shell recipe
 
@@ -428,39 +430,23 @@ follow-up already authorized (do not re-ask).
    - spawning a **new** Opus session when the user asked to resume an existing one
    - hiding the `live_log` path so the human cannot watch a resume
 
-### Cursor-only — Active workers Canvas
+### Cursor-only — Status board
 
-Applies only when the **main agent is Cursor**. Keep a board canvas current
-whenever this chat has background workers.
+Applies only when the **main agent is Cursor**. One board, two surfaces:
 
-- **Rule file (always-apply install):**
-  `~/.cursor/rules/active-workers-canvas.mdc`
-- **Canvas path:**
-  `~/.cursor/projects/<workspace-slug>/canvases/active-workers-board.canvas.tsx`
-- **Refresh same turn** on: worker launch, completion/abort notification,
-  steer/kill/resume that changes the live set, or when the user asks worker
-  status.
-- **Truth:** alive terminal PIDs ∩ live `claude-human-stream` /
-  `agent-human-stream` / `grok -p` processes (opus-live logs enrich only —
-  do not count finished jobs as live).
-- **Three lanes (Chase lock 2026-08-23):** `지금` (live) → **`스테이징`**
-  (worker finished / landed, **waiting Chase confirm**) → `확인됨` (only after
-  Chase says so). Never drop a finished train straight into `확인됨`.
-- **Issue / PR detail on staging + live:** issue state (OPEN/CLOSED) and
-  **why it is still OPEN** (residual, confirm, other slices). PR number, MQ /
-  `main` tip `(#N)`, Graphite FF `CLOSED`+`mergedAt: null` if that is the truth.
-- Link the absolute `.canvas.tsx` path when mentioning the board in chat.
-- Read `~/.cursor/skills-cursor/canvas/SKILL.md` before creating/editing.
+- **Definition:** `~/.cursor/rules/status-board.mdc`
+- **Canvas:** `canvases/active-workers-board.canvas.tsx`
+  (`~/.cursor/rules/active-workers-canvas.mdc`)
+- **Chat:** every turn reprints the board
+  (`~/.cursor/rules/end-of-turn-worker-brief.mdc`)
 
-### Cursor-only — End-of-turn worker brief
+Lanes: `지금` (live PIDs ∩ wrappers) → **`스테이징`** (finished, waiting
+Chase confirm) → **`백로그`** (스테이징 ≥ 24h, no confirm) → `확인됨`
+(**only** Chase confirm = resolve). Never auto-resolve.
 
-Applies only when the **main agent is Cursor**. **Every turn** ends with
-one markdown table of live workers (Chase’s chat language). Alive
-terminal PIDs ∩ live wrappers. Job = terminal title. Empty → one
-“라이브 없음” row.
-
-Cookbook: `~/.cursor/rules/end-of-turn-worker-brief.mdc`. One-shot
-reconcile only — no poll loops. Last user-visible block of the turn.
+Refresh canvas the same turn the set changes. Link the `.canvas.tsx`
+path. Read `~/.cursor/skills-cursor/canvas/SKILL.md` before create/edit.
+One-shot reconcile — no poll loops.
 
 ### Chase work loop — discuss → lock → mega-issue → Opus → Grok
 
