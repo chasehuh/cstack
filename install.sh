@@ -52,6 +52,7 @@ echo "== skills =="
 link_skill sume-main-agent-orchestration
 link_skill sume-gt-mq
 link_skill github-mega-issue
+link_skill mobidoo-live-commerce-update
 
 echo "== user Cursor rules =="
 mkdir -p "$HOME/.cursor/rules"
@@ -124,5 +125,6 @@ echo ""
 echo "Installed. Next: open sume-com in Cursor and read AGENTS.md in this repo."
 echo "SoT: ~/.agents/skills/sume-main-agent-orchestration/SKILL.md"
 echo "gt:  ~/.agents/skills/sume-gt-mq/SKILL.md"
+echo "LC:  ~/.agents/skills/mobidoo-live-commerce-update/SKILL.md"
 echo "Claude: docs/TOKENMAXXING.md (tokenmaxxing pool, not a single login)"
 echo "Do not copy API keys / PEMs / tokenmaxxing accounts.json into this repo."

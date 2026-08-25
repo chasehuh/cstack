@@ -23,6 +23,7 @@ Stage: `STOP at MQ enqueue` unless Chase said “merge까지 / landing까지”.
 | `sume-desk/skills/sume-main-agent-orchestration/` | `sume-main-agent-orchestration` | Any main-agent turn: roles, language, Opus vs Grok vs Composer, Graphite hard lock, Cursor-only monitoring |
 | `sume-desk/skills/sume-gt-mq/` | `sume-gt-mq` | **Before** every `gt submit` / `gt merge` / MQ unstick / land handoff |
 | `sume-desk/skills/github-mega-issue/` | `github-mega-issue` | Filing the durable issue the worker will execute without the chat |
+| `sume-desk/skills/mobidoo-live-commerce-update/` | `mobidoo-live-commerce-update` | **Before** any Code Storage `createCommit` / LC package push. Pull → conceive → lock diff → two-stage push (dest `mobidoo/live-commerce`, then prod Mobidoo **and** Sumelabs) |
 
 `sume-main-agent-orchestration/state/` is **not** shipped (live logs).
 The wrapper recreates it.

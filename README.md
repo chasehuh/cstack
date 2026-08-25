@@ -29,7 +29,7 @@ install.sh
 docs/FLOW.md              # map of rules → when
 docs/TOKENMAXXING.md      # local Claude = tokenmaxxing supervisor
 sume-desk/
-  skills/                 # SoT (orchestration, gt-mq, mega-issue)
+  skills/                 # SoT (orchestration, gt-mq, mega-issue, LC CS update)
   cursor-rules/user/      # ~/.cursor/rules
   cursor-rules/sume-com/  # <repo>/.cursor/rules
 ```
