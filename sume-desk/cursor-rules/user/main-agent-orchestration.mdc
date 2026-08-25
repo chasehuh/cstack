@@ -51,6 +51,10 @@ Harness notes (do not fork policy here):
   `~/.cursor/rules/active-workers-canvas.mdc`
 - **End-of-turn board reprint (always apply on user install):**
   `~/.cursor/rules/end-of-turn-worker-brief.mdc`
+- **Slack #coding-agents (always apply on user install):**
+  `~/.cursor/rules/slack-coding-agents.mdc`
+  (new Job = thread; updates = replies; `loading` / `eyes` /
+  `white_check_mark`).
 - **Read SoT is `origin/main` (always apply on user install):**
   `~/.cursor/rules/origin-main-sot.mdc`
   (questions about shipped code → `origin/main`, not dirty local main).
@@ -64,7 +68,8 @@ Re-install the pointer with
 and/or pass repo paths. Edit the SoT skill for policy; keep
 `sume-chase-work-loop.mdc`, `opus-background-terminal.mdc`,
 `graphite-ci-ready.mdc`, `status-board.mdc`,
-`active-workers-canvas.mdc`, and `end-of-turn-worker-brief.mdc` in sync
+`active-workers-canvas.mdc`, `end-of-turn-worker-brief.mdc`, and
+`slack-coding-agents.mdc` in sync
 when the loop, Shell recipe, Graphite ready-signal, or status board
 changes.
 Enqueue/land ops SoT: `~/.agents/skills/sume-gt-mq/SKILL.md`

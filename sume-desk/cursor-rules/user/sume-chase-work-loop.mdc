@@ -69,7 +69,8 @@ workers board Job column) must be:
 e.g. `Opus : dashboard-ui-chrome (#2819)`. Resume/steer keeps that exact
 string. Never prose titles (“Create arch…”, “Relaunch dead…”). Details:
 `opus-background-terminal.mdc` + `status-board.mdc` +
-`active-workers-canvas.mdc` + `end-of-turn-worker-brief.mdc`.
+`active-workers-canvas.mdc` + `end-of-turn-worker-brief.mdc` +
+`slack-coding-agents.mdc`.
 
 ```bash
 cat > /tmp/sume-opus-prompts/<job-slug>.md <<'EOF'

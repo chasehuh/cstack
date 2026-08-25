@@ -1,0 +1,66 @@
+---
+description: Slack #coding-agents — one thread per Job, updates as replies, lane reactions
+alwaysApply: true
+---
+
+# Slack #coding-agents (Cursor main agent)
+
+Channel: **`#coding-agents`** (`C0A9L7AU5HS`)
+https://sumegroup.slack.com/archives/C0A9L7AU5HS
+
+Same Jobs as the **status board** (`status-board.mdc`). Slack is the
+team-visible log. Chat/canvas do **not** show `확인됨`; Slack still
+marks resolve with a check.
+
+Do not invent a second job list.
+
+## When a Job is born
+
+If there is no parent thread for that Job yet, **post a new channel
+message** (not a reply). That message is the thread root.
+
+Parent text (keep Job = terminal title):
+
+```
+<short Korean what> — `Opus : <slug> (#N)`
+```
+
+or Grok / Explore the same way. Slack MCP as the signed-in Chase user
+(same pattern as historical “다음을 사용하여 보냄 @Cursor” posts).
+
+Then set the parent reaction to **`loading`**.
+
+Do **not** open a thread for a Job that already has a live parent.
+
+## Updates
+
+Each material change = **one reply** on that thread. Do not edit the
+parent into a changelog. Prefixes (existing desk voice):
+
+| Prefix | When |
+|--------|------|
+| `working —` | doing the work |
+| `5m —` | periodic snapshot (CI / MQ / leftover) |
+| `steer —` | direction change |
+| `HANDOFF —` | SHA / PR / leftover for the next owner |
+| `closed:` | Chase stop / train ended |
+
+One-shot. No poll loop just to write `5m —`.
+
+## Reactions = board lane (on the **parent**)
+
+| Board | Slack emoji (no colons) | When |
+|-------|-------------------------|------|
+| `지금` | `loading` | process still running |
+| `스테이징` | `eyes` | finished, waiting Chase confirm |
+| resolve | `white_check_mark` | Chase confirmed |
+
+Move the lane reaction when the board lane moves. Drop `loading` when
+leaving `지금`. `eyes` while in 스테이징/백로그. `white_check_mark`
+only on resolve (Job then drops from chat/canvas).
+
+## Non-goals
+
+- Not a substitute for the chat status board
+- Do not dump secrets / PEM / tokens
+- Codex / Claude Code as main: ignore (Cursor-only)

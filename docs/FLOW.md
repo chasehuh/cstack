@@ -42,6 +42,7 @@ duplicate the full SKILL into the `.mdc`.
 | `status-board.mdc` | Status board: `지금` / `스테이징` / `백로그` (24h). Confirm = resolve (drop; do not show `확인됨`) |
 | `active-workers-canvas.mdc` | Canvas surface of the status board |
 | `end-of-turn-worker-brief.mdc` | Every turn reprints the status board in chat |
+| `slack-coding-agents.mdc` | `#coding-agents`: new Job = thread; updates = replies; `loading` / `eyes` / `white_check_mark` |
 | `chat-title-folder-prefix.mdc` | Rename chats `[workspace-folder] …` |
 | `origin-main-sot.mdc` | Code Q&A reads `origin/main`, not dirty local main |
 | `worker-reasoning-effort.mdc` | Code: opus medium / fable high / grok xhigh. Research: grok medium (opus+fable low) |

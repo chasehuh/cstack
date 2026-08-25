@@ -5,12 +5,13 @@ alwaysApply: true
 
 # Status board (Cursor main agent)
 
-One board. Two surfaces (same rows, same Job titles):
+One board. Three surfaces (same Jobs):
 
 | Surface | Where |
 |---------|--------|
 | Chat | Every turn — markdown tables (`end-of-turn-worker-brief.mdc`) |
 | Canvas | `canvases/active-workers-board.canvas.tsx` (`active-workers-canvas.mdc`) |
+| Slack | `#coding-agents` thread + reactions (`slack-coding-agents.mdc`) |
 
 Do not keep a second list. The canvas is the durable board; chat reprints
 it at end of turn. Chat copy = Chase’s language. Identifiers stay English.

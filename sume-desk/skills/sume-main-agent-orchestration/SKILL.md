@@ -432,16 +432,20 @@ follow-up already authorized (do not re-ask).
 
 ### Cursor-only — Status board
 
-Applies only when the **main agent is Cursor**. One board, two surfaces:
+Applies only when the **main agent is Cursor**. One board, three surfaces:
 
 - **Definition:** `~/.cursor/rules/status-board.mdc`
 - **Canvas:** `canvases/active-workers-board.canvas.tsx`
   (`~/.cursor/rules/active-workers-canvas.mdc`)
 - **Chat:** every turn reprints the board
   (`~/.cursor/rules/end-of-turn-worker-brief.mdc`)
+- **Slack:** `#coding-agents` (`~/.cursor/rules/slack-coding-agents.mdc`)
+  — new Job = thread; updates = replies; reactions `loading` / `eyes` /
+  `white_check_mark`
 
 Lanes: `지금` → **`스테이징`** → **`백로그`** (≥24h). Chase confirm =
-resolve (Job drops off). **Do not show `확인됨`.** Never auto-resolve.
+resolve (Job drops off chat/canvas; Slack gets the check). Never
+auto-resolve.
 
 Refresh canvas the same turn the set changes. Link the `.canvas.tsx`
 path. Read `~/.cursor/skills-cursor/canvas/SKILL.md` before create/edit.
