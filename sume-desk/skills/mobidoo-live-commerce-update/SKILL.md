@@ -15,6 +15,14 @@ Edit the **running Format package** on Code Storage. `apps/skill-lab` in
 
 Read this skill before any `createCommit` / CS push for live-commerce.
 
+This skill is the **publish loop**. Product locks live in the **pulled CS
+package** (`SKILL.md` + `references/locks.md`). Do not invent rules from
+chat or from `apps/skill-lab`.
+
+Formats **UI / PDP / dashboard chrome** is a different SoT: GitHub
+mega-issues on `sumelabs/sume`. Do not use this skill as the author path
+for those PRs.
+
 ## Addresses
 
 One org (`sume`). Prefix is the environment.
@@ -60,7 +68,13 @@ Never echo the PEM. Never paste it into issues, PRs, or chat.
 - Record: repo id, tip commit sha, **tree sha** (`package_sha`).
 - `GET` the Format on the matching API (`api.dev` vs `api.sume.com`) and
   compare `package_sha` / `version`. If they disagree, stop and say which
-  one execute will use (CS `main` tip vs catalog pin — env-dependent).
+  one execute will use.
+- **Execute uses the catalog pin, not CS `main` tip** (Chase 2026-08-25).
+  A dest/prod CS push can land a new tip while `GET /v1/formats/…` still
+  shows the old `package_sha` / `version`. Runs keep executing the pin
+  until someone rebakes the catalog. Pushing CS ≠ live execute. After
+  every stage, report both: CS tip **and** catalog pin. Do not treat
+  “CS tip moved” as “Format run will see it.” Rebake only if Chase asks.
 
 ### 2) Conceive
 
@@ -72,6 +86,16 @@ Example: “H/A never freeze-hold; H seams hard-cut; no TTS regen.”
 **not** “copy the last avatar frame onto a talking H compose.” H is
 compose-only and **not** padded that way. H-touching seams omit
 `transition` (hard cut).
+
+**Price cards — no fake money (Chase 2026-08-25):** filled cards never
+print `00%` or `00,000원`. Those zeros belong only on the **layout
+skeleton / banner-anchor** (package lock 28) as struck examples. If a
+SKU has no real percent or won, **omit that slot and collapse** — keep
+the skeleton PNG, do not fill dummy digits. Do not “fix” the skeleton
+by putting real-looking fake prices on it.
+
+**Plan file:** `sentence_map[]` is the conception (package lock 54).
+Do not skip it on produce.
 
 ### 3) Lock the diff
 
@@ -120,6 +144,13 @@ stage 2  pull each → same diff → push
 - Scope editor / API-key grants.
 - Mixing dest key onto prod, or Sumelabs key onto `@mobidoo`.
 - Sauceflex webhook, spend-cap folklore, unless Chase added them.
+- Treating a CS tip as execute without a catalog pin match.
+- Rebaking catalog / bumping Format version unless Chase asked.
+
+Dest Formats **fire** (create run) is not this skill. Use
+`formats-api-dev-mobidoo.mdc` + `~/.sume/ops/formats-lc-0813-fire-lock.md`
+(`api.dev` + `@mobidoo` / `live-commerce`, readable webhook, loose
+`full_video`). Never paste the webhook secret.
 
 ## Local clone layout (optional)
 
@@ -133,7 +164,8 @@ first** or delete and re-clone.
 stage: 1 | 2
 repos: …
 tip_before: …
-tip_after / package_sha: …
+tip_after / CS package_sha: …
 catalog GET: host + version + package_sha
-blocked: (none | dest smoke | hunk mismatch on …)
+execute_will_use: catalog pin | (say if pin ≠ CS tip)
+blocked: (none | dest smoke | hunk mismatch on … | pin leftover)
 ```

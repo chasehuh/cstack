@@ -6,9 +6,10 @@ If this file and a skill disagree, the skill wins; fix this map.
 ## The loop (Chase, always)
 
 Discuss (same language as Chase) → lock nouns/defaults/non-goals →
-**GitHub mega-issue** (`github-mega-issue` skill) → **Fable/Opus**
-(`claude-human-stream` = `agent-human-stream --backend claude`, job slug
-2–4 kebab tokens) → fresh `/tmp` clone →
+**GitHub mega-issue** (`github-mega-issue` skill) → **Opus** (Fable only
+if Chase named Fable; `claude-human-stream` =
+`agent-human-stream --backend claude`, job slug 2–4 kebab tokens) →
+fresh `/tmp` clone →
 `gt create` → `gt submit` → poll `gt merge --dry-run` 15–30s →
 `gt merge` (MQ) → **STOP** → **Grok** land (`main` tip `(#N)`).
 
@@ -23,10 +24,20 @@ Stage: `STOP at MQ enqueue` unless Chase said “merge까지 / landing까지”.
 | `sume-desk/skills/sume-main-agent-orchestration/` | `sume-main-agent-orchestration` | Any main-agent turn: roles, language, Opus vs Grok vs Composer, Graphite hard lock, Cursor-only monitoring |
 | `sume-desk/skills/sume-gt-mq/` | `sume-gt-mq` | **Before** every `gt submit` / `gt merge` / MQ unstick / land handoff |
 | `sume-desk/skills/github-mega-issue/` | `github-mega-issue` | Filing the durable issue the worker will execute without the chat |
-| `sume-desk/skills/mobidoo-live-commerce-update/` | `mobidoo-live-commerce-update` | **Before** any Code Storage `createCommit` / LC package push. Pull → conceive → lock diff → two-stage push (dest `mobidoo/live-commerce`, then prod Mobidoo **and** Sumelabs) |
+| `sume-desk/skills/mobidoo-live-commerce-update/` | `mobidoo-live-commerce-update` | **Before** any Code Storage `createCommit` / LC package push. Pull CS (product locks live there) → conceive → lock diff → two-stage push (dest `mobidoo/live-commerce`, then prod Mobidoo **and** Sumelabs). Execute = catalog pin, not CS tip. |
 
 `sume-main-agent-orchestration/state/` is **not** shipped (live logs).
 The wrapper recreates it.
+
+## Formats — two SoTs (do not mix)
+
+| Work | SoT | Author path |
+|---|---|---|
+| Running LC **package** (assemble, banners, hold, price cards) | Code Storage repo after **pull** + `mobidoo-live-commerce-update` | CS `createCommit`, dest then both prod. Not `apps/skill-lab`. |
+| Formats **app chrome** (PDP, dashboard, fire API in sume-com) | GitHub mega-issue | Opus / `gt` on `sume-com` |
+
+Execute of a Format run uses the **catalog pin**, not the latest CS tip,
+until Chase asks to rebake.
 
 ## Layer 1 — user-global Cursor rules (`~/.cursor/rules/`)
 
@@ -40,6 +51,7 @@ duplicate the full SKILL into the `.mdc`.
 | `opus-background-terminal.mdc` | `claude-human-stream` recipe: prompt file, `cd` not `--cwd`, `block_until_ms: 0`, title = Job |
 | `graphite-ci-ready.mdc` | Ready-signal = `gt merge --dry-run`, poll ≤30s, fail ≠ wait |
 | `active-workers-canvas.mdc` | Cursor board `canvases/active-workers-board.canvas.tsx`; Job = terminal title |
+| `canvas-user-language.mdc` | Canvas visible copy = Chase’s chat language (Korean thread → Korean) |
 | `chat-title-folder-prefix.mdc` | Rename chats `[workspace-folder] …` |
 | `origin-main-sot.mdc` | Code Q&A reads `origin/main`, not dirty local main |
 | `worker-reasoning-effort.mdc` | Code: opus medium / fable high / grok xhigh. Research: grok medium (opus+fable low) |
@@ -50,7 +62,8 @@ duplicate the full SKILL into the `.mdc`.
 |---|---|
 | `stay-in-workspace.mdc` | Do not `move_agent_to_root` to a worktree |
 | `dev-only-until-release.mdc` | Default `www.dev` / Railway development |
-| `formats-api-dev-mobidoo.mdc` | Dest Formats fire: `api.dev` + `@mobidoo` / `live-commerce`, webhook.site, loose `full_video` |
+| `formats-api-dev-mobidoo.mdc` | Dest Formats **run create** (not CS publish): `api.dev` + `@mobidoo` / `live-commerce`, webhook.site, loose `full_video` |
+| `canvas-user-language.mdc` | Same as user rule; also lives in the sume-com checkout |
 | `prod-testing-sumelabs-only.mdc` | Prod smoke: Sumelabs + `chase@sume.com` + local env file only |
 | `ci-local-preflight.mdc` | Changed-gate scripts before claiming CI-ready |
 | `agents-ui-taste.mdc` | Agents chrome: sentence case, `/images` hover icons |
