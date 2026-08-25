@@ -2,7 +2,7 @@
 
 You are on **Chase’s agent desk**. This repo (`chasehuh/cstack`) is the
 **installable source of truth** for how Sume work is run: discuss → lock →
-GitHub issue → Fable/Opus through Graphite MQ → Grok land.
+GitHub issue → Opus (Fable only if named) through Graphite MQ → Grok land.
 
 Old `merge` / `audit` / `propose` copies that used to live here are
 **deprecated**. Ignore them. Use `sume-desk/` only.
@@ -24,9 +24,9 @@ Then **read**, in this order:
 3. `docs/FLOW.md` (this pack’s map of files → when to apply)
 4. `docs/TOKENMAXXING.md` — this machine’s `claude` is a **tokenmaxxing**
    supervisor (Chase/dev Max pool), not a single login and not an API key
-5. Live-commerce Code Storage publish:
+5. Formats SoT (LC package + dest fire + catalog pin):
    `~/.agents/skills/mobidoo-live-commerce-update/SKILL.md` before any
-   `createCommit` / CS push (dest first, then both prod repos)
+   `createCommit` / CS push / dest Format run create
 
 Do **not** fork those skills into chat memory. Edit the files in this repo
 and re-run `./install.sh`.

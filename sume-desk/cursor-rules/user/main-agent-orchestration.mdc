@@ -46,7 +46,7 @@ Harness notes (do not fork policy here):
 - **Status board (always apply on user install):**
   `~/.cursor/rules/status-board.mdc`
   (`지금` / `스테이징` / `백로그` after 24h; confirm drops the Job —
-  do not show `확인됨`). Canvas + chat are the two surfaces.
+  do not show `확인됨`). Canvas + chat + Slack are the surfaces.
 - **Status board canvas (always apply on user install):**
   `~/.cursor/rules/active-workers-canvas.mdc`
 - **End-of-turn board reprint (always apply on user install):**
@@ -55,6 +55,9 @@ Harness notes (do not fork policy here):
   `~/.cursor/rules/slack-coding-agents.mdc`
   (new Job = thread; updates = replies; `loading` / `eyes` /
   `white_check_mark`).
+- **Canvas language (always apply on user install):**
+  `~/.cursor/rules/canvas-user-language.mdc`
+  (visible canvas copy matches Chase’s chat language).
 - **Read SoT is `origin/main` (always apply on user install):**
   `~/.cursor/rules/origin-main-sot.mdc`
   (questions about shipped code → `origin/main`, not dirty local main).
@@ -68,8 +71,8 @@ Re-install the pointer with
 and/or pass repo paths. Edit the SoT skill for policy; keep
 `sume-chase-work-loop.mdc`, `opus-background-terminal.mdc`,
 `graphite-ci-ready.mdc`, `status-board.mdc`,
-`active-workers-canvas.mdc`, `end-of-turn-worker-brief.mdc`, and
-`slack-coding-agents.mdc` in sync
+`active-workers-canvas.mdc`, `end-of-turn-worker-brief.mdc`,
+`slack-coding-agents.mdc`, and `canvas-user-language.mdc` in sync
 when the loop, Shell recipe, Graphite ready-signal, or status board
 changes.
 Enqueue/land ops SoT: `~/.agents/skills/sume-gt-mq/SKILL.md`

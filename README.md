@@ -29,7 +29,7 @@ install.sh
 docs/FLOW.md              # map of rules → when
 docs/TOKENMAXXING.md      # local Claude = tokenmaxxing supervisor
 sume-desk/
-  skills/                 # SoT (orchestration, gt-mq, mega-issue, LC CS update)
+  skills/                 # SoT (orchestration, gt-mq, mega-issue, Formats LC)
   cursor-rules/user/      # ~/.cursor/rules
   cursor-rules/sume-com/  # <repo>/.cursor/rules
 ```
@@ -37,8 +37,9 @@ sume-desk/
 ## Flow in one line
 
 Discuss → lock → GitHub issue → `agent-human-stream` / `claude-human-stream`
-(Fable/Opus; Grok Build via `--backend grok`) →
+(Opus; Fable only if named; Grok Build via `--backend grok`) →
 fresh clone `gt submit` → `gt merge` (MQ) → STOP → Grok lands `main`.
 
-Details: `docs/FLOW.md` then the two SKILL.md files after install.
+Details: `docs/FLOW.md` then the skills after install.
+Formats (LC package + dest fire): `mobidoo-live-commerce-update`.
 Local Claude quota: `docs/TOKENMAXXING.md`.

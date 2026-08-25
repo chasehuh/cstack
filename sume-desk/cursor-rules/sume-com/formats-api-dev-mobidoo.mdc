@@ -1,15 +1,12 @@
 ---
-description: Live-commerce Format API fires — api.dev @mobidoo, readable webhook, loose output
+description: Dest live-commerce Format fire — pointer at Formats SoT
 alwaysApply: true
 ---
 
-# Formats API fire (Chase lock 2026-08-13)
+# Formats API fire (pointer)
 
-When creating a Custom Format run (`POST /v1/formats/.../runs`) for live-commerce:
+SoT: `~/.agents/skills/mobidoo-live-commerce-update/SKILL.md`
+§ **Dest fire (run create)**.
 
-1. **Host + handle:** `https://api.dev.sume.com` + `mobidoo` / `live-commerce`. Workspace **@mobidoo**. Not prod `api.sume.com`, not Sumelabs.
-2. **Webhook we can read.** `communication.mode: "webhook"` and `communication.webhook_url` = the desk **webhook.site** inbox in `~/.sume/ops/formats-lc-0813-fire-lock.md` (currently `https://webhook.site/a56f3d1a-e5cc-4a18-bdc6-71f02e535f69`). Do not fire poll-only.
-3. **Forbidden destination:** Sauceflex `https://dev.api-admin.sauceflex.com/sauce-live/v1/ai-showhost/sume-video-callback` — partner concept, not a working receiver (403). Do not use it on new creates.
-4. **Loose structured output.** `primary_output_key: "full_video"`. Schema `strict: false`, require only `full_video` (`SumeMediaFile#`). Do **not** require `opening` / `middle` / `closing`. `additionalProperties: false`.
-
-Policy SoT: `~/.sume/ops/formats-lc-0813-fire-lock.md`
+Do not fork host / webhook / schema rules here. Webhook URL may move —
+read the path named in that skill (`~/.sume/ops/formats-lc-0813-fire-lock.md`).

@@ -6,9 +6,10 @@ If this file and a skill disagree, the skill wins; fix this map.
 ## The loop (Chase, always)
 
 Discuss (same language as Chase) → lock nouns/defaults/non-goals →
-**GitHub mega-issue** (`github-mega-issue` skill) → **Fable/Opus**
-(`claude-human-stream` = `agent-human-stream --backend claude`, job slug
-2–4 kebab tokens) → fresh `/tmp` clone →
+**GitHub mega-issue** (`github-mega-issue` skill) → **Opus** (Fable only
+if Chase named Fable; `claude-human-stream` =
+`agent-human-stream --backend claude`, job slug 2–4 kebab tokens) →
+fresh `/tmp` clone →
 `gt create` → `gt submit` → poll `gt merge --dry-run` 15–30s →
 `gt merge` (MQ) → **STOP** → **Grok** land (`main` tip `(#N)`).
 
@@ -23,10 +24,12 @@ Stage: `STOP at MQ enqueue` unless Chase said “merge까지 / landing까지”.
 | `sume-desk/skills/sume-main-agent-orchestration/` | `sume-main-agent-orchestration` | Any main-agent turn: roles, language, Opus vs Grok vs Composer, Graphite hard lock, Cursor-only monitoring |
 | `sume-desk/skills/sume-gt-mq/` | `sume-gt-mq` | **Before** every `gt submit` / `gt merge` / MQ unstick / land handoff |
 | `sume-desk/skills/github-mega-issue/` | `github-mega-issue` | Filing the durable issue the worker will execute without the chat |
-| `sume-desk/skills/mobidoo-live-commerce-update/` | `mobidoo-live-commerce-update` | **Before** any Code Storage `createCommit` / LC package push. Pull → conceive → lock diff → two-stage push (dest `mobidoo/live-commerce`, then prod Mobidoo **and** Sumelabs) |
+| `sume-desk/skills/mobidoo-live-commerce-update/` | `mobidoo-live-commerce-update` | **Formats SoT** — LC package pull/push, catalog pin vs execute, dest fire. UI chrome stays mega-issue + `gt`. |
 
 `sume-main-agent-orchestration/state/` is **not** shipped (live logs).
 The wrapper recreates it.
+
+Formats policy lives **only** in that skill. Do not fork it into FLOW.
 
 ## Layer 1 — user-global Cursor rules (`~/.cursor/rules/`)
 
@@ -43,6 +46,7 @@ duplicate the full SKILL into the `.mdc`.
 | `active-workers-canvas.mdc` | Canvas surface of the status board |
 | `end-of-turn-worker-brief.mdc` | Every turn reprints the status board in chat |
 | `slack-coding-agents.mdc` | `#coding-agents`: new Job = thread; updates = replies; `loading` / `eyes` / `white_check_mark` |
+| `canvas-user-language.mdc` | Canvas visible copy = Chase’s chat language (Korean thread → Korean) |
 | `chat-title-folder-prefix.mdc` | Rename chats `[workspace-folder] …` |
 | `origin-main-sot.mdc` | Code Q&A reads `origin/main`, not dirty local main |
 | `worker-reasoning-effort.mdc` | Code: opus medium / fable high / grok xhigh. Research: grok medium (opus+fable low) |
@@ -53,7 +57,8 @@ duplicate the full SKILL into the `.mdc`.
 |---|---|
 | `stay-in-workspace.mdc` | Do not `move_agent_to_root` to a worktree |
 | `dev-only-until-release.mdc` | Default `www.dev` / Railway development |
-| `formats-api-dev-mobidoo.mdc` | Dest Formats fire: `api.dev` + `@mobidoo` / `live-commerce`, webhook.site, loose `full_video` |
+| `formats-api-dev-mobidoo.mdc` | Pointer → Formats SoT dest-fire section |
+| `canvas-user-language.mdc` | Same as user rule; also lives in the sume-com checkout |
 | `prod-testing-sumelabs-only.mdc` | Prod smoke: Sumelabs + `chase@sume.com` + local env file only |
 | `ci-local-preflight.mdc` | Changed-gate scripts before claiming CI-ready |
 | `agents-ui-taste.mdc` | Agents chrome: sentence case, `/images` hover icons |
@@ -87,10 +92,11 @@ GRAPHITE hard lock (fresh clone, no gh pr create, dry-run 20s → gt merge → S
 HANDOFF: grok-land
 EOF
 cd /path/to/sume-com && claude-human-stream --name <job-slug> \
-  "$(cat /tmp/sume-opus-prompts/<job-slug>.md)" --model fable
+  "$(cat /tmp/sume-opus-prompts/<job-slug>.md)" --model opus
 ```
 
-Shell tool: `block_until_ms: 0`, `description`: `Fable : <job-slug> (#N)`.
+Shell tool: `block_until_ms: 0`, `description`: `Opus : <job-slug> (#N)`
+(or `Fable : …` only if Chase named Fable).
 One smoke for `📎 session_id=`. Then stop waiting. Completion notification
 is the monitor.
 

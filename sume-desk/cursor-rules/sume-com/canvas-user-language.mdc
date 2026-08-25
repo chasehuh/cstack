@@ -1,0 +1,15 @@
+---
+description: Canvas visible copy matches the user's chat language
+alwaysApply: true
+---
+
+# Canvas language
+
+Any `*.canvas.tsx` you create or edit (Cursor Canvas beside chat):
+
+- All **visible** copy — titles, table headers, Callouts, Stat labels, Pills, captions — uses the **same language as the user's latest message** (same as main-agent chat).
+- Chase / Korean thread: write the canvas in **Korean**. Do not leave boards in English because they are “ops artifacts.”
+- Keep identifiers in their native form: `#4338`, `TURN_SINK_CURSOR`, SHAs, PR numbers, English code/app names.
+- Worker prompts, commits, and PR bodies stay English.
+
+This overrides older “board language English is fine” notes on the Active workers canvas.
