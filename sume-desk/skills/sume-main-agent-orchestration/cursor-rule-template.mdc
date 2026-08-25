@@ -44,6 +44,10 @@ Harness notes (do not fork policy here):
   `~/.cursor/rules/active-workers-canvas.mdc`
   (maintain `canvases/active-workers-board.canvas.tsx` on launch /
   completion / steer; reconcile terminals ∩ live processes).
+- **End-of-turn worker brief (always apply on user install):**
+  `~/.cursor/rules/end-of-turn-worker-brief.mdc`
+  (every turn: desk + Cursor Cloud worker tables; operating Cloud
+  agents are never omitted).
 - **Read SoT is `origin/main` (always apply on user install):**
   `~/.cursor/rules/origin-main-sot.mdc`
   (questions about shipped code → `origin/main`, not dirty local main).
@@ -56,7 +60,9 @@ Re-install the pointer with
 `~/.agents/skills/sume-main-agent-orchestration/install-cursor-rule.sh --user`
 and/or pass repo paths. Edit the SoT skill for policy; keep
 `sume-chase-work-loop.mdc`, `opus-background-terminal.mdc`,
-`graphite-ci-ready.mdc`, and `active-workers-canvas.mdc` in sync when the
-loop, Shell recipe, Graphite ready-signal, or board policy changes.
+`graphite-ci-ready.mdc`, `active-workers-canvas.mdc`, and
+`end-of-turn-worker-brief.mdc` in sync when the
+loop, Shell recipe, Graphite ready-signal, board, or end-of-turn
+brief policy changes.
 Enqueue/land ops SoT: `~/.agents/skills/sume-gt-mq/SKILL.md`
 (`install-symlinks.sh` in that skill dir).

@@ -32,6 +32,10 @@ Update the canvas whenever any of these happen:
 Do the refresh in the **same turn** as the status/handoff reply — not as a
 later nice-to-have. Keep it short: reconcile → rewrite canvas → brief chat.
 
+**Every turn** also ends with the chat tables in
+`end-of-turn-worker-brief.mdc` (desk `지금` + Cursor Cloud — Cloud
+operating agents are never omitted).
+
 ## Truth source (anti-overcount)
 
 Live count = intersection of:

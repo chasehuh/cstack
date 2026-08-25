@@ -320,6 +320,7 @@ Cursor also installs a detailed always-apply cookbook at
 `~/.cursor/rules/opus-background-terminal.mdc` — keep that file in sync when
 this recipe changes. Active workers board policy lives at
 `~/.cursor/rules/active-workers-canvas.mdc` (see subsection below).
+End-of-turn chat tables: `~/.cursor/rules/end-of-turn-worker-brief.mdc`.
 
 #### Copy-paste Cursor Shell recipe
 
@@ -450,6 +451,23 @@ whenever this chat has background workers.
   `main` tip `(#N)`, Graphite FF `CLOSED`+`mergedAt: null` if that is the truth.
 - Link the absolute `.canvas.tsx` path when mentioning the board in chat.
 - Read `~/.cursor/skills-cursor/canvas/SKILL.md` before creating/editing.
+
+### Cursor-only — End-of-turn worker brief
+
+Applies only when the **main agent is Cursor**. **Every turn** ends with
+markdown tables (Chase’s chat language):
+
+1. **Desk `지금`** — alive terminal PIDs ∩ live wrappers. Job = terminal
+   title. Empty → one “데스크 라이브 없음” row.
+2. **Cursor Cloud** — `list-cloud-agents` this env / same repo. **Must
+   list every operating Cloud agent** (`RUNNING`,
+   `WAITING_FOR_BACKGROUND_WORK`, `NOT_YET_STARTED`, plus this
+   `run-info` `bcId`). Never drop a Cloud row because desk workers
+   already appear. Non-`internal` IDLE boxes stay as rows;
+   `source: internal` IDLE leftovers may be one count row.
+
+Cookbook: `~/.cursor/rules/end-of-turn-worker-brief.mdc`. One-shot
+reconcile only — no poll loops. Last user-visible block of the turn.
 
 ### Chase work loop — discuss → lock → mega-issue → Opus → Grok
 
