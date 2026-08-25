@@ -40,7 +40,7 @@ duplicate the full SKILL into the `.mdc`.
 | `opus-background-terminal.mdc` | `claude-human-stream` recipe: prompt file, `cd` not `--cwd`, `block_until_ms: 0`, title = Job |
 | `graphite-ci-ready.mdc` | Ready-signal = `gt merge --dry-run`, poll ≤30s, fail ≠ wait |
 | `active-workers-canvas.mdc` | Cursor board `canvases/active-workers-board.canvas.tsx`; Job = terminal title |
-| `end-of-turn-worker-brief.mdc` | Every turn ends with desk + **Cursor Cloud** worker tables |
+| `end-of-turn-worker-brief.mdc` | Every turn ends with a worker-status table |
 | `chat-title-folder-prefix.mdc` | Rename chats `[workspace-folder] …` |
 | `origin-main-sot.mdc` | Code Q&A reads `origin/main`, not dirty local main |
 | `worker-reasoning-effort.mdc` | Code: opus medium / fable high / grok xhigh. Research: grok medium (opus+fable low) |

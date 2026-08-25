@@ -46,8 +46,7 @@ Harness notes (do not fork policy here):
   completion / steer; reconcile terminals ∩ live processes).
 - **End-of-turn worker brief (always apply on user install):**
   `~/.cursor/rules/end-of-turn-worker-brief.mdc`
-  (every turn: desk + Cursor Cloud worker tables; operating Cloud
-  agents are never omitted).
+  (every turn: one markdown table of live workers).
 - **Read SoT is `origin/main` (always apply on user install):**
   `~/.cursor/rules/origin-main-sot.mdc`
   (questions about shipped code → `origin/main`, not dirty local main).

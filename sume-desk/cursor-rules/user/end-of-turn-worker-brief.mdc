@@ -1,5 +1,5 @@
 ---
-description: End every main-agent turn with a worker-status table (desk + Cursor Cloud)
+description: End every main-agent turn with a worker-status table
 alwaysApply: true
 ---
 
@@ -10,14 +10,12 @@ with a markdown **표** of current worker status. Do not skip it because
 the turn was “just a rule edit”, a short answer, or a canvas refresh.
 
 Chat copy matches Chase’s language (Korean in this desk). Identifiers
-stay English (`#4790`, `session_id`, `bcId`).
+stay English (`#4790`, `session_id`).
 
 This is **not** a poll loop. One-shot reconcile, then the table, then
 stop. No `AwaitShell` / `sleep` watchers.
 
-## Two tables (always)
-
-### 1. Desk — `지금`
+## One table — always
 
 Live count = intersection of:
 
@@ -30,37 +28,10 @@ Job = Shell `description` / terminal title
 | Job | Issue | 모델 | session_id | 시그널 |
 |-----|-------|------|------------|--------|
 
-Empty live set → one row: `—` / `데스크 라이브 없음`.
+Empty live set → one row: `—` / `라이브 없음`.
 
-Finished this turn → do **not** keep them in `지금`. Mention in a
-one-line 스테이징 note under the tables if useful.
-
-### 2. Cursor Cloud — **무조건**
-
-If `cursor-cloud` MCP is available this turn, call
-`list-cloud-agents` (this env / same repo). **Every agent that is
-still operating must appear as its own row.** Never omit a Cloud
-worker because the desk table already has Opus/Grok.
-
-Must-list statuses (each row, no collapsing):
-
-- `RUNNING`
-- `WAITING_FOR_BACKGROUND_WORK`
-- `NOT_YET_STARTED`
-- this run (`run-info` `bcId`) even if the filter would hide it
-
-Also list non-`internal` **IDLE** boxes that are still alive
-(`desktop` / `web` / `setup` / named product runs). `source: internal`
-computerUse leftovers that are **IDLE** may be **one count row**
-(`internal IDLE N`) — not if any of those is `RUNNING`.
-
-| Name | status | source | model | bcId / URL | 시그널 |
-|------|--------|--------|-------|------------|--------|
-
-Link `https://cursor.com/agents/<bcId>` (or the tool’s `url` field).
-
-If MCP is missing / auth-failed: say so in the Cloud table, still
-list **this** run when `run-info` works.
+Finished this turn → do **not** keep them in the live table. Mention
+in a one-line 스테이징 note under the table if useful.
 
 ## When
 
@@ -73,5 +44,4 @@ mandatory in chat** even when the canvas is current.
 ## Non-goals
 
 - Not a substitute for completion-notification monitoring
-- Do not dump full `list-cloud-agents` JSON into chat
 - Codex / Claude Code as main agent: ignore this rule (Cursor-only)

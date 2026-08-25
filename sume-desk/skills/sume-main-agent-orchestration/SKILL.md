@@ -455,16 +455,9 @@ whenever this chat has background workers.
 ### Cursor-only — End-of-turn worker brief
 
 Applies only when the **main agent is Cursor**. **Every turn** ends with
-markdown tables (Chase’s chat language):
-
-1. **Desk `지금`** — alive terminal PIDs ∩ live wrappers. Job = terminal
-   title. Empty → one “데스크 라이브 없음” row.
-2. **Cursor Cloud** — `list-cloud-agents` this env / same repo. **Must
-   list every operating Cloud agent** (`RUNNING`,
-   `WAITING_FOR_BACKGROUND_WORK`, `NOT_YET_STARTED`, plus this
-   `run-info` `bcId`). Never drop a Cloud row because desk workers
-   already appear. Non-`internal` IDLE boxes stay as rows;
-   `source: internal` IDLE leftovers may be one count row.
+one markdown table of live workers (Chase’s chat language). Alive
+terminal PIDs ∩ live wrappers. Job = terminal title. Empty → one
+“라이브 없음” row.
 
 Cookbook: `~/.cursor/rules/end-of-turn-worker-brief.mdc`. One-shot
 reconcile only — no poll loops. Last user-visible block of the turn.
