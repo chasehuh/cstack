@@ -45,8 +45,8 @@ Harness notes (do not fork policy here):
   `gt submit` / `gt merge` / MQ unstick / land handoff.
 - **Status board (always apply on user install):**
   `~/.cursor/rules/status-board.mdc`
-  (`지금` / `스테이징` / `백로그` after 24h / `확인됨` only on Chase
-  confirm). Canvas + end-of-turn chat are the two surfaces.
+  (`지금` / `스테이징` / `백로그` after 24h; confirm drops the Job —
+  do not show `확인됨`). Canvas + chat are the two surfaces.
 - **Status board canvas (always apply on user install):**
   `~/.cursor/rules/active-workers-canvas.mdc`
 - **End-of-turn board reprint (always apply on user install):**

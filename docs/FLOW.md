@@ -39,7 +39,7 @@ duplicate the full SKILL into the `.mdc`.
 | `sume-chase-work-loop.mdc` | Discuss → issue → Opus enqueue → Grok land |
 | `opus-background-terminal.mdc` | `claude-human-stream` recipe: prompt file, `cd` not `--cwd`, `block_until_ms: 0`, title = Job |
 | `graphite-ci-ready.mdc` | Ready-signal = `gt merge --dry-run`, poll ≤30s, fail ≠ wait |
-| `status-board.mdc` | Status board: `지금` / `스테이징` / `백로그` (24h) / `확인됨` (Chase confirm = resolve) |
+| `status-board.mdc` | Status board: `지금` / `스테이징` / `백로그` (24h). Confirm = resolve (drop; do not show `확인됨`) |
 | `active-workers-canvas.mdc` | Canvas surface of the status board |
 | `end-of-turn-worker-brief.mdc` | Every turn reprints the status board in chat |
 | `chat-title-folder-prefix.mdc` | Rename chats `[workspace-folder] …` |

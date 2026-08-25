@@ -50,9 +50,10 @@ process = omit from `지금`. Finished → `스테이징` **same turn**, not
 ## Chat tables (every turn)
 
 Print **`지금`** and **`스테이징`** every turn. Print **`백로그`** when
-it has rows (or one `없음` row if you need to show the lane is empty
-after a 24h move). **`확인됨`** only when something resolved **this
-turn**, or Chase asked for the full board.
+it has rows.
+
+**Never show `확인됨`.** Resolve drops the Job off the board. Do not
+print a resolved table in chat or canvas.
 
 ### 지금
 

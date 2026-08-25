@@ -440,9 +440,8 @@ Applies only when the **main agent is Cursor**. One board, two surfaces:
 - **Chat:** every turn reprints the board
   (`~/.cursor/rules/end-of-turn-worker-brief.mdc`)
 
-Lanes: `지금` (live PIDs ∩ wrappers) → **`스테이징`** (finished, waiting
-Chase confirm) → **`백로그`** (스테이징 ≥ 24h, no confirm) → `확인됨`
-(**only** Chase confirm = resolve). Never auto-resolve.
+Lanes: `지금` → **`스테이징`** → **`백로그`** (≥24h). Chase confirm =
+resolve (Job drops off). **Do not show `확인됨`.** Never auto-resolve.
 
 Refresh canvas the same turn the set changes. Link the `.canvas.tsx`
 path. Read `~/.cursor/skills-cursor/canvas/SKILL.md` before create/edit.

@@ -26,7 +26,7 @@ Link that absolute `.canvas.tsx` path when you mention the board.
 
 1. Launch / completion / abort / steer / kill / resume
 2. A Job **enters 스테이징** or ages into **백로그** (≥24h, no confirm)
-3. Chase **confirms** (resolve → `확인됨`)
+3. Chase **confirms** (resolve — drop the Job; do not render `확인됨`)
 4. User asks board / worker status
 
 Reconcile → rewrite canvas → chat reprint (`end-of-turn-worker-brief.mdc`).
