@@ -9,12 +9,14 @@ One board. Three surfaces (same Jobs):
 
 | Surface | Where |
 |---------|--------|
-| Chat | Every turn — markdown tables (`end-of-turn-worker-brief.mdc`) |
+| Chat | **Work report** (self-contained) + end-of-turn tables (`end-of-turn-worker-brief.mdc`) |
 | Canvas | `canvases/active-workers-board.canvas.tsx` (`active-workers-canvas.mdc`) |
-| Slack | `#coding-agents` thread + reactions (`slack-coding-agents.mdc`) |
+| Slack | `#coding-agents` thread + reactions (`slack-coding-agents.mdc`) — team mirror, not Chase’s SoT |
 
-Do not keep a second list. The canvas is the durable board; chat reprints
-it at end of turn. Chat copy = Chase’s language. Identifiers stay English.
+Do not keep a second job list. The canvas is the durable **board**;
+chat reprints it at end of turn. The **report** lives in chat prose.
+Slack must not be the only place the work is explained. Chat copy =
+Chase’s language. Identifiers stay English.
 
 This is **not** a poll loop. One-shot reconcile, then rewrite both
 surfaces if the set changed.

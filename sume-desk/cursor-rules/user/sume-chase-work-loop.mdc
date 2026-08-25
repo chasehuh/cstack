@@ -25,7 +25,7 @@ silently become the sole implementer for work Chase expected on that flow.
 | Who | Owns |
 |-----|------|
 | Chase | Product locks, “go / defer / merge까지” |
-| Main (this chat) | Discuss (match Chase’s language), survey, issue, launch workers, brief status |
+| Main (this chat) | Discuss (match Chase’s language), survey, issue, launch workers, **self-contained chat report** (Slack is a mirror) |
 | Opus | **Default author** if Chase did not name a model. BP → fresh clone → `gt submit` → `gt merge` (MQ) → **STOP** |
 | Fable | Author **only** when Chase said Fable. Same enqueue path as Opus → **STOP** |
 | Grok | **Always** MQ land babysit after Opus **or** Fable enqueue (`agent-human-stream --backend grok`). Also author if Chase said Grok. Never Cursor `Task`. |

@@ -9,8 +9,12 @@ Channel: **`#coding-agents`** (`C0A9L7AU5HS`)
 https://sumegroup.slack.com/archives/C0A9L7AU5HS
 
 Same Jobs as the **status board** (`status-board.mdc`). Slack is the
-team-visible log. Chat/canvas do **not** show `확인됨`; Slack still
-marks resolve with a check.
+**team-visible log**. Chase’s SoT for “what happened this turn” is the
+**chat work report** (`end-of-turn-worker-brief.mdc`). Posting Slack
+does **not** let you shrink or skip that report.
+
+Chat/canvas do **not** show `확인됨`; Slack still marks resolve with a
+check.
 
 Do not invent a second job list.
 
@@ -61,6 +65,7 @@ only on resolve (Job then drops from chat/canvas).
 
 ## Non-goals
 
-- Not a substitute for the chat status board
+- Not a substitute for the **chat work report** or the chat status board
+- Do not tell Chase to read Slack to understand the turn
 - Do not dump secrets / PEM / tokens
 - Codex / Claude Code as main: ignore (Cursor-only)

@@ -437,11 +437,13 @@ Applies only when the **main agent is Cursor**. One board, three surfaces:
 - **Definition:** `~/.cursor/rules/status-board.mdc`
 - **Canvas:** `canvases/active-workers-board.canvas.tsx`
   (`~/.cursor/rules/active-workers-canvas.mdc`)
-- **Chat:** every turn reprints the board
-  (`~/.cursor/rules/end-of-turn-worker-brief.mdc`)
+- **Chat:** self-contained **work report** + board reprint
+  (`~/.cursor/rules/end-of-turn-worker-brief.mdc`). Chase must
+  understand the turn without Slack.
 - **Slack:** `#coding-agents` (`~/.cursor/rules/slack-coding-agents.mdc`)
   — new Job = thread; updates = replies; reactions `loading` / `eyes` /
-  `white_check_mark`
+  `white_check_mark`. Team mirror only — not a substitute for the chat
+  report.
 
 Lanes: `지금` → **`스테이징`** → **`백로그`** (≥24h). Chase confirm =
 resolve (Job drops off chat/canvas; Slack gets the check). Never

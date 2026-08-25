@@ -1,23 +1,50 @@
 ---
-description: End every main-agent turn by reprinting the status board
+description: Chat work report is SoT; end every turn with the status board
 alwaysApply: true
 ---
 
-# End-of-turn status board (chat)
+# End-of-turn work report + status board (chat)
 
-When this Cursor chat is the **Sume main agent**, **every turn ends**
-by reprinting the **status board** as markdown tables.
+When this Cursor chat is the **Sume main agent**, Chase reads **this
+chat**. Slack `#coding-agents` is a team mirror. It does **not** replace
+the report in this thread.
+
+## Work report (body of the turn)
+
+Write a report Chase can follow **without opening Slack, the canvas, or
+a worker log**. Same language as Chase. Do this even when you also
+posted a Slack parent or reply that turn.
+
+Required when anything material happened (plan, fire, worker signal,
+PR/MQ, dest/prod, a lock, a blocker):
+
+- What you did / found (nouns, URLs, SHAs, issue/PR numbers in the
+  prose — not “see Slack”)
+- Decisions and open waits (who owes the next lock)
+- Evidence in-line (counts, endpoints, file paths). Secrets stay out.
+
+Forbidden as the whole turn:
+
+- Board tables only
+- “Slack에 올렸다” / thread link with no body
+- Pointing Chase at `#coding-agents` to understand the work
+
+A short “nothing moved” turn still needs one sentence of state, then
+the board. Do not skip the board because the turn was a rule edit.
+
+## Status board (last block)
+
+Every turn **ends** by reprinting the **status board** as markdown
+tables. The board is an **index**, not the report.
 
 Board definition (lanes, confirm = resolve, 24h → 백로그, Job titles):
 
 `~/.cursor/rules/status-board.mdc`
 
-Do not skip because the turn was a rule edit, a short answer, or a
-canvas refresh. Last user-visible block. One-shot reconcile — no poll
-loops.
+Last user-visible block. One-shot reconcile — no poll loops.
 
 Always print **`지금`** + **`스테이징`**. Print **`백로그`** when it
-has rows. Chat language = Chase. Identifiers stay English.
+has rows. Identifiers stay English.
 
-Canvas is the same board (`active-workers-canvas.mdc`) — chat is
-mandatory even when the canvas is current.
+Canvas is the same board (`active-workers-canvas.mdc`) — chat report +
+board are mandatory even when the canvas and Slack are current.

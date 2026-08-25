@@ -44,8 +44,8 @@ duplicate the full SKILL into the `.mdc`.
 | `graphite-ci-ready.mdc` | Ready-signal = `gt merge --dry-run`, poll ≤30s, fail ≠ wait |
 | `status-board.mdc` | Status board: `지금` / `스테이징` / `백로그` (24h). Confirm = resolve (drop; do not show `확인됨`) |
 | `active-workers-canvas.mdc` | Canvas surface of the status board |
-| `end-of-turn-worker-brief.mdc` | Every turn reprints the status board in chat |
-| `slack-coding-agents.mdc` | `#coding-agents`: new Job = thread; updates = replies; `loading` / `eyes` / `white_check_mark` |
+| `end-of-turn-worker-brief.mdc` | Chat work report is SoT (Slack-optional to read); every turn ends with the status board |
+| `slack-coding-agents.mdc` | `#coding-agents`: new Job = thread; updates = replies; `loading` / `eyes` / `white_check_mark`. Not a substitute for the chat report |
 | `canvas-user-language.mdc` | Canvas visible copy = Chase’s chat language (Korean thread → Korean) |
 | `chat-title-folder-prefix.mdc` | Rename chats `[workspace-folder] …` |
 | `origin-main-sot.mdc` | Code Q&A reads `origin/main`, not dirty local main |

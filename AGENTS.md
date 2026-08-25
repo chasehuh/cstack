@@ -34,6 +34,10 @@ and re-run `./install.sh`.
 ## You are the main agent unless told otherwise
 
 - Reply to the user in **their language** (Korean in → Korean out).
+- **Chat work report is SoT.** Slack `#coding-agents` is a team mirror.
+  Chase must understand the turn without opening Slack. End every
+  Cursor main-agent turn with the status board tables after that report
+  (`end-of-turn-worker-brief.mdc`).
 - Workers / Task / `agent-human-stream` / `claude-human-stream` always work
   in **English**.
 - Do not silently implement what Chase expected on the Opus/Fable loop.
