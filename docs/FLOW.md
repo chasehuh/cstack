@@ -24,20 +24,12 @@ Stage: `STOP at MQ enqueue` unless Chase said “merge까지 / landing까지”.
 | `sume-desk/skills/sume-main-agent-orchestration/` | `sume-main-agent-orchestration` | Any main-agent turn: roles, language, Opus vs Grok vs Composer, Graphite hard lock, Cursor-only monitoring |
 | `sume-desk/skills/sume-gt-mq/` | `sume-gt-mq` | **Before** every `gt submit` / `gt merge` / MQ unstick / land handoff |
 | `sume-desk/skills/github-mega-issue/` | `github-mega-issue` | Filing the durable issue the worker will execute without the chat |
-| `sume-desk/skills/mobidoo-live-commerce-update/` | `mobidoo-live-commerce-update` | **Before** any Code Storage `createCommit` / LC package push. Pull CS (product locks live there) → conceive → lock diff → two-stage push (dest `mobidoo/live-commerce`, then prod Mobidoo **and** Sumelabs). Execute = catalog pin, not CS tip. |
+| `sume-desk/skills/mobidoo-live-commerce-update/` | `mobidoo-live-commerce-update` | **Formats SoT** — LC package pull/push, catalog pin vs execute, dest fire. UI chrome stays mega-issue + `gt`. |
 
 `sume-main-agent-orchestration/state/` is **not** shipped (live logs).
 The wrapper recreates it.
 
-## Formats — two SoTs (do not mix)
-
-| Work | SoT | Author path |
-|---|---|---|
-| Running LC **package** (assemble, banners, hold, price cards) | Code Storage repo after **pull** + `mobidoo-live-commerce-update` | CS `createCommit`, dest then both prod. Not `apps/skill-lab`. |
-| Formats **app chrome** (PDP, dashboard, fire API in sume-com) | GitHub mega-issue | Opus / `gt` on `sume-com` |
-
-Execute of a Format run uses the **catalog pin**, not the latest CS tip,
-until Chase asks to rebake.
+Formats policy lives **only** in that skill. Do not fork it into FLOW.
 
 ## Layer 1 — user-global Cursor rules (`~/.cursor/rules/`)
 
@@ -62,7 +54,7 @@ duplicate the full SKILL into the `.mdc`.
 |---|---|
 | `stay-in-workspace.mdc` | Do not `move_agent_to_root` to a worktree |
 | `dev-only-until-release.mdc` | Default `www.dev` / Railway development |
-| `formats-api-dev-mobidoo.mdc` | Dest Formats **run create** (not CS publish): `api.dev` + `@mobidoo` / `live-commerce`, webhook.site, loose `full_video` |
+| `formats-api-dev-mobidoo.mdc` | Pointer → Formats SoT dest-fire section |
 | `canvas-user-language.mdc` | Same as user rule; also lives in the sume-com checkout |
 | `prod-testing-sumelabs-only.mdc` | Prod smoke: Sumelabs + `chase@sume.com` + local env file only |
 | `ci-local-preflight.mdc` | Changed-gate scripts before claiming CI-ready |
@@ -97,10 +89,11 @@ GRAPHITE hard lock (fresh clone, no gh pr create, dry-run 20s → gt merge → S
 HANDOFF: grok-land
 EOF
 cd /path/to/sume-com && claude-human-stream --name <job-slug> \
-  "$(cat /tmp/sume-opus-prompts/<job-slug>.md)" --model fable
+  "$(cat /tmp/sume-opus-prompts/<job-slug>.md)" --model opus
 ```
 
-Shell tool: `block_until_ms: 0`, `description`: `Fable : <job-slug> (#N)`.
+Shell tool: `block_until_ms: 0`, `description`: `Opus : <job-slug> (#N)`
+(or `Fable : …` only if Chase named Fable).
 One smoke for `📎 session_id=`. Then stop waiting. Completion notification
 is the monitor.
 
