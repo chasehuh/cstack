@@ -4,11 +4,12 @@
 #   agent-human-stream "Audit #1708 …"
 #   agent-human-stream --backend grok --name land-4414 "Watch MQ …"
 #   agent-human-stream --resume <uuid> "Follow-up …"
+#   agent-human-stream --prompt-file /tmp/sume-grok-prompts/job.md
 #   claude-human-stream "…"          # alias: --backend claude
 #
 # Extra backend flags go after the prompt:
 #   agent-human-stream "…" --model opus
-#   agent-human-stream --backend grok "…" --model grok-4.6 --effort high
+#   agent-human-stream --backend grok --prompt-file job.md --effort high
 set -euo pipefail
 
 SOURCE=${BASH_SOURCE[0]}
@@ -36,9 +37,10 @@ usage() {
 Human-readable wrapper around Claude Code and Grok Build headless NDJSON.
 
   agent-human-stream [--backend claude|grok|auto] [--name <slug>] <prompt> [backend flags…]
+  agent-human-stream --prompt-file <path>         # read prompt after flags; no $(cat)
   agent-human-stream --claude "…"                 # same as --backend claude
   agent-human-stream --grok "…"                   # same as --backend grok
-  agent-human-stream --resume <uuid> "Follow-up"
+  agent-human-stream --resume <uuid> --prompt-file <path>
   agent-human-stream --sessions
   agent-human-stream --self-test
 
@@ -83,6 +85,7 @@ FORK=0
 LIST_SESSIONS=0
 SELF_TEST=0
 PROMPT=""
+PROMPT_FILE=""
 EXTRA=()
 
 while [[ $# -gt 0 ]]; do
@@ -143,6 +146,18 @@ while [[ $# -gt 0 ]]; do
       FORK=1
       shift
       ;;
+    --prompt-file)
+      if [[ $# -lt 2 || "$2" == -* ]]; then
+        echo "error: --prompt-file requires a path" >&2
+        exit 2
+      fi
+      PROMPT_FILE=$2
+      shift 2
+      ;;
+    --prompt-file=*)
+      PROMPT_FILE=${1#--prompt-file=}
+      shift
+      ;;
     --)
       shift
       if [[ $# -lt 1 ]]; then
@@ -155,6 +170,12 @@ while [[ $# -gt 0 ]]; do
       break
       ;;
     -*)
+      # --prompt-file stands in for the positional prompt, so leftover flags
+      # are backend extras (--effort, --model, …).
+      if [[ -n "$PROMPT_FILE" ]]; then
+        EXTRA=("$@")
+        break
+      fi
       echo "error: unknown wrapper option: $1 (wrapper flags before prompt; backend flags after)" >&2
       echo "run: $0 --help" >&2
       exit 2
@@ -214,13 +235,45 @@ EOF
     rm -rf "$_tmp"
     exit 1
   fi
+  echo "prompt-file self-test ok" > "$_tmp/p.md"
+  GROK_ARGV_FILE="$_tmp/argv-file.txt" \
+    AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg.jsonl" \
+    AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live" \
+    PATH="$_tmp:$PATH" \
+    "$SOURCE" --backend grok --prompt-file "$_tmp/p.md" --effort high >/dev/null
+  if ! grep -q 'prompt-file self-test ok' "$_tmp/argv-file.txt"; then
+    echo "self-test: --prompt-file did not reach grok -p:" >&2
+    cat "$_tmp/argv-file.txt" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
   rm -rf "$_tmp"
   exec python3 "$ROOT/agent-human-stream.test.py"
 fi
 
+if [[ -n "$PROMPT_FILE" ]]; then
+  if [[ ! -f "$PROMPT_FILE" ]]; then
+    echo "error: --prompt-file not found: $PROMPT_FILE" >&2
+    exit 2
+  fi
+  if [[ ! -s "$PROMPT_FILE" ]]; then
+    echo "error: --prompt-file is empty: $PROMPT_FILE" >&2
+    exit 2
+  fi
+  if [[ -n "$PROMPT" ]]; then
+    echo "error: use either --prompt-file or a positional prompt, not both" >&2
+    exit 2
+  fi
+  PROMPT=$(cat "$PROMPT_FILE")
+  if [[ -z "$PROMPT" ]]; then
+    echo "error: --prompt-file read empty: $PROMPT_FILE" >&2
+    exit 2
+  fi
+fi
+
 if [[ -z "$PROMPT" ]]; then
   echo "error: missing prompt" >&2
-  echo "usage: $0 [--backend claude|grok|auto] [--resume <uuid>|--continue] [--name <label>] <prompt> [backend args...]" >&2
+  echo "usage: $0 [--backend claude|grok|auto] [--resume <uuid>|--continue] [--name <label>] (--prompt-file <path> | <prompt>) [backend args...]" >&2
   exit 2
 fi
 

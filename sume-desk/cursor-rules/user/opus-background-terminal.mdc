@@ -27,13 +27,22 @@ land): `~/.cursor/rules/sume-chase-work-loop.mdc`.
 
 ## Correct launch pattern (copy this)
 
-1. Write the English worker prompt to a file (long prompts break quoting):
+**Do not** `Write` a prompt file and `$(cat …)` it from a **parallel** Shell
+in the same turn. Cloud Write is not visible to that Shell yet →
+`cat: No such file` → wrapper `error: missing prompt` → **exit 2** in ~120ms.
+
+**Do** write the prompt **inside the launch Shell** (heredoc), then pass
+`--prompt-file` (wrapper reads the file; no empty `$(cat)` argv).
+
+1. One Shell command writes + launches (long prompts stay in the heredoc):
 
 ```bash
+mkdir -p /tmp/sume-opus-prompts
 cat > /tmp/sume-opus-prompts/<job-slug>.md <<'EOF'
 # Opus: …
 Work in **English**. …
 EOF
+test -s /tmp/sume-opus-prompts/<job-slug>.md
 ```
 
 `<job-slug>` = 2–4 kebab tokens describing the job (aim for 3), e.g.
@@ -60,26 +69,34 @@ EOF
 
 ```bash
 # Shell tool: description = "Opus : <job-slug> (#<issue>)"
-cd /Users/huhchaewon/sume/sume-com && claude-human-stream \
-  --name <job-slug> \
-  "$(cat /tmp/sume-opus-prompts/<job-slug>.md)"
+# Same command as the heredoc above — one Shell, then:
+cd /Users/huhchaewon/sume/sume-com && sume-bg-launch \
+  --backend claude --name <job-slug> \
+  --prompt-file /tmp/sume-opus-prompts/<job-slug>.md
 ```
 
-Resume (same Claude session — prefer this over a new worker):
+Resume / steer (same session — prefer this over a new worker).
+`sume-bg-launch --resume` **kills older wrappers** on that uuid first
+(two `grok -p --resume` on one session = empty live log / hang).
 
 ```bash
 # Shell tool: description = same "Opus : <job-slug> (#<issue>)" as the live job
-cd /Users/huhchaewon/sume/sume-com && claude-human-stream \
-  --name <job-slug> \
+cd /Users/huhchaewon/sume/sume-com && sume-bg-launch \
+  --backend claude --name <job-slug> \
   --resume <session_uuid> \
-  "$(cat /tmp/sume-opus-prompts/<follow-up>.md)"
+  --prompt-file /tmp/sume-opus-prompts/<follow-up>.md
 ```
+
+Grok: `--backend grok` and `description`: `Grok : <job-slug> (#N)`,
+backend flags after `--` (`-- --effort high`).
 
 Use the **same `cd` repo path** the original session used, or resume fails.
 
-3. **One short smoke check only** (optional): `AwaitShell` / read the terminal
-   until `📎 session_id=` appears (~10–20s). Store that uuid in-thread.
-   Then **stop waiting**. Do not poll for completion.
+3. **Required smoke (once, not a poll):** read the new terminal file.
+   Alive = `📎 session_id=` (or wrapper `—— agent live ——` + grok/claude lines).
+   Dead = `exit_code` in ~1s (usually 2 + `missing prompt` / `not found`).
+   Dead → fix the prompt file and relaunch **this turn**. Do not tell Chase
+   the worker is up. Then **stop waiting**. Do not poll for completion.
 
 4. Tell the user briefly:
    - what started + title (`Opus : <job-slug> (#N)`) / `--name`
@@ -131,7 +148,9 @@ as the steer launch — do not leave the old terminal running.
 | `AwaitShell` / sleep until done | Turns main into a polling loop; user said not to wait | Completion notification |
 | `claude-human-stream --cwd …` | Flag does not exist | `cd … && claude-human-stream` |
 | Fresh Opus when user said "resume" | Loses audit/BP context | `--resume <uuid>` same cwd |
-| Inline mega-prompt in Shell arg | Quoting/length failures | `/tmp/…/*.md` + `$(cat …)` |
+| Inline mega-prompt in Shell arg | Quoting/length failures | heredoc in the **same** Shell + `--prompt-file` |
+| `Write` prompt + parallel `$(cat)` | File not visible yet → exit 2 `missing prompt` | One Shell: heredoc then `--prompt-file` |
+| Second `--resume` without killing the first | Empty live log / hung grok | `sume-bg-launch --resume` (stops old wrappers) |
 | Dump full Opus tool log into chat | Noise | `—— final ——` only |
 | Claim done before notification | False completion | Wait for `exit_code` / final block |
 | `--name 2000` / issue-only labels | Chase can't skim terminal list | `format-uifix-pdp` (+ optional `-2000`) |

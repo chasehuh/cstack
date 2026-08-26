@@ -285,9 +285,13 @@ author only if Chase named Grok):
    `description`: `Grok : <job-slug> (#N)`, capture `📎 session_id=`, read
    only `—— final ——`. Resume:
    `agent-human-stream --backend grok --resume <uuid> "…"`.
-4. Prompt file: `/tmp/sume-grok-prompts/<job-slug>.md` (English). Same job
-   slug stem as the Opus train when this is land babysit.
+4. Prompt file: write it **in the same Shell** as the launch (heredoc).
+   Do **not** `Write` the file and `$(cat)` it from a parallel Shell — that
+   exits 2 (`missing prompt`) before Grok starts. Pass `--prompt-file`.
+   Same job slug stem as the Opus train when this is land babysit.
 5. Do **not** route Grok land/author through Cursor `Task` / `cursor-grok-*`.
+6. Steer / second `--resume`: use `sume-bg-launch` so the previous wrapper
+   on that uuid is stopped first (two `grok -p --resume` = empty live log).
 
 Copy-paste:
 
@@ -302,8 +306,8 @@ HANDOFF: grok-land
 Required skill: read ~/.agents/skills/sume-gt-mq/SKILL.md
 EOF
 # Shell description: Grok : <job-slug> (#N)
-cd /path/to/repo && agent-human-stream --backend grok --name <job-slug> \
-  "$(cat /tmp/sume-grok-prompts/<job-slug>.md)"
+cd /path/to/repo && sume-bg-launch --backend grok --name <job-slug> \
+  --prompt-file /tmp/sume-grok-prompts/<job-slug>.md -- --effort xhigh
 ```
 
 ### Cursor-only — Opus / background-worker monitoring
@@ -327,7 +331,7 @@ Status board (lanes + confirm + 24h backlog):
 #### Copy-paste Cursor Shell recipe
 
 ```bash
-# 1) Prompt file (English). Avoid huge inline Shell strings.
+# 1) Prompt file IN THIS SHELL (English). Do not Write + parallel $(cat).
 mkdir -p /tmp/sume-opus-prompts
 cat > /tmp/sume-opus-prompts/<job>.md <<'EOF'
 # Opus: …
@@ -339,24 +343,23 @@ EOF
 #      Opus : <job-slug> (#<issue>)
 #    Same string as Active workers board Job column. Resume/steer: identical.
 #    There is NO --cwd flag — cd first. Same cd path required for --resume.
-cd /path/to/repo && claude-human-stream \
-  --name <job-slug> \
-  "$(cat /tmp/sume-opus-prompts/<job>.md)"
+cd /path/to/repo && sume-bg-launch --backend claude --name <job-slug> \
+  --prompt-file /tmp/sume-opus-prompts/<job>.md
 
-# Resume (do not start a fresh worker when the user said "resume"):
+# Resume / steer (kills older wrappers on this uuid first):
 # description = same "Opus : <job-slug> (#N)" as the live job
-cd /path/to/repo && claude-human-stream \
-  --name <job-slug> \
+cd /path/to/repo && sume-bg-launch --backend claude --name <job-slug> \
   --resume <session_uuid> \
-  "$(cat /tmp/sume-opus-prompts/<follow-up>.md)"
+  --prompt-file /tmp/sume-opus-prompts/<follow-up>.md
 ```
 
 `<job-slug>` = § "Worker slug naming" (e.g. `format-uifix-pdp`, not `2000`).
 Terminal/board title = `Opus : <job-slug> (#N)` — see § "Worker slug naming".
 
-After spawn: optional one-shot wait until `📎 session_id=` prints (~10–20s),
-store the uuid, tell the user `session_id` + `live_log` +
-`tail -f …/opus-live/LATEST.log`, then **return control**. Do **not** poll.
+After spawn: **required one-shot** read of the terminal file. Alive =
+`📎 session_id=`. Dead = `exit_code` in ~1s (`missing prompt` / not found).
+Dead → fix and relaunch this turn; do not tell Chase it is up. Then
+**return control**. Do **not** poll.
 
 On Cursor **completion notification** for that Shell: read only
 `📎 session_id=` + `—— final ——`, brief user update, then run any standing
