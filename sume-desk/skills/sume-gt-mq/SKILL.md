@@ -25,6 +25,45 @@ Repo ops doc: `docs/operations/pr-stack-and-merge-queue.md` (in sume-com).
 
 ---
 
+## 완료 = on `origin/main` `(#N)` (Chase lock 2026-08-26)
+
+**Nobody tells Chase “완료 / done / completed / landed” until the change
+is actually on trunk.**
+
+Proof (required before those words):
+
+```bash
+git fetch origin main
+git log origin/main --oneline --grep='(#N)'   # or the landed SHA
+```
+
+The log line must exist. Graphite FF may show GitHub `CLOSED` /
+`mergedAt: null` — that is still landed **only if** `origin/main` has
+`(#N)`.
+
+**Not 완료** (do not say it, do not write a done report that reads as
+finished to Chase):
+
+- PR opened / Graphite “Your changes” still lists it
+- PR-branch CI green / `gt` Ready / `CLEAN`
+- Enqueued / `merge-queue` label / MQ draft open
+- `HANDOFF: grok-land` / author STOP after enqueue
+- Worker process exited
+
+Author **may** STOP after enqueue (role split). That report must say
+**`LANDED: no`** and **`NOT 완료`**. It is a handoff, not a finish.
+
+**Land owner must not STOP at enqueue.** Stay until `origin/main` has
+`(#N)`. MQ eject → re-enqueue **same session**. Forbidden: land worker
+exits with `HANDOFF: grok-land` (that is handing off to yourself) or
+“back in the queue, session stops.”
+
+Main agent: never translate enqueue / green checks into “완료됐습니다”
+to Chase. Launch or resume land. Graphite leftover “Your changes” =
+land still open.
+
+---
+
 ## When you MUST read this skill
 
 Read this file **before** any of:
@@ -49,9 +88,9 @@ Required skill: read ~/.agents/skills/sume-gt-mq/SKILL.md before gt submit/merge
 
 | Role | Owns | Must not |
 |------|------|----------|
-| **Opus** (author session) | Fresh clone → code → `gt submit` → wait **`gt` Ready** → **`gt merge`** → enqueue evidence → **STOP** | Exit before enqueue; land babysit; touch other trains’ PRs |
-| **Grok land** | One **owned PR set** only; draft CI → `main` tip `(#N)`; unstick **that** set | Re-enqueue if already queued; `gt track` thrash; other stacks |
-| **Main agent** | Launch / steer / board; launch Grok after enqueue | Mid-flight label/empty-commit on a live owner’s PRs (unless owner dead) |
+| **Opus** (author session) | Fresh clone → code → `gt submit` → wait **`gt` Ready** → **`gt merge`** → enqueue evidence → **STOP** with `LANDED: no` / `NOT 완료` | Exit before enqueue; say 완료; babysit other trains’ PRs |
+| **Grok land** | One **owned PR set** only; enqueue if needed → draft CI → **`origin/main` `(#N)`**; re-enqueue on eject | STOP at enqueue; say 완료 before main tip; `gt track` thrash; other stacks |
+| **Main agent** | Launch / steer / board; launch Grok after enqueue; **완료 to Chase only after main tip** | Tell Chase 완료 on enqueue/green CI; mid-flight steal of a live owner’s PRs |
 
 **Ownership rule:** one job slug ↔ one PR stack. Parallel trains = parallel
 owners. Never two workers `gt merge` / empty-commit / restack the same head.
@@ -74,7 +113,9 @@ owners. Never two workers `gt merge` / empty-commit / restack the same head.
    `graphite-ci-ready.mdc`).
 6. **Opus default enqueue:** `gt merge --no-interactive` (same clone).  
    Fallback: `gh pr edit <N> --add-label merge-queue`.
-7. **STOP after enqueue confirmed.** Grok owns land unless Chase said otherwise.
+7. **Author STOP after enqueue is a handoff, not 완료.** Land owner
+   stays until `origin/main` has `(#N)`. Grok owns land unless Chase
+   said the author owns land (`merge까지` / `landing까지`).
 
 ---
 
@@ -173,7 +214,10 @@ when `gt` already says Ready / dry-run ready.
 fresh clone → gt init → gt create → commit(s) → gt submit [--stack]
   → poll gt merge --dry-run every 15–30s (same session, no minute cap)
   → dry-run ready → gt merge --no-interactive immediately
-  → enqueue evidence → STOP → HANDOFF: grok-land
+  → enqueue evidence
+  → AUTHOR: STOP + LANDED: no + NOT 완료 + HANDOFF: grok-land
+  → LAND: do not STOP — watch MQ → re-enqueue on eject → origin/main (#N)
+  → only then STATUS: landed (Chase 완료)
 ```
 
 Stack: **all layers one session** → `gt submit --stack` → one `gt merge` for
@@ -189,8 +233,10 @@ At least one of:
 - `merge-queue` label present on the PR(s)
 - Graphite activity / MQ draft reference
 
-Plus: clone path + Graphite URL + GitHub PR URL(s) + `HANDOFF: grok-land`
-(or `grok-ci-merge`).
+Plus: clone path + Graphite URL + GitHub PR URL(s) + **`LANDED: no`** +
+**`NOT 완료`** + `HANDOFF: grok-land` (or `grok-ci-merge`).
+
+Author enqueue evidence is **not** a Chase-facing “done.”
 
 ---
 
@@ -265,17 +311,27 @@ PR forever.”
 
 ---
 
-## Grok land (after enqueue)
+## Grok land (after enqueue — stay until main)
 
-1. **Do not re-enqueue** if already queued.
+1. **Do not re-enqueue** if already queued **and still in MQ**.
+   Evicted / labels empty / Graphite “Your changes” leftover →
+   **re-enqueue same session**. Do not exit.
 2. Own **only** the handed-off PR numbers.
 3. Watch MQ draft CI; act on red only.
-4. Confirm `git log origin/main` contains `(#N)`.
-5. Issue comment + STOP.
+4. **Do not STOP / do not say 완료** until
+   `git fetch origin main && git log origin/main --oneline --grep='(#N)'`
+   shows the commit.
+5. Issue comment + STOP **only after** that proof.
+
+Forbidden land exits:
+
+- `HANDOFF: grok-land` (you **are** land)
+- “back in the queue, this session stops”
+- Done report that only lists enqueue evidence
 
 `HANDOFF: grok-ci-merge`: wait ready → **label** (no clone for `gt merge`) →
-land. If PR never Graphite-bound → reject; repair with fresh-clone `gt submit`
-first.
+**stay until main tip**. If PR never Graphite-bound → reject; repair with
+fresh-clone `gt submit` first.
 
 Grok land from a Cursor main agent: **`agent-human-stream --backend grok`**
 in a background Shell (`block_until_ms: 0`, title `Grok : <job-slug> (#N)`).
@@ -309,11 +365,17 @@ GRAPHITE (hard lock):
 - Forbidden: ScheduleWakeup/Monitor/background-wait then exit before enqueue
   evidence; “I’ll merge when checks settle” then end session. Stay in-session
   until enqueue confirmed (no minute cap).
-- STOP immediately after enqueue confirmed. Do NOT babysit MQ draft / main tip.
+- Author STOP after enqueue is a **handoff**, not 완료. Do NOT babysit MQ
+  draft / main tip unless this session owns land.
 - Own only this train’s PRs. Do not touch other stacks.
-- Done report: clone path + Graphite URL + GitHub PR URL(s) + enqueue evidence
-  + STOP. HANDOFF: grok-land
+- Done report: clone path + Graphite URL + GitHub PR URL(s) + enqueue
+  evidence + **LANDED: no** + **NOT 완료** + STOP. HANDOFF: grok-land
+- Never tell Chase 완료 / done / landed until `origin/main` has `(#N)`.
 ```
+
+**Grok land prompt must also say:** stay until `origin/main` `(#N)`;
+re-enqueue on eject; forbidden to STOP at enqueue or write `HANDOFF:
+grok-land` from the land session.
 
 ---
 

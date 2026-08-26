@@ -26,9 +26,9 @@ silently become the sole implementer for work Chase expected on that flow.
 |-----|------|
 | Chase | Product locks, “go / defer / merge까지” |
 | Main (this chat) | Discuss (match Chase’s language), survey, issue, launch workers, **self-contained chat report** (Slack is a mirror) |
-| Opus | **Default author** if Chase did not name a model. BP → fresh clone → `gt submit` → `gt merge` (MQ) → **STOP** |
-| Fable | Author **only** when Chase said Fable. Same enqueue path as Opus → **STOP** |
-| Grok | **Always** MQ land babysit after Opus **or** Fable enqueue (`agent-human-stream --backend grok`). Also author if Chase said Grok. Never Cursor `Task`. |
+| Opus | **Default author** if Chase did not name a model. BP → fresh clone → `gt submit` → `gt merge` (MQ) → **STOP** with `LANDED: no` / `NOT 완료` |
+| Fable | Author **only** when Chase said Fable. Same enqueue path as Opus → **STOP** (`LANDED: no`) |
+| Grok | **Always** MQ land babysit after Opus **or** Fable enqueue (`agent-human-stream --backend grok`) — **stay until `origin/main` `(#N)`**. Also author if Chase said Grok. Never Cursor `Task`. |
 | Composer | Explore only |
 
 **Default author = Opus.** **Default land owner = Grok** after Opus/Fable
@@ -77,8 +77,9 @@ cat > /tmp/sume-opus-prompts/<job-slug>.md <<'EOF'
 Work in **English**.
 Issue: <url>
 Chase locks: …
-Stage: BP → fresh clone → implement → gt create → gt submit → dry-run poll 15–30s → gt merge → STOP
+Stage: BP → fresh clone → implement → gt create → gt submit → dry-run poll 15–30s → gt merge → STOP with LANDED: no / NOT 완료
 HANDOFF: grok-land
+Chase 완료 only after origin/main has (#N). Enqueue is not 완료.
 
 Required skill: read ~/.agents/skills/sume-gt-mq/SKILL.md before any gt submit/merge.
 
@@ -107,11 +108,12 @@ GRAPHITE (hard lock):
 - Do not treat ignored Vercel rows or Graphite mergeability_check alone
   as “CI not done” when gt already says Ready.
 - Own only this train’s PRs. Do not touch other stacks.
-- STOP immediately after enqueue confirmed. Do NOT babysit MQ draft /
-  main tip / restack-while-merging.
+- Author STOP after enqueue is a handoff, not 완료. Do NOT babysit MQ
+  draft / main tip / restack-while-merging unless this session owns land.
 - Follow the BP / issue locks exactly.
 - Done report: clone path + Graphite URL + GitHub PR URL + enqueue evidence
-  + STOP. HANDOFF: grok-land
+  + LANDED: no + NOT 완료 + STOP. HANDOFF: grok-land
+- Never tell Chase 완료 / done / landed until origin/main has (#N).
 EOF
 cd <repo> && claude-human-stream --name <job-slug> "$(cat /tmp/sume-opus-prompts/<job-slug>.md)"
 ```
@@ -133,12 +135,15 @@ first-class like `gh` — never author with `gh pr create` on `sume-com`.
 3. If MQ enqueued (or PRs open) and land ≠ Opus: **launch Grok land babysit
    immediately** via `agent-human-stream --backend grok` (authorized by this
    loop — do not re-ask “머지할까요?”). Never Cursor `Task` / `cursor-grok-*`.
+   **Do not tell Chase 완료** — enqueue is not landed.
 4. Stack / PR → Graphite MQ. **Opus should already have enqueued** via
-   `gt merge` (fallback label). Grok watches draft CI → confirm land via
-   `main` tip (`(#N)`), not GitHub `mergedAt` (Graphite FF often leaves
-   `mergedAt: null` / state `CLOSED`). Do not thrash restack while Graphite
-   says “already merging” / draft CI is running. If Opus used
-   `HANDOFF: grok-ci-merge`, Grok does CI → label → land.
+   `gt merge` (fallback label). Grok watches draft CI → **stays until**
+   `origin/main` has `(#N)` (re-enqueue on eject; do not STOP at enqueue).
+   Not GitHub `mergedAt` (Graphite FF often leaves `mergedAt: null` /
+   state `CLOSED`). Do not thrash restack while Graphite says “already
+   merging” / draft CI is running. If Opus used `HANDOFF: grok-ci-merge`,
+   Grok does CI → label → stay until main tip.
+5. Say **완료** to Chase only after that `origin/main` proof.
 
 ### 7) Residuals
 Leave issue OPEN with an explicit residual, or close when AC met. Smoke/QA
@@ -173,7 +178,9 @@ workers: follow Chase constraints (e.g. **api.dev curl, not MCP** when said).
 | Grok clones / `gt track` just to merge | Label fallback only; prefer Opus `gt merge` |
 | Enqueue unbound `gh`-only PR | Repair `gt submit` first, then enqueue |
 | Habitual rebase / Update branch while in MQ | Wait for Graphite draft CI / restack |
-| Treat Graphite FF `CLOSED`+`mergedAt:null` as not landed | Check `main` history |
+| Treat Graphite FF `CLOSED`+`mergedAt:null` as not landed | Check `origin/main` `(#N)` |
+| Tell Chase 완료 on enqueue / green CI / “Your changes” | 완료 only after `origin/main` `(#N)` |
+| Land worker STOP at enqueue / `HANDOFF: grok-land` | Stay until main tip; re-enqueue on eject |
 | Infinite “observe MQ” with no draft URL / no red | Report draft + act only on failure |
 
 ## Parallel trains

@@ -197,8 +197,9 @@ Opus owns land for that task.
      dry-run ready → **`gt merge`** for the whole train. Do **not** “open A
      only → merge → resume for B”.
    - **STOP** immediately after enqueue confirmed (QUEUED / label /
-     Graphite activity). Do **not** babysit MQ draft CI / `main` tip /
-     restack-while-merging.
+     Graphite activity) with **`LANDED: no` + `NOT 완료`**. Do **not**
+     babysit MQ draft CI / `main` tip / restack-while-merging unless
+     this session owns land. **Do not tell Chase 완료.**
    - Opus prompt **must** include: `Required skill: read
      ~/.agents/skills/sume-gt-mq/SKILL.md before any gt submit/merge` plus
      the GRAPHITE hard-lock block from orchestration § "Delegation checklist"
@@ -206,25 +207,28 @@ Opus owns land for that task.
      before enqueue evidence**).
    - Follow BP / issue locks exactly.
    - Done report: clone path + Graphite URL + GitHub PR URL + enqueue
-     evidence + `HANDOFF: grok-land`.
+     evidence + **`LANDED: no` + `NOT 완료`** + `HANDOFF: grok-land`.
 2. Main agent: on Opus completion (enqueue done), launch **Grok Build** via
    `agent-human-stream --backend grok` (**Shell `block_until_ms: 0`**,
    title `Grok : <job-slug> (#N)`) to babysit land → deploy.
-   - **Default:** MQ already enqueued — watch draft CI → confirm `main` tip
-     `(#N)` → issue comment / authorized ops. Do **not** re-enqueue.
+   **Do not tell Chase 완료** until `origin/main` has `(#N)`.
+   - **Default:** MQ already enqueued — watch draft CI → **stay until**
+     `main` tip `(#N)` (re-enqueue on eject; do not STOP at enqueue) →
+     issue comment / authorized ops. Do **not** re-enqueue if still in MQ.
    - **Fallback** (`HANDOFF: grok-ci-merge`): Opus could not enqueue → CI
      green → `gh pr edit <N> --add-label merge-queue` (no clone) → land.
    - If Opus only opened via `gh pr create`: **reject** — repair with
      fresh-clone `gt submit` before enqueue.
    - After restack: **`gt submit` again**, then Opus (or fallback Grok)
      re-enqueues.
-   - Landed = commit on `main` with `(#N)`; Graphite FF may show GitHub
-     `CLOSED` / `mergedAt: null`.
+   - Landed / Chase **완료** = commit on `origin/main` with `(#N)`;
+     Graphite FF may show GitHub `CLOSED` / `mergedAt: null`. Enqueue,
+     green PR checks, and Graphite “Your changes” are **not** 완료.
    - Never mid-stack GitHub-only squash; never sibling `main` PRs on one train.
 3. Do **not** leave Opus long-polling land after enqueue. If an Opus session
    is already on land babysit, **kill that Shell** and reassign to Grok
-   (same turn). Grok must not idle-loop on “already merging” — surface the
-   MQ draft URL and only intervene on red/failure.
+   (same turn). Grok land must **not** exit at enqueue. Surface the MQ
+   draft URL; intervene on red / eject; stay until `origin/main` `(#N)`.
 
 Policy SoT: `sume-main-agent-orchestration` § Pipeline 1 + hard model rules +
 § "PR trains and Graphite (`gt`)". **Enqueue/land ops:** `sume-gt-mq`.

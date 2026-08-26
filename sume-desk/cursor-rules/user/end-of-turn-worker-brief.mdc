@@ -23,6 +23,12 @@ PR/MQ, dest/prod, a lock, a blocker):
 - Decisions and open waits (who owes the next lock)
 - Evidence in-line (counts, endpoints, file paths). Secrets stay out.
 
+**Chase lock (2026-08-26):** do **not** write 완료 / done / completed /
+landed / “들어갔습니다” until `git fetch origin main && git log
+origin/main --oneline --grep='(#N)'` shows the commit. Enqueue, green
+PR checks, Ready, and Graphite “Your changes” are **not** 완료. Say
+what is true (queued / ejected / still OPEN).
+
 Forbidden as the whole turn:
 
 - Board tables only

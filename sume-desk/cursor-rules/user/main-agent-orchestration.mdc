@@ -34,8 +34,9 @@ Harness notes (do not fork policy here):
   Shell `description` / terminal title = `Opus : <job-slug> (#N)` =
   board Job; **default:** Opus fresh-clone → `gt submit` → poll
   **`gt merge --dry-run` every 15–30s** → ready → immediate `gt merge` →
-  STOP, then Grok land babysit; see SoT Graphite hard lock +
-  “Review CI ready-signal”).
+  STOP with `LANDED: no` / `NOT 완료`, then Grok land babysit **until
+  `origin/main` `(#N)`**; see SoT Graphite hard lock + Chase lock
+  2026-08-26 완료 + “Review CI ready-signal”).
 - **Graphite CI ready-signal (always apply on user install):**
   `~/.cursor/rules/graphite-ci-ready.mdc`
   (`gt merge --dry-run` poll ≤30s → merge — not `gh pr checks` /
@@ -43,6 +44,7 @@ Harness notes (do not fork policy here):
 - **Graphite MQ enqueue playbook (always apply on user install):**
   `~/.agents/skills/sume-gt-mq/SKILL.md` — required before any
   `gt submit` / `gt merge` / MQ unstick / land handoff.
+  **Chase 완료** only after `origin/main` `(#N)` (lock 2026-08-26).
 - **Status board (always apply on user install):**
   `~/.cursor/rules/status-board.mdc`
   (`지금` / `스테이징` / `백로그` after 24h; confirm drops the Job —

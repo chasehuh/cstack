@@ -26,7 +26,7 @@ surfaces if the set changed.
 | Lane | Korean | When |
 |------|--------|------|
 | Live | `지금` | Process still running |
-| Staging | `스테이징` | Work **finished** (worker done / PR / MQ / issue filed). **Chase has not confirmed.** |
+| Staging | `스테이징` | Work **finished at the worker-process layer** (worker exited / PR open / MQ / issue filed). **Chase has not confirmed.** Worker exit ≠ 완료. 완료 to Chase only after `origin/main` `(#N)`. |
 | Backlog | `백로그` | Sat in `스테이징` **≥ 24 hours** with no confirm |
 | Confirmed | `확인됨` | Chase **explicitly** confirmed — that is the only **resolve** |
 
@@ -72,6 +72,8 @@ Empty → one row `—` / `없음`.
 
 Required: issue OPEN/CLOSED, **why still OPEN** if open, PR + MQ/`main`
 tip `(#N)`, Graphite FF quirk if needed. Not a one-line “done”.
+If the PR is still in Graphite “Your changes” / not on `origin/main`,
+the note must say **`LANDED: no`** — never imply 완료.
 
 Include **entered staging** (KST) so the 24h clock is visible.
 

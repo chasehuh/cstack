@@ -104,6 +104,29 @@ Workers (Cursor Task subagents, Claude/Codex worker threads) should:
 - Not mutate production data, deploy, or trigger paid provider calls unless the
   delegation explicitly authorizes that exact action.
 
+**Chase lock (2026-08-26) — 완료 to Chase only after `origin/main` `(#N)`.**
+
+Subagents / workers / this main agent must **check that the change is
+fully in** before telling Chase it is done.
+
+```bash
+git fetch origin main
+git log origin/main --oneline --grep='(#N)'
+```
+
+No log line → **not 완료**. Forbidden words to Chase until that proof:
+완료 / done / completed / landed / “들어갔습니다.”
+
+**Not proof:** PR open, PR-branch CI green, `gt` Ready, enqueued,
+`merge-queue` label, MQ draft, `HANDOFF: grok-land`, Graphite “Your
+changes” still listing the PR, worker process exited.
+
+Author STOP after enqueue is a **handoff**. Final report must say
+`LANDED: no` + `NOT 완료`. Land worker stays until the main-tip grep
+hits; MQ eject → re-enqueue same session; forbidden to exit with
+`HANDOFF: grok-land`. Main agent launches/resumes land and does **not**
+translate enqueue into 완료. Leftover “Your changes” = still open.
+
 ## Delegation Template
 
 When sending a task to a worker, include:
@@ -509,8 +532,8 @@ the **identical** title as the live job.
 |-----|------|
 | **Chase (user)** | Product intent, locks, approvals ("그렇게 가자", merge 여부) |
 | **Main agent** (usually Cursor Grok) | Discuss in Chase’s language; survey code; draft/file issues; launch workers; status; never silently steal Opus’s implementation |
-| **Opus** (`claude-human-stream`) | BP when needed; implement in **fresh clone**; **`gt create` → `gt submit` → `gt` Ready → `gt merge` (MQ enqueue)**; **STOP** after enqueue. Never `gh pr create`. |
-| **Grok** (`agent-human-stream --backend grok`) | After enqueue: MQ draft CI → land on `main` → issue comment → authorized deploy/ops. Fallback: CI → label enqueue → land if Opus could not enqueue. Also author if Chase named Grok. |
+| **Opus** (`claude-human-stream`) | BP when needed; implement in **fresh clone**; **`gt create` → `gt submit` → `gt` Ready → `gt merge` (MQ enqueue)**; **STOP** after enqueue with `LANDED: no` / `NOT 완료`. Never `gh pr create`. Never tell Chase 완료. |
+| **Grok** (`agent-human-stream --backend grok`) | After enqueue: MQ draft CI → **`origin/main` `(#N)`** (re-enqueue on eject; do not STOP at enqueue) → issue comment → authorized deploy/ops. Fallback: CI → label enqueue → land if Opus could not enqueue. Also author if Chase named Grok. |
 | **Composer** | Explore only |
 
 #### Canonical steps
@@ -521,8 +544,8 @@ the **identical** title as the live job.
 4. **Opus handoff** — English prompt file → background `claude-human-stream` (`block_until_ms: 0`). Include issue URL, locks, worktree, done report, `HANDOFF: grok-land` (or `HANDOFF: grok-ci-merge` only if Opus must stop before enqueue). See `opus-background-terminal.mdc`.
 5. **Brief user** — job slug (`--name`), `session_id`, issue/PR links. Do not
    poll Opus.
-6. **On Opus completion** — Read `—— final ——` only; if MQ enqueued (or PRs open) and land was not assigned to Opus, **immediately** launch Grok land babysit (already authorized — do not re-ask).
-7. **Close the loop** — Short status in Chase’s language; leave residuals explicit (smoke, docs defer, etc.).
+6. **On Opus completion** — Read `—— final ——` only; if MQ enqueued (or PRs open) and land was not assigned to Opus, **immediately** launch Grok land babysit (already authorized — do not re-ask). **Do not tell Chase 완료.** Enqueue / green CI / “Your changes” is not landed.
+7. **Close the loop** — Short status in Chase’s language. Say **완료** only after `origin/main` has `(#N)`. Leave residuals explicit (smoke, docs defer, etc.).
 
 #### Triggers (treat as this loop)
 
@@ -535,7 +558,9 @@ the **identical** title as the live job.
 - Opening PRs with no issue/locks when the ask was the mega-issue flow
 - Using MCP as a diagnostic substitute for `curl`/api.dev when Chase forbade it
 - Leaving Opus on **land** babysit after MQ enqueue (default)
-- Grok re-enqueuing / clone-thrash when Opus already reported MQ queued
+- Grok land STOP at enqueue / `HANDOFF: grok-land` from the land session
+- Telling Chase 완료 on enqueue, green PR checks, or Graphite “Your changes”
+- Grok re-enqueuing / clone-thrash when Opus already reported MQ queued **and still in MQ**
 - Re-asking "merge 할까요?" after the loop already implies Grok land (unless Chase deferred)
 
 ### Pipeline 1 — heavy / ambiguous work
@@ -853,9 +878,13 @@ When Opus already reported **MQ enqueued** (QUEUED / label / Graphite
 activity) + PR URL(s):
 
 1. **Do not re-enqueue** unless the entry failed / was evicted.
+   Evicted / empty labels / leftover “Your changes” → re-enqueue **now**.
 2. Confirm MQ draft CI / Graphite merge activity; surface draft URL.
-3. Confirm land via `main` tip `(#N)` — not GitHub `mergedAt`.
-4. Issue landed comment + authorized deploy/ops.
+3. **Stay in session** until `origin/main` has `(#N)` — not GitHub
+   `mergedAt`. Do **not** STOP at enqueue.
+4. Issue landed comment + authorized deploy/ops **only after** that
+   proof. Then the land session may STOP. That is when main may say
+   완료 to Chase.
 5. **Do not:** `gt track` recovery, poisoned-worktree `gt merge`, or
    clone-the-monorepo loops.
 6. If Opus reported only a `gh pr create` URL with no Graphite submit:
@@ -950,11 +979,12 @@ GRAPHITE (hard lock):
 - Do not treat ignored Vercel rows or Graphite mergeability_check alone
   as “CI not done” when gt already says Ready.
 - Own only this train’s PRs. Do not touch other stacks.
-- STOP immediately after enqueue confirmed. Do NOT babysit MQ draft CI /
-  main tip / restack-while-merging.
+- Author STOP after enqueue is a handoff, not 완료. Do NOT babysit MQ
+  draft CI / main tip / restack-while-merging unless this session owns land.
 - Follow the BP / issue locks exactly.
 - Done report: clone path + Graphite URL + GitHub PR URL + enqueue evidence
-  + STOP. HANDOFF: grok-land
+  + **LANDED: no** + **NOT 완료** + STOP. HANDOFF: grok-land
+- Never tell Chase 완료 / done / landed until `origin/main` has `(#N)`.
 ```
 
 When the BP has a PR train, also say:
@@ -967,13 +997,16 @@ When the BP has a PR train, also say:
 - Do not invent extra slices beyond the BP train.
 
 The **Grok** land prompt must say: MQ already enqueued → watch draft CI →
-confirm `main` tip `(#N)` → issue close/comment if acceptance met → brief
-deploy watch if authorized; fix only if land CI red needs a tiny push
-(otherwise bounce code back to Opus). Forbidden: re-enqueue when already
-queued; local `gt track` / clone thrash. If Opus used
-`HANDOFF: grok-ci-merge` (could not enqueue): wait Graphite/required ready
-→ `gh pr edit <N> --add-label merge-queue` → then land. If the PR was not
-Graphite-bound, repair with fresh-clone `gt submit` before enqueue.
+**stay until** `origin/main` has `(#N)` (re-enqueue on eject; do **not**
+STOP at enqueue; do **not** write `HANDOFF: grok-land`) → issue
+close/comment if acceptance met → brief deploy watch if authorized; fix
+only if land CI red needs a tiny push (otherwise bounce code back to
+Opus). Forbidden: re-enqueue when already queued **and still in MQ**;
+local `gt track` / clone thrash. If Opus used `HANDOFF: grok-ci-merge`
+(could not enqueue): wait Graphite/required ready →
+`gh pr edit <N> --add-label merge-queue` → then stay until main tip. If
+the PR was not Graphite-bound, repair with fresh-clone `gt submit` before
+enqueue.
 
 Docs: https://graphite.com/docs/cli-overview · MQ: https://graphite.com/docs/graphite-merge-queue  
 Repo ops (sume-com): `docs/operations/pr-stack-and-merge-queue.md` · lock [#2242](https://github.com/sumelabs/sume-com/issues/2242)
@@ -1033,9 +1066,11 @@ When the user asks for status:
 2. Group results by worker.
 3. Distinguish:
    - `active`: currently running.
-   - `idle/completed`: final report exists.
+   - `idle/completed`: worker final report exists. This is **not**
+     Chase 완료 unless `origin/main` has `(#N)`.
    - `blocked`: needs user input or external access.
-   - `merged`: PR landed and, if relevant, production workflow status.
+   - `merged`: `origin/main` has `(#N)` and, if relevant, production
+     workflow status. Enqueue / green checks / “Your changes” ≠ merged.
    - `bad state`: final report drifted, wrong task, or thread context mixed.
 4. State the next action for each worker.
 
