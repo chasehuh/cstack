@@ -91,18 +91,25 @@ if ! echo ":$PATH:" | grep -q ":$HOME/.local/bin:"; then
   echo "NOTE: add \$HOME/.local/bin to PATH (e.g. in ~/.zshrc)"
 fi
 
-SNIP_FILE="$ROOT/sume-desk/codex-agents-snippet.md"
-if [ -f "$SNIP_FILE" ]; then
-  for f in "$HOME/.codex/AGENTS.md" "$HOME/.claude/CLAUDE.md"; do
-    mkdir -p "$(dirname "$f")"
-    touch "$f"
-    if ! grep -q "sume-main-agent-orchestration/SKILL.md" "$f"; then
-      echo "" >> "$f"
-      cat "$SNIP_FILE" >> "$f"
-      echo "appended pointer: $f"
-    fi
-  done
-fi
+# Codex owns the full pointer snippet; Claude Code imports it via
+# `@~/.codex/AGENTS.md` (check-wiring.sh asserts that import exists).
+append_entry() {
+  local f="$1" snip="$2" marker="$3"
+  [ -f "$snip" ] || return 0
+  mkdir -p "$(dirname "$f")"
+  touch "$f"
+  if ! grep -q "$marker" "$f"; then
+    echo "" >> "$f"
+    cat "$snip" >> "$f"
+    echo "appended pointer: $f"
+  fi
+}
+append_entry "$HOME/.codex/AGENTS.md" \
+  "$ROOT/sume-desk/codex-agents-snippet.md" \
+  "sume-main-agent-orchestration/SKILL.md"
+append_entry "$HOME/.claude/CLAUDE.md" \
+  "$ROOT/sume-desk/claude-import-snippet.md" \
+  "codex/AGENTS.md"
 
 if [ -x "$HOME/.agents/skills/sume-main-agent-orchestration/check-wiring.sh" ]; then
   echo "== wiring check =="
