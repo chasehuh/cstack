@@ -42,7 +42,7 @@ duplicate the full SKILL into the `.mdc`.
 | `sume-chase-work-loop.mdc` | Discuss → issue → Opus enqueue → Grok land |
 | `opus-background-terminal.mdc` | `claude-human-stream` recipe: prompt file, `cd` not `--cwd`, `block_until_ms: 0`, title = Job |
 | `graphite-ci-ready.mdc` | Ready-signal = `gt merge --dry-run`, poll ≤30s, fail ≠ wait |
-| `status-board.mdc` | Status board: `지금` / `스테이징` / `백로그` (24h). Confirm = resolve (drop; do not show `확인됨`) |
+| `status-board.mdc` | Status board: `지금` / `스테이징` / `백로그` (24h). `지금` includes **진행** (one-shot live-log step). Confirm = resolve (drop; do not show `확인됨`) |
 | `active-workers-canvas.mdc` | Canvas surface of the status board |
 | `end-of-turn-worker-brief.mdc` | Chat work report is SoT (Slack-optional to read); every turn ends with the status board |
 | `slack-coding-agents.mdc` | `#coding-agents`: new Job = thread; updates = replies; `loading` / `eyes` / `white_check_mark`. Not a substitute for the chat report |

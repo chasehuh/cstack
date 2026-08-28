@@ -482,6 +482,11 @@ Lanes: `지금` → **`스테이징`** → **`백로그`** (≥24h). Chase confi
 resolve (Job drops off chat/canvas; Slack gets the check). Never
 auto-resolve.
 
+`지금` rows must include **`진행`**: one-shot from the Job’s
+`opus-live` tail / last tool / in-progress todo (≤12 words, a noun).
+Not a poll. Do not print live Jobs as session_id-only. Definition:
+`status-board.mdc` § 진행 (Chase lock 2026-08-28).
+
 Refresh canvas the same turn the set changes. Link the `.canvas.tsx`
 path. Read `~/.cursor/skills-cursor/canvas/SKILL.md` before create/edit.
 One-shot reconcile — no poll loops.
@@ -1080,6 +1085,9 @@ When the user asks for status:
      workflow status. Enqueue / green checks / “Your changes” ≠ merged.
    - `bad state`: final report drifted, wrong task, or thread context mixed.
 4. State the next action for each worker.
+
+For **active** Jobs, also state **진행** (same rule as the status
+board): last real step, not “still running.”
 
 Keep user-facing status concise. Do not paste long worker logs unless requested.
 

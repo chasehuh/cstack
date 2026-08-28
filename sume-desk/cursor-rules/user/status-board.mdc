@@ -50,6 +50,24 @@ Logs enrich only — not proof of liveness. Stale `running` terminal, no
 process = omit from `지금`. Finished → `스테이징` **same turn**, not
 `확인됨`.
 
+## 진행 (Chase lock 2026-08-28)
+
+Every **`지금`** row must say **where the worker is**, not only that it
+is alive. Add a **`진행`** column.
+
+One-shot (not a poll): when reprinting the board, read the Job’s
+`opus-live` log tail and/or the last `🤖` / tool / in-progress todo.
+Write ≤12 words in Chase’s language, with a noun (file, PR, issue,
+`gt` step).
+
+Good: `Layer 1 파일 작성`, `docs sprite 매핑`, `#5078 코멘트 초안`,
+`gt Ready 대기`.
+Forbidden as the whole cell: `running`, `working`, `진행 중` with no
+noun.
+
+`스테이징` does not use `진행` — that lane is already “worker finished,
+Chase not confirmed.” Use **왜 여기** / **노트**.
+
 ## Chat tables (every turn)
 
 Print **`지금`** and **`스테이징`** every turn. Print **`백로그`** when
@@ -60,10 +78,11 @@ print a resolved table in chat or canvas.
 
 ### 지금
 
-| Job | Issue | 모델 | session_id | 시그널 |
-|-----|-------|------|------------|--------|
+| Job | Issue | 모델 | session_id | 시그널 | 진행 |
+|-----|-------|------|------------|--------|------|
 
-Empty → one row `—` / `없음`.
+Empty → one row `—` / `없음`. **`진행`** is required on every live
+row (see § 진행).
 
 ### 스테이징
 

@@ -34,6 +34,9 @@ Reconcile → rewrite canvas → chat reprint (`end-of-turn-worker-brief.mdc`).
 Snapshot timestamp in the header. Visible copy follows Chase’s language.
 Identifiers stay English.
 
+`지금` table matches chat: include **`진행`** (same one-shot text as
+the chat reprint).
+
 ## Non-goals
 
 - Not a substitute for completion-notification monitoring

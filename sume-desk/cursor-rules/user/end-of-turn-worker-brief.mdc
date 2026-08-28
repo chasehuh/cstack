@@ -52,5 +52,9 @@ Last user-visible block. One-shot reconcile — no poll loops.
 Always print **`지금`** + **`스테이징`**. Print **`백로그`** when it
 has rows. Identifiers stay English.
 
+`지금` rows include **`진행`** (one-shot from that Job’s live log —
+where the worker is *now*). See `status-board.mdc` § 진행. Do not
+leave live rows as session_id-only.
+
 Canvas is the same board (`active-workers-canvas.mdc`) — chat report +
 board are mandatory even when the canvas and Slack are current.

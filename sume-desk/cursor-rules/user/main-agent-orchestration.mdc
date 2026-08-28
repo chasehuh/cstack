@@ -47,8 +47,9 @@ Harness notes (do not fork policy here):
   **Chase 완료** only after `origin/main` `(#N)` (lock 2026-08-26).
 - **Status board (always apply on user install):**
   `~/.cursor/rules/status-board.mdc`
-  (`지금` / `스테이징` / `백로그` after 24h; confirm drops the Job —
-  do not show `확인됨`). Canvas + chat + Slack are the surfaces.
+  (`지금` / `스테이징` / `백로그` after 24h; `지금` includes
+  **진행**; confirm drops the Job — do not show `확인됨`). Canvas +
+  chat + Slack are the surfaces.
 - **Status board canvas (always apply on user install):**
   `~/.cursor/rules/active-workers-canvas.mdc`
 - **End-of-turn board reprint (always apply on user install):**
