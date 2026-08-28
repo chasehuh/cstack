@@ -16,13 +16,19 @@ When launching Opus / Fable / Grok via `claude-human-stream` /
 **Default research owner is Grok.** Opus/Fable research only when Chase
 names them — still `low`.
 
-Grok CLI enum is `xhigh|high|medium|low` (not `mid`). The wrapper maps
-alias `mid` → `medium` for `--backend grok` only.
+Claude Code CLI enum is `low|medium|high|xhigh|max` (Fable / Opus 4.7+).
+When Chase names **max** or **xhigh**, pass that string —
+**do not** remap Fable `max` → `high`. Wrapper aliases: `maximum` → `max`,
+`mid` → `medium`, `x-high` → `xhigh`.
+
+Grok CLI enum is `xhigh|high|medium|low` (no `max` / `mid`). The wrapper
+maps `mid` → `medium` and `max`/`maximum` → `xhigh` (Grok ceiling).
 
 Wrapper default when `--effort` is omitted = **code lane**
-(Opus `medium`, Fable `high`, Grok `xhigh`). Research launches **must**
-pass `--effort` (`medium` for Grok, `low` for Opus/Fable). Mixed
-research-then-implement in one worker → code lane.
+(Opus `medium`, Fable `high`, Grok `xhigh`). Named `max` is not that
+default. Research launches **must** pass `--effort` (`medium` for Grok,
+`low` for Opus/Fable). Mixed research-then-implement in one worker →
+code lane.
 
 SoT: `~/.agents/skills/sume-main-agent-orchestration/SKILL.md`
 § "Worker reasoning effort".

@@ -203,12 +203,18 @@ Pass `--effort` from the **job lane**. Cursor rule:
 `agent-human-stream --backend grok … --effort medium`. Opus/Fable research
 only when Chase names them — still `--effort low`.
 
-Grok CLI enum is `xhigh|high|medium|low` (not `mid`). The wrapper maps
-alias `mid` → `medium` for `--backend grok` only so old launches still work.
+Claude Code CLI enum is `low|medium|high|xhigh|max` (Fable / Opus 4.7+).
+When Chase names **max** or **xhigh**, pass that string through —
+**do not** remap Fable `max` → `high`. Wrapper aliases: `maximum` → `max`,
+`mid` → `medium`, `x-high` → `xhigh`.
+
+Grok CLI enum is `xhigh|high|medium|low` (no `max` / `mid`). The wrapper
+maps `mid` → `medium` and `max`/`maximum` → `xhigh` (Grok ceiling).
 
 Wrapper default when `--effort` is omitted = **code lane** (Opus
-`medium`, Fable `high`, Grok `xhigh`). Research **must** pass `--effort`.
-Mixed research-then-implement in one worker → code lane.
+`medium`, Fable `high`, Grok `xhigh`). Named `max` is not that default.
+Research **must** pass `--effort`. Mixed research-then-implement in one
+worker → code lane.
 
 **Default split (Chase lock, 2026-08-05 + 2026-08-23):** The author (Opus, or
 Fable if named) owns PR authoring **through Graphite MQ enqueue** (**fresh
@@ -232,8 +238,9 @@ When the main agent needs an **Opus** worker/subagent:
    (`~/.claude/settings.json` → `"model": "opus[1m]"`, `"effortLevel": "medium"`).
    `claude-human-stream` / `agent-human-stream --backend claude` injects
    `--effort` when omitted: **Opus → medium**, **Fable → high**
-   (code lane). Research → pass `--effort low`. See § "Worker reasoning
-   effort".
+   (code lane). Named `--effort max` / `xhigh` pass through to Claude
+   Code (do not remap to `high`). Research → pass `--effort low`. See
+   § "Worker reasoning effort".
 2. Prefer the human-readable wrapper (stream-json under the hood, printable lines).
    Canonical launcher: `agent-human-stream` (Claude + Grok Build).
    Opus/Fable alias: `claude-human-stream` → `--backend claude`.

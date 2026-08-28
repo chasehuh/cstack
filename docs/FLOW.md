@@ -49,7 +49,7 @@ duplicate the full SKILL into the `.mdc`.
 | `canvas-user-language.mdc` | Canvas visible copy = Chase’s chat language (Korean thread → Korean) |
 | `chat-title-folder-prefix.mdc` | Rename chats `[workspace-folder] …` |
 | `origin-main-sot.mdc` | Code Q&A reads `origin/main`, not dirty local main |
-| `worker-reasoning-effort.mdc` | Code: opus medium / fable high / grok xhigh. Research: grok medium (opus+fable low) |
+| `worker-reasoning-effort.mdc` | Code default: opus medium / fable high / grok xhigh. Named Claude `max`/`xhigh` pass through. Grok `max` → xhigh. Research: grok medium (opus+fable low) |
 
 ## Layer 2 — `sume-com` repo rules (install into `<sume-com>/.cursor/rules/`)
 

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Compat alias: Opus/Fable keep calling `claude-human-stream`.
 # Implementation lives in agent-human-stream.sh (--backend claude).
-# Default --effort is code lane: Opus medium, Fable high. Research → --effort low.
+# Default --effort is code lane: Opus medium, Fable high. Named max/xhigh pass through.
+# Research → --effort low.
 set -euo pipefail
 SOURCE=${BASH_SOURCE[0]}
 while [[ -L "$SOURCE" ]]; do

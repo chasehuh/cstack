@@ -23,11 +23,30 @@ SKILL_DIR="$(cd "$ROOT/.." && pwd)"
 REGISTRY="${AGENT_HUMAN_STREAM_REGISTRY:-${CLAUDE_HUMAN_STREAM_REGISTRY:-$SKILL_DIR/state/opus-sessions.jsonl}}"
 LIVE_DIR="${AGENT_HUMAN_STREAM_LIVE_DIR:-${CLAUDE_HUMAN_STREAM_LIVE_DIR:-$SKILL_DIR/state/opus-live}}"
 
-# Grok Build CLI: xhigh|high|medium|low. Desk shorthand `mid` → `medium`.
-# Opus/Fable are unchanged (they already take medium|high|low).
+# Claude Code CLI 2.1.x (SDK + changelog): low|medium|high|xhigh|max.
+# Fable / Opus 4.7+ take `max` natively. Do NOT remap max → high.
+# Desk aliases: mid → medium, maximum → max, x-high → xhigh.
+_claude_effort_wire() {
+  local lc
+  lc=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+  case "$lc" in
+    mid) printf '%s' medium ;;
+    max|maximum) printf '%s' max ;;
+    xhigh|x-high|xh|extra-high|extrahigh) printf '%s' xhigh ;;
+    low|medium|high) printf '%s' "$lc" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+# Grok Build CLI: xhigh|high|medium|low (no max / mid).
+# Aliases: mid → medium, max|maximum → xhigh (Grok ceiling).
 _grok_effort_wire() {
-  case "$1" in
-    mid|MID|Mid) printf '%s' medium ;;
+  local lc
+  lc=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+  case "$lc" in
+    mid) printf '%s' medium ;;
+    max|maximum|xhigh|x-high|xh|extra-high|extrahigh) printf '%s' xhigh ;;
+    low|medium|high) printf '%s' "$lc" ;;
     *) printf '%s' "$1" ;;
   esac
 }
@@ -55,13 +74,16 @@ Claude (tokenmaxxing `claude` on this desk):
   claude -p … --output-format stream-json --verbose --permission-mode bypassPermissions
   Default --effort when omitted (code lane): opus → medium, fable → high,
   grok → xhigh. Research must pass --effort (grok medium / opus+fable low).
+  Named Claude levels pass through: low|medium|high|xhigh|max.
+  Chase "Fable max" / --effort max → claude --effort max (not high).
+  Aliases: mid → medium, maximum → max, x-high → xhigh.
 
 Grok Build (`grok` on PATH):
   grok -p … --output-format streaming-messages-json --permission-mode bypassPermissions --always-approve
   Native ACP streaming-json is also accepted by the formatter if you pass
   --output-format streaming-json after the prompt.
-  Grok --effort enum: xhigh, high, medium, low (not mid).
-  Alias: grok --effort mid → medium before invoking grok.
+  Grok --effort enum: xhigh, high, medium, low (not mid / not max).
+  Aliases: mid → medium, max|maximum → xhigh (Grok ceiling).
 
 Resume:
   --resume <uuid>   | AGENT_RESUME_SESSION / CLAUDE_RESUME_SESSION / GROK_RESUME_SESSION
@@ -204,6 +226,16 @@ if [[ "$SELF_TEST" -eq 1 ]]; then
     echo "self-test: grok effort alias mid → medium failed (got ${_got})" >&2
     exit 1
   fi
+  _got="$(_grok_effort_wire max)"
+  if [[ "$_got" != "xhigh" ]]; then
+    echo "self-test: grok effort alias max → xhigh failed (got ${_got})" >&2
+    exit 1
+  fi
+  _got="$(_grok_effort_wire maximum)"
+  if [[ "$_got" != "xhigh" ]]; then
+    echo "self-test: grok effort alias maximum → xhigh failed (got ${_got})" >&2
+    exit 1
+  fi
   for _keep in medium high low xhigh; do
     _got="$(_grok_effort_wire "$_keep")"
     if [[ "$_got" != "$_keep" ]]; then
@@ -211,6 +243,31 @@ if [[ "$SELF_TEST" -eq 1 ]]; then
       exit 1
     fi
   done
+  _got="$(_claude_effort_wire max)"
+  if [[ "$_got" != "max" ]]; then
+    echo "self-test: claude effort max must stay max (got ${_got})" >&2
+    exit 1
+  fi
+  _got="$(_claude_effort_wire maximum)"
+  if [[ "$_got" != "max" ]]; then
+    echo "self-test: claude effort alias maximum → max failed (got ${_got})" >&2
+    exit 1
+  fi
+  _got="$(_claude_effort_wire mid)"
+  if [[ "$_got" != "medium" ]]; then
+    echo "self-test: claude effort alias mid → medium failed (got ${_got})" >&2
+    exit 1
+  fi
+  _got="$(_claude_effort_wire xhigh)"
+  if [[ "$_got" != "xhigh" ]]; then
+    echo "self-test: claude effort xhigh must stay xhigh (got ${_got})" >&2
+    exit 1
+  fi
+  _got="$(_claude_effort_wire high)"
+  if [[ "$_got" != "high" ]]; then
+    echo "self-test: claude effort high must stay high (got ${_got})" >&2
+    exit 1
+  fi
   _tmp=$(mktemp -d)
   cat > "$_tmp/grok" <<'EOF'
 #!/usr/bin/env bash
@@ -218,6 +275,12 @@ printf '%s\n' "$@" > "${GROK_ARGV_FILE:?}"
 echo '{"type":"result","session_id":"00000000-0000-0000-0000-000000000000","result":"ok"}'
 EOF
   chmod +x "$_tmp/grok"
+  cat > "$_tmp/claude" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "${CLAUDE_ARGV_FILE:?}"
+echo '{"type":"result","session_id":"00000000-0000-0000-0000-000000000000","result":"ok"}'
+EOF
+  chmod +x "$_tmp/claude"
   GROK_ARGV_FILE="$_tmp/argv.txt" \
     AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg.jsonl" \
     AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live" \
@@ -244,6 +307,57 @@ EOF
   if ! grep -q 'prompt-file self-test ok' "$_tmp/argv-file.txt"; then
     echo "self-test: --prompt-file did not reach grok -p:" >&2
     cat "$_tmp/argv-file.txt" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  GROK_ARGV_FILE="$_tmp/argv-max.txt" \
+    AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg.jsonl" \
+    AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live" \
+    PATH="$_tmp:$PATH" \
+    "$SOURCE" --backend grok "self-test max alias" --effort max >/dev/null
+  if ! grep -qx 'xhigh' "$_tmp/argv-max.txt"; then
+    echo "self-test: grok argv missing effort xhigh from max:" >&2
+    cat "$_tmp/argv-max.txt" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  if grep -qx 'max' "$_tmp/argv-max.txt"; then
+    echo "self-test: grok argv still has bare max:" >&2
+    cat "$_tmp/argv-max.txt" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  CLAUDE_ARGV_FILE="$_tmp/claude-argv.txt" \
+    AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg.jsonl" \
+    AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live" \
+    PATH="$_tmp:$PATH" \
+    "$SOURCE" --backend claude --name self-test-max "self-test claude max" --model fable --effort max >/dev/null
+  if ! grep -qx 'max' "$_tmp/claude-argv.txt"; then
+    echo "self-test: claude argv missing effort max:" >&2
+    cat "$_tmp/claude-argv.txt" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  if grep -qx 'high' "$_tmp/claude-argv.txt"; then
+    echo "self-test: claude --effort max was remapped to high:" >&2
+    cat "$_tmp/claude-argv.txt" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  CLAUDE_ARGV_FILE="$_tmp/claude-argv-maximum.txt" \
+    AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg.jsonl" \
+    AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live" \
+    PATH="$_tmp:$PATH" \
+    "$SOURCE" --backend claude --name self-test-maximum "self-test claude maximum" --model fable --effort maximum >/dev/null
+  if ! grep -qx 'max' "$_tmp/claude-argv-maximum.txt"; then
+    echo "self-test: claude argv missing effort max from maximum:" >&2
+    cat "$_tmp/claude-argv-maximum.txt" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  if grep -qx 'maximum' "$_tmp/claude-argv-maximum.txt"; then
+    echo "self-test: claude argv still has bare maximum:" >&2
+    cat "$_tmp/claude-argv-maximum.txt" >&2
     rm -rf "$_tmp"
     exit 1
   fi
@@ -420,6 +534,43 @@ elif [[ "$BACKEND" == "grok" && "$_has_effort" -eq 0 ]]; then
   _effort="$(_grok_effort_wire "${AGENT_HUMAN_STREAM_EFFORT_GROK:-xhigh}")"
   EXTRA+=(--effort "$_effort")
   echo "effort: ${_effort} (default for grok code lane; research → --effort medium)" >&2
+fi
+
+# Claude: rewrite desk aliases so --effort max/xhigh reach the CLI as-is.
+if [[ "$BACKEND" == "claude" && ${#EXTRA[@]} -gt 0 ]]; then
+  _filtered=()
+  _i=0
+  while [[ $_i -lt ${#EXTRA[@]} ]]; do
+    _a="${EXTRA[$_i]}"
+    case "$_a" in
+      --effort|--reasoning-effort)
+        _val="${EXTRA[$((_i + 1))]:-}"
+        _wire="$(_claude_effort_wire "$_val")"
+        if [[ "$_wire" != "$_val" ]]; then
+          echo "note: mapping claude --effort ${_val} → ${_wire} (Claude Code enum)" >&2
+        fi
+        _filtered+=("$_a" "$_wire")
+        _effort="$_wire"
+        _i=$((_i + 2))
+        continue
+        ;;
+      --effort=*|--reasoning-effort=*)
+        _flag="${_a%%=*}"
+        _val="${_a#*=}"
+        _wire="$(_claude_effort_wire "$_val")"
+        if [[ "$_wire" != "$_val" ]]; then
+          echo "note: mapping claude --effort ${_val} → ${_wire} (Claude Code enum)" >&2
+        fi
+        _filtered+=("${_flag}=${_wire}")
+        _effort="$_wire"
+        _i=$((_i + 1))
+        continue
+        ;;
+    esac
+    _filtered+=("$_a")
+    _i=$((_i + 1))
+  done
+  EXTRA=("${_filtered[@]+"${_filtered[@]}"}")
 fi
 
 # Grok does not accept Claude-only --verbose / stream-json name.
