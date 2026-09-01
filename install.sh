@@ -31,9 +31,19 @@ if [ ! -d "$DESK/skills/sume-main-agent-orchestration" ]; then
 fi
 
 mkdir -p "$HOME/.cstack/state"
-# Machine SoT pointer → this checkout (git tree, not a rsync fork).
-ln -sfn "$ROOT" "$HOME/.cstack/src"
-echo "SoT pointer: ~/.cstack/src → $ROOT"
+# Machine SoT: prefer a real clone at ~/.cstack/src. Never ln -sfn a
+# directory onto itself (that replaces the clone with a broken symlink).
+CANON="$HOME/.cstack/src"
+ROOT_REAL="$(cd "$ROOT" && pwd)"
+if [ -d "$CANON/.git" ] && [ "$(cd "$CANON" && pwd)" = "$ROOT_REAL" ]; then
+  echo "SoT checkout is $CANON"
+elif [ -e "$CANON" ] && [ ! -L "$CANON" ] && [ -d "$CANON/.git" ]; then
+  echo "NOTE: $CANON is a real clone; not retargeting it to $ROOT_REAL"
+  echo "      Re-run $CANON/install.sh (or ./bootstrap.sh) to publish that tree."
+else
+  ln -sfn "$ROOT_REAL" "$CANON"
+  echo "SoT pointer: ~/.cstack/src → $ROOT_REAL"
+fi
 
 # Move wrapper logs out of the skill tree before we replace rsync copies
 # with symlinks into the git checkout.
