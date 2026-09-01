@@ -184,7 +184,9 @@ Opus owns land for that task.
      (poll **5–12s**, default **8s**; **`--rm <slug>`** after enqueue).
      That binary is the ready-signal. Do **not** write a sleep/grep loop
      (**no minute cap**) → affirmative Ready → **immediately**
-     **`gt merge --no-interactive`**. Fallback: `merge-queue` label.
+     **`gt merge --no-interactive`**. `Cannot determine` + mergeable →
+     the same binary labels the **tip** `merge-queue` (do **not**
+     `gt merge` in that state).
    - **On dry-run `Required checks failed`:** **break immediately** — do
      **not** keep polling Ready. Act: ≤2 `gh run rerun --failed` for known
      flake, else minimal CI unblock → `gt submit` → dry-run → merge.

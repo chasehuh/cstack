@@ -707,9 +707,7 @@ EOF
 )"
 # edit files in $CLONE only; commit with gt modify -c or git commit
 gt submit --no-interactive --no-ai --publish
-cstack-gt-wait-merge --rm <job-slug>   # 5–12s, default 8s; then gt merge
-# fallback if gt merge fails: gh pr edit <N> --add-label merge-queue
-# fallback if gt merge fails: gh pr edit <N> --add-label merge-queue
+cstack-gt-wait-merge --rm <job-slug>   # Ready → gt merge; Cannot determine + mergeable → tip label
 # Done report MUST include: clone path + Graphite URL + GitHub PR URL
 #   + enqueue evidence (QUEUED / label / Graphite activity) + STOP
 # HANDOFF: grok-land
@@ -740,7 +738,8 @@ Common ops (same clone):
 | Restack after trunk moves | `gt sync` / `gt restack` → **`gt submit` again** |
 | Ready for enqueue? | **`cstack-gt-wait-merge`** (dry-run Ready, poll **5–12s**) |
 | Enqueue MQ (**Opus default**) | dry-run ready → **immediately** **`gt merge --no-interactive`** |
-| Enqueue MQ (fallback / Grok fallback) | `gh pr edit <N> --add-label merge-queue` |
+| Enqueue MQ (Cannot determine + mergeable) | **`cstack-gt-wait-merge`** labels the **tip** `merge-queue` |
+| Enqueue MQ (manual / Grok fallback) | `gh pr edit <N> --add-label merge-queue` |
 
 #### Recovery — `gt submit` fails (trunk out of date / poisoned)
 
@@ -823,7 +822,7 @@ prefer **`gt merge --dry-run`**, also `gt info` / `gt log` Ready (docs:
 | `gt merge --dry-run` → **`Your stack is ready to merge`** | Enqueueable | **Immediately** `gt merge --no-interactive` |
 | `gt info` / `gt log` → **`(Ready to merge)`** / **`(Ready to merge as stack)`** | Graphite says review gates met | Same — merge now |
 | **`(Waiting on CI...)`** only (no failed) | Still running | Sleep **5–12s** (default **8s**), re-probe dry-run — **no minute cap** |
-| **`Cannot determine if stack is ready to merge`** | CLI undecided — **not Ready** | Do **not** `gt merge`. One-shot required GH probe; green → `merge-queue` label (`sume-gt-mq`) |
+| **`Cannot determine if stack is ready to merge`** | CLI undecided — **not Ready**. Not a CI-wait signal. | Do **not** `gt merge`. Binary: one `gt sync --no-restack`, retry; still undetermined + required GH green + `CLEAN`/`UNSTABLE` → label the **tip** `merge-queue` and exit 0. Pending CI → poll. Failed / label rejected → exit 2 / `HANDOFF: grok-ci-merge`. |
 | `not ready to merge` | Not ready | Sleep, re-probe |
 | **`Required checks failed`** / `Failed CI` | Will never Ready by waiting | **Break immediately** — rerun ≤2 / unblock / handoff (`sume-gt-mq`) |
 
@@ -874,8 +873,10 @@ separate Graphite UI toggle (automerge-style). Our default enqueue remains
   (poll **5–12s**, default **8s**) in the **same** author clone; on ready it
   runs **`gt merge --no-interactive`** **immediately** (single PR or whole
   stack). No minute cap — stay until enqueue, then **STOP**.
-- **Opus fallback:** `gh pr edit <N> --add-label merge-queue` if `gt merge`
-  fails / bind issues.
+- **Opus fallback (inside `cstack-gt-wait-merge`):** if dry-run is
+  `Cannot determine` and GitHub is mergeable, label the **tip**
+  `merge-queue`. Same label if `gt merge` fails / bind issues. Do **not**
+  `gt merge` while the CLI cannot determine.
 - **Grok fallback only:** same **label** path when Opus could not enqueue
   (`HANDOFF: grok-ci-merge`). Do **not** invent a clone just to `gt merge`.
 - Independent green PRs may each be enqueued. MQ parallel CI processes them;
@@ -979,7 +980,13 @@ GRAPHITE (hard lock):
   `not ready to merge`). Failed CI / `Required checks failed` → binary
   exits 2 immediately — break, do NOT keep polling Ready.
   Already merging / already in the merge queue → exit 0 (STOP).
-  Cannot determine → binary keeps waiting (do NOT `gt merge`).
+  Cannot determine → do NOT `gt merge`. Binary: one
+  `gt sync --no-interactive --no-restack`, retry dry-run; still
+  Cannot determine + required GH green + CLEAN/UNSTABLE → label the
+  **tip** PR `merge-queue` (Graphite official enqueue-from-anywhere)
+  and exit 0. Still pending CI → keep polling. Required failed or
+  label rejected → exit 2 / `HANDOFF: grok-ci-merge`.
+  Do not wait forever for a Ready that never comes.
 - Repo CI flake: ≤2 `gh run rerun --failed`, then minimal CI unblock commit.
   Forbidden: endless rerun with no code change. Still blocked →
   `HANDOFF: grok-ci-merge`.

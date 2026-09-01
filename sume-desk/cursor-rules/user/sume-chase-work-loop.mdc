@@ -98,7 +98,13 @@ GRAPHITE (hard lock):
   `not ready to merge`). Failed CI / `Required checks failed` → binary
   exits 2 immediately — break, do NOT keep polling Ready.
   Already merging / already in the merge queue → exit 0 (STOP).
-  Cannot determine → binary keeps waiting (do NOT `gt merge`).
+  Cannot determine → do NOT `gt merge`. Binary: one
+  `gt sync --no-interactive --no-restack`, retry dry-run; still
+  Cannot determine + required GH green + CLEAN/UNSTABLE → label the
+  **tip** PR `merge-queue` (Graphite official enqueue-from-anywhere)
+  and exit 0. Still pending CI → keep polling. Required failed or
+  label rejected → exit 2 / `HANDOFF: grok-ci-merge`.
+  Do not wait forever for a Ready that never comes.
 - Repo CI flake: ≤2 `gh run rerun --failed`, then minimal CI unblock commit.
   Forbidden: endless rerun with no code change. Still blocked →
   `HANDOFF: grok-ci-merge`.

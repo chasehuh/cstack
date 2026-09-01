@@ -118,8 +118,12 @@ owners. Never two workers `gt merge` / empty-commit / restack the same head.
    **5–12s** (default **8s**); affirmative ready → merge **immediately**.
    Do **not** hand-roll a sleep/grep loop (see Ready-signal +
    `graphite-ci-ready.mdc`).
-6. **Opus default enqueue:** `gt merge --no-interactive` (same clone).  
-   Fallback: `gh pr edit <N> --add-label merge-queue`.
+6. **Opus default enqueue:** `gt merge --no-interactive` when dry-run is
+   affirmatively Ready (same clone). **Cannot determine + mergeable:**
+   the same binary labels the **tip** `merge-queue` (Graphite official
+   enqueue-from-anywhere). Do **not** `gt merge` while the CLI cannot
+   determine. Manual fallback if the binary cannot label:
+   `gh pr edit <N> --add-label merge-queue`.
 7. **Author STOP after enqueue is a handoff, not 완료.** Land owner
    stays until `origin/main` has `(#N)`. Grok owns land unless Chase
    said the author owns land (`merge까지` / `landing까지`).
@@ -134,7 +138,7 @@ These are **failed handoffs**, not “still waiting”:
 |-----|-----|----------|
 | Arm `Monitor` / `ScheduleWakeup` / background `until` then **end the session** with “I’ll enqueue when green” | Wrapper exits; enqueue never runs | **Stay in-session** until `gt merge` (or label fallback) **succeeds** and enqueue evidence is in the done report — **no minute cap** |
 | Done report without enqueue evidence | Looks green, MQ empty | Evidence required (below) |
-| `HANDOFF: grok-land` when never enqueued | Grok assumes queued | Use `HANDOFF: grok-ci-merge` **only** if submit done but enqueue truly blocked |
+| `HANDOFF: grok-land` when never enqueued | Grok assumes queued | Use `HANDOFF: grok-ci-merge` **only** if submit done but enqueue truly blocked (required checks red, or tip `merge-queue` label rejected). `Cannot determine` + mergeable is **not** blocked — the binary must label. |
 
 **Allowed while waiting:** tight poll in the **same** live session (below).  
 **Forbidden:** “wakeup in 20 min” / Monitor / “I’ll merge when checks settle”
@@ -152,6 +156,7 @@ From the **Graphite-ready author clone**. **Primary ready probe =
 | `gt merge --dry-run` → ready / `Your stack is ready to merge` | **Immediately** `gt merge --no-interactive` (no extra sleep) |
 | `gt info` / `gt log` → **`(Ready to merge)`** or **`(Ready to merge as stack)`** | Same — merge now |
 | `(Waiting on CI...)` only (no failed) | Sleep **5–12s** (default **8s**), re-probe dry-run |
+| **`Cannot determine if stack is ready to merge`** | CLI undecided — **not Ready**. Do **not** `gt merge`. Binary: one `gt sync --no-interactive --no-restack`, retry dry-run; still undetermined + required GH green + `CLEAN`/`UNSTABLE` → label the **tip** `merge-queue` and exit 0. Still pending CI → keep polling. Required failed or label rejected → exit 2. Do **not** wait forever for Ready. |
 | **`Required checks failed`** / `Failed CI` / dry-run ERROR with failed checks | **Break immediately — do NOT sleep.** Act (below). Never treat failed as “still waiting.” |
 
 ### On dry-run CI **failed** (Chase lock 2026-08-08 — snappy)
@@ -179,8 +184,12 @@ Ready that never comes” failure mode.
 cstack-gt-wait-merge --rm <job-slug>
 # poll 5–12s (default 8s). Affirmative Ready only.
 # Ready → gt merge immediately. Already in MQ → exit 0.
-# Required checks failed / Failed CI → exit 2 (no more sleep).
+# Cannot determine + mergeable → label tip merge-queue, exit 0.
+# Required checks failed / Failed CI / label rejected → exit 2.
 ```
+
+Do **not** pipe the waiter (`cstack-gt-wait-merge 2>&1 | tail`). Stay
+until it exits.
 
 (`exit 2` = leave the wait loop into the failure handler in the same session —
 rerun / unblock / handoff — not “end the Opus job empty-handed.”)
@@ -200,6 +209,10 @@ rerun / unblock / handoff — not “end the Opus job empty-handed.”)
 6. **Forbidden primary wait:** `sleep N; gh pr checks`.
 7. **Forbidden:** a hand-rolled `while sleep; grep` when
    `cstack-gt-wait-merge` is on PATH.
+8. **Forbidden:** treat `Cannot determine` as infinite wait when GitHub
+   required checks are already green and `mergeStateStatus` is
+   `CLEAN`/`UNSTABLE`. That is enqueue time — label the tip. Do **not**
+   `gt merge` in that state.
 
 **Ignore as “CI red”:** ignored/cancelled Vercel rows; alone
 `mergeStateStatus=UNSTABLE`; alone pending `Graphite / mergeability_check`
@@ -400,7 +413,13 @@ GRAPHITE (hard lock):
   `not ready to merge`). Failed CI / `Required checks failed` → binary
   exits 2 immediately — break, do NOT keep polling Ready.
   Already merging / already in the merge queue → exit 0 (STOP).
-  Cannot determine → binary keeps waiting (do NOT `gt merge`).
+  Cannot determine → do NOT `gt merge`. Binary: one
+  `gt sync --no-interactive --no-restack`, retry dry-run; still
+  Cannot determine + required GH green + CLEAN/UNSTABLE → label the
+  **tip** PR `merge-queue` (Graphite official enqueue-from-anywhere)
+  and exit 0. Still pending CI → keep polling. Required failed or
+  label rejected → exit 2 / `HANDOFF: grok-ci-merge`.
+  Do not wait forever for a Ready that never comes.
 - Repo CI flake: ≤2 `gh run rerun --failed`, then minimal CI unblock commit.
   Forbidden: endless rerun with no code change. Still blocked →
   `HANDOFF: grok-ci-merge`.

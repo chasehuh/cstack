@@ -61,7 +61,8 @@ sume-desk/
 
 Discuss → lock → GitHub issue → `agent-human-stream` / `claude-human-stream`
 (Opus; Fable only if named; Grok Build via `--backend grok`) →
-`cstack-clone` → `gt submit` → **`cstack-gt-wait-merge`** (5–12s) → STOP →
+`cstack-clone` → `gt submit` → **`cstack-gt-wait-merge`** (Ready → `gt merge`,
+Cannot determine + mergeable → tip `merge-queue` label) → STOP →
 Grok lands `main` → `cstack-clone-rm`.
 
 Details: `docs/FLOW.md` then the skills after install.

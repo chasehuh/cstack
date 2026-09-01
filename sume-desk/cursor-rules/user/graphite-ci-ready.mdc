@@ -20,7 +20,7 @@ the **Graphite-ready author clone**:
 
 | Prefer | Avoid as primary |
 |--------|------------------|
-| **`cstack-gt-wait-merge`** (dry-run Ready → **immediate** `gt merge`) | Hand-rolled `sleep` + `grep` loops |
+| **`cstack-gt-wait-merge`** (Ready → `gt merge`; Cannot determine + mergeable → tip `merge-queue` label) | Hand-rolled `sleep` + `grep` loops |
 | `gt info` / `gt log` → **`(Ready to merge)`** / as stack | Waiting on ignored Vercel rows |
 | Poll sleep **5–12s** (default **8s**) | Default **`sleep 20` / `60` / `75` / `180`** |
 | Break the loop on affirmative Ready | Fixed `for … sleep` after already green |
@@ -28,6 +28,11 @@ the **Graphite-ready author clone**:
 
 Still waiting: dry-run not ready / `gt` shows **`(Waiting on CI...)`** with
 **no** failed checks.
+
+**`Cannot determine` is not a wait-forever signal.** Do **not** `gt merge`.
+The binary syncs once (`--no-restack`), retries, then if required GH
+checks are green and `CLEAN`/`UNSTABLE`, labels the **tip** `merge-queue`
+and exits 0. That is Graphite’s official enqueue-from-anywhere path.
 
 **Failed ≠ waiting (Chase lock 2026-08-08):** if dry-run says
 `Required checks failed` / `Failed CI`, **stop the wait loop immediately**.
@@ -65,8 +70,9 @@ Format / Typecheck / Test / Build / validate / Graphite CI optimizer.
 **401 ≠ pending.** Prefer fix `gt auth` and return to `cstack-gt-wait-merge`.
 
 Cook: **`cstack-gt-wait-merge`** after every `gt submit`. Affirmative Ready
-only (`Your stack is ready to merge` / `(Ready to merge)` /
-`(Ready to merge as stack)`). Forbidden: substring grep `ready to merge`.
+(`Your stack is ready to merge` / `(Ready to merge)` /
+`(Ready to merge as stack)`) → `gt merge`. `Cannot determine` + mergeable
+→ tip `merge-queue` label. Forbidden: substring grep `ready to merge`.
 
 Keep `sume-chase-work-loop.mdc` + `opus-background-terminal.mdc` GRAPHITE
 blocks in sync with **`sume-gt-mq`** + the orchestration delegation checklist.

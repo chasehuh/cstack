@@ -11,7 +11,8 @@ if Chase named Fable; `claude-human-stream` =
 `agent-human-stream --backend claude`, job slug 2–4 kebab tokens) →
 `cstack-clone <slug>` (`/tmp/sume-com-<slug>` from the bare mirror) →
 `gt create` → `gt submit` → **`cstack-gt-wait-merge`** (5–12s) →
-`gt merge` (MQ) → **STOP** → **Grok** land (`main` tip `(#N)`).
+`gt merge` **or** tip `merge-queue` label (Cannot determine + mergeable)
+→ **STOP** → **Grok** land (`main` tip `(#N)`).
 
 Triggers: “그렇게 가보자”, “mega-issue → opus”, “플로우 타자”.
 
