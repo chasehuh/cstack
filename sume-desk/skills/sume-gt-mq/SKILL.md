@@ -231,11 +231,21 @@ Desk BP:
 Binaries (install.sh puts them on `~/.local/bin`):
 
 ```bash
-cstack-clone <job-slug>           # prints /tmp/sume-com-<slug>
+cstack-clone <job-slug>           # stdout = /tmp/sume-com-<slug> only
 cstack-clone --force <job-slug>   # wipe + remake
 cstack-mirror-sync                # fetch main into the mirror
 cstack-clone-rm <job-slug>        # after enqueue / land; refuses live cwd
 ```
+
+`CLONE="$(cstack-clone <slug>)"` is the cook. Progress is stderr.
+
+**Seed:** if `$CSTACK_SEED_REPO` (default `$HOME/sume/sume-com`) exists,
+the first mirror is `git clone --bare` from that tree, then `origin` is
+GitHub. **Do not** `--reference` the Cursor `.git` — it is shallow and
+git rejects it.
+
+**Fetch:** **main only.** Never `+refs/heads/*` (that pulls every
+`gtmq_*` branch into the mirror).
 
 ---
 

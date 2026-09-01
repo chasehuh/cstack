@@ -11,9 +11,13 @@
 #
 # Env:
 #   CSTACK_GIT_URL       default git@github.com:sumelabs/sume-com.git
+#   CSTACK_SEED_REPO     default $HOME/sume/sume-com (local bare seed)
 #   CSTACK_MIRROR_ROOT   default ~/.cstack/mirrors
 #   CSTACK_CLONE_ROOT    default /tmp
 #   CSTACK_CLONE_PREFIX  default sume-com
+#
+# stdout is the dest (or mirror) path only. Everything else is stderr
+# so `CLONE="$(cstack-clone slug)"` is safe.
 set -euo pipefail
 
 REPO="${CSTACK_GIT_URL:-git@github.com:sumelabs/sume-com.git}"
@@ -31,14 +35,22 @@ sync_mirror() {
   mkdir -p "$MIRROR_ROOT"
   if [ ! -d "$MIRROR/objects" ]; then
     echo "cstack-clone: seeding mirror $MIRROR" >&2
-    git clone --bare "$REPO" "$MIRROR"
+    SEED_REPO="${CSTACK_SEED_REPO:-$HOME/sume/sume-com}"
+    # Local path clone hardlinks objects on the same volume (fast).
+    # --reference against a *shallow* Cursor checkout is rejected by git.
+    if [ -d "$SEED_REPO/.git" ]; then
+      git clone --bare "$SEED_REPO" "$MIRROR" >&2
+      git -C "$MIRROR" remote remove origin 2>/dev/null || true
+      git -C "$MIRROR" remote add origin "$REPO"
+    else
+      git clone --bare "$REPO" "$MIRROR" >&2
+    fi
   fi
-  # Keep the mirror's main current. Do not `gc --prune=now` while job
-  # clones still have alternates pointing here.
-  git -C "$MIRROR" fetch --prune origin \
-    '+refs/heads/main:refs/heads/main' \
-    '+refs/heads/*:refs/remotes/origin/*' \
-    || git -C "$MIRROR" fetch origin main
+  # Keep the mirror's main current. Main only — do not fetch
+  # '+refs/heads/*' (that dumps every gtmq_* branch). Do not
+  # `gc --prune=now` while job clones still have alternates.
+  git -C "$MIRROR" fetch origin '+refs/heads/main:refs/heads/main' >&2 \
+    || git -C "$MIRROR" fetch origin main >&2
 }
 
 FORCE=0
@@ -92,7 +104,7 @@ fi
 # No --dissociate: .git/objects/info/alternates → mirror. Disk win.
 # No --depth: shallow + reference fights Graphite trunk checks.
 echo "cstack-clone: clone --reference $MIRROR → $DEST" >&2
-git clone --reference "$MIRROR" --branch main "$REPO" "$DEST"
-git -C "$DEST" fetch origin main
-git -C "$DEST" checkout -B main origin/main
+git clone --reference "$MIRROR" --branch main "$REPO" "$DEST" >&2
+git -C "$DEST" fetch origin main >&2
+git -C "$DEST" checkout -B main origin/main >&2
 echo "$DEST"

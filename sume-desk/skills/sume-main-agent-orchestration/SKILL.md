@@ -696,7 +696,7 @@ Opus then illegally used `gh pr create`.
 Single PR (default):
 
 ```bash
-CLONE="$(cstack-clone <job-slug>)"   # /tmp/sume-com-<slug> via bare mirror
+CLONE="$(cstack-clone <job-slug>)"   # stdout = dest only; objects from mirror
 cd "$CLONE"
 gt init --trunk main   # once per clone
 git fetch origin main && git checkout -B main origin/main
