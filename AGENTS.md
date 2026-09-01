@@ -55,8 +55,8 @@ and re-run `./install.sh`.
   not — see `docs/TOKENMAXXING.md`.
 - Terminal title / board Job = `Opus : <job-slug> (#N)` or `Fable : …`.
 - `sume-com` PRs: `cstack-clone` + `gt create` + `gt submit`. **Forbidden:**
-  `gh pr create`. After submit: **`cstack-gt-wait-merge`** (5–12s, default
-  8s) → STOP. Grok owns land. Skill: `sume-gt-mq`.
+  `gh pr create`. After submit: **`cstack-gt-wait-merge`** (tip
+  `merge-queue` now) → STOP. Grok owns land. Skill: `sume-gt-mq`.
 - Same SoT for **Cursor, Claude Code, Codex, and Grok Build**. Edit files
   in this repo (`chasehuh/cstack`) and re-run `./install.sh`. Do not fork
   into `~/.agents/skills` copies — those are symlinks into this tree.

@@ -10,9 +10,9 @@ Discuss (same language as Chase) → lock nouns/defaults/non-goals →
 if Chase named Fable; `claude-human-stream` =
 `agent-human-stream --backend claude`, job slug 2–4 kebab tokens) →
 `cstack-clone <slug>` (`/tmp/sume-com-<slug>` from the bare mirror) →
-`gt create` → `gt submit` → **`cstack-gt-wait-merge`** (5–12s) →
-`gt merge` **or** tip `merge-queue` label (Cannot determine + mergeable)
-→ **STOP** → **Grok** land (`main` tip `(#N)`).
+`gt create` → `gt submit` → **`cstack-gt-wait-merge`** (tip
+`merge-queue` label now; MWR if PR CI pending) → **STOP** → **Grok**
+land (`main` tip `(#N)`).
 
 Triggers: “그렇게 가보자”, “mega-issue → opus”, “플로우 타자”.
 
@@ -42,7 +42,7 @@ duplicate the full SKILL into the `.mdc`.
 | `main-agent-orchestration.mdc` | Pointer at orchestration SKILL |
 | `sume-chase-work-loop.mdc` | Discuss → issue → Opus enqueue → Grok land |
 | `opus-background-terminal.mdc` | `claude-human-stream` recipe: prompt file, `cd` not `--cwd`, `block_until_ms: 0`, title = Job |
-| `graphite-ci-ready.mdc` | Ready-signal = `cstack-gt-wait-merge`, poll 5–12s, fail ≠ wait |
+| `graphite-ci-ready.mdc` | After submit, `cstack-gt-wait-merge` labels the tip now (no CI wait) |
 | `status-board.mdc` | Status board: `지금` / `스테이징` / `백로그` (24h). `지금` includes **진행** (one-shot live-log step). Confirm = resolve (drop; do not show `확인됨`) |
 | `active-workers-canvas.mdc` | Canvas surface of the status board |
 | `end-of-turn-worker-brief.mdc` | Chat work report is SoT (Slack-optional to read); every turn ends with the status board |

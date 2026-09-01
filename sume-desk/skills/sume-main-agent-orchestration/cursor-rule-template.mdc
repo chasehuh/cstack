@@ -33,13 +33,13 @@ Harness notes (do not fork policy here):
   (`block_until_ms: 0`, prompt file, `cd` not `--cwd`, `--resume`, no Task;
   Shell `description` / terminal title = `Opus : <job-slug> (#N)` =
   board Job; **default:** Opus `cstack-clone` → `gt submit` →
-  **`cstack-gt-wait-merge`** (poll **5–12s**, default **8s**) →
+  **`cstack-gt-wait-merge`** (tip `merge-queue` now) →
   STOP, then Grok land babysit; see SoT Graphite hard lock +
-  “Review CI ready-signal”).
-- **Graphite CI ready-signal (always apply on user install):**
+  “Enqueue at submit”).
+- **Graphite enqueue at submit (always apply on user install):**
   `~/.cursor/rules/graphite-ci-ready.mdc`
-  (`cstack-gt-wait-merge` poll 5–12s → merge — not `gh pr checks` /
-  `sleep 20+` loops).
+  (`cstack-gt-wait-merge` labels the tip now — not `gh pr checks` /
+  Ready-poll loops).
 - **Graphite MQ enqueue playbook (always apply on user install):**
   `~/.agents/skills/sume-gt-mq/SKILL.md` — required before any
   `gt submit` / `gt merge` / MQ unstick / land handoff.

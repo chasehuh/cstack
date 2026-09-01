@@ -171,8 +171,8 @@ as the steer launch — do not leave the old terminal running.
 Grok **lands**. Always hand off land babysit unless the user explicitly said
 Opus owns land for that task.
 
-1. Opus: **fresh clone only** → fix → local green → Graphite open → CI →
-   enqueue → **STOP**.
+1. Opus: **fresh clone only** → fix → local green → Graphite open →
+   label tip → **STOP**.
    - **Always:** `gt create` → **`gt submit`** (required). Treat `gt` like
      `gh` — first-class, not optional.
    - **Forbidden:** `git worktree add` under the shared Cursor checkout for
@@ -180,28 +180,21 @@ Opus owns land for that task.
    - **Forbidden:** `gh pr create` on `sume-com` (single or stack). If
      `gt submit` fails (“trunk out of date”), new fresh clone →
      cherry-pick/track → `gt submit`. Never fall back to `gh`.
-   - **After submit:** SAME session — **`cstack-gt-wait-merge`**
-     (poll **5–12s**, default **8s**; **`--rm <slug>`** after enqueue).
-     That binary is the ready-signal. Do **not** write a sleep/grep loop
-     (**no minute cap**) → affirmative Ready → **immediately**
-     **`gt merge --no-interactive`**. `Cannot determine` + mergeable →
-     the same binary labels the **tip** `merge-queue` (do **not**
-     `gt merge` in that state).
-   - **On dry-run `Required checks failed`:** **break immediately** — do
-     **not** keep polling Ready. Act: ≤2 `gh run rerun --failed` for known
-     flake, else minimal CI unblock → `gt submit` → dry-run → merge.
-     **Forbidden:** sleep/dry-run-only while last dry-run already failed.
-   - **Repo CI flake:** shifting timeouts / same fail on unrelated PRs →
-     **≤2 reruns**, then **minimal CI unblock commit** allowed (e.g. vitest
-     `testTimeout`). **Forbidden:** endless `gh run rerun` with no code
-     change. Still blocked → `HANDOFF: grok-ci-merge` (`sume-gt-mq` § F).
+   - **After submit:** SAME session — **`cstack-gt-wait-merge --rm <slug>`**.
+     That binary labels the **tip** `merge-queue` **now**. Do **not**
+     wait for PR CI / dry-run Ready. Do **not** write a sleep/grep loop.
+     Not mergeable yet → Graphite MWR; `validate` green → enters MQ.
+     Already labeled / already in MQ → exit 0. Label rejected → exit 2.
+   - **PR / MQ CI red** is land, not author wait. Land: ≤2
+     `gh run rerun --failed` for known flake, else minimal CI unblock.
+     **Forbidden:** endless `gh run rerun` with no code change. Still
+     blocked → `HANDOFF: grok-ci-merge` (`sume-gt-mq` § F).
    - **PR-A/B/C train:** all layers in one session → `gt submit --stack` →
-     dry-run ready → **`gt merge`** for the whole train. Do **not** “open A
-     only → merge → resume for B”.
-   - **STOP** immediately after enqueue confirmed (QUEUED / label /
-     Graphite activity) with **`LANDED: no` + `NOT 완료`**. Do **not**
-     babysit MQ draft CI / `main` tip / restack-while-merging unless
-     this session owns land. **Do not tell Chase 완료.**
+     label the **tip**. Do **not** “open A only → merge → resume for B”.
+   - **STOP** immediately after the tip has `merge-queue` (MWR counts)
+     with **`LANDED: no` + `NOT 완료`**. Do **not** babysit MQ draft CI /
+     `main` tip / restack-while-merging unless this session owns land.
+     **Do not tell Chase 완료.**
    - Opus prompt **must** include: `Required skill: read
      ~/.agents/skills/sume-gt-mq/SKILL.md before any gt submit/merge` plus
      the GRAPHITE hard-lock block from orchestration § "Delegation checklist"
@@ -217,8 +210,8 @@ Opus owns land for that task.
    - **Default:** MQ already enqueued — watch draft CI → **stay until**
      `main` tip `(#N)` (re-enqueue on eject; do not STOP at enqueue) →
      issue comment / authorized ops. Do **not** re-enqueue if still in MQ.
-   - **Fallback** (`HANDOFF: grok-ci-merge`): Opus could not enqueue → CI
-     green → `gh pr edit <N> --add-label merge-queue` (no clone) → land.
+   - **Fallback** (`HANDOFF: grok-ci-merge`): label missing / rejected →
+     `gh pr edit <N> --add-label merge-queue` now (no clone) → land.
    - If Opus only opened via `gh pr create`: **reject** — repair with
      fresh-clone `gt submit` before enqueue.
    - After restack: **`gt submit` again**, then Opus (or fallback Grok)

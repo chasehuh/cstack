@@ -1,67 +1,43 @@
 #!/usr/bin/env bash
-# Wait until Graphite may enqueue, then enqueue.
-# Default: affirmative Ready → `gt merge`.
-# Cannot determine + mergeable → label the tip `merge-queue`
-# (Graphite official enqueue-from-anywhere). Never `gt merge` while the
-# CLI says it cannot determine. Do not hand-roll this loop.
+# After `gt submit`, label the tip `merge-queue` immediately.
+# Graphite: if the PR is not mergeable yet, the label is Merge when ready
+# and the PR enters MQ when `validate` passes. If it is already mergeable,
+# the label enqueues now. Do not wait for PR CI. Do not `gt merge`.
 #
 # Usage (from the author clone cwd, stack tip after submit):
 #   cstack-gt-wait-merge
-#   cstack-gt-wait-merge --interval 8
+#   cstack-gt-wait-merge --rm <job-slug>
 #   cstack-gt-wait-merge --no-merge
-#   cstack-gt-wait-merge --rm <job-slug>     # after successful enqueue
-#   cstack-gt-wait-merge --classify-stdin    # test hook (no gt)
-#   cstack-gt-wait-merge --gate-stdin        # test hook (gh JSON → gate)
+#   cstack-gt-wait-merge --classify-stdin    # test hook
+#   cstack-gt-wait-merge --gate-stdin        # test hook
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-INTERVAL="${CSTACK_GT_WAIT_INTERVAL:-8}"
 DO_MERGE=1
 RM_SLUG=""
 CLASSIFY_STDIN=0
 GATE_STDIN=0
-DID_SYNC=0
 
 usage() {
   cat <<'EOF'
-cstack-gt-wait-merge — poll `gt merge --dry-run` then enqueue.
+cstack-gt-wait-merge — label the tip `merge-queue` immediately after submit.
 
-  --interval N     seconds between polls (5–12, default 8)
-  --no-merge       wait/classify only; do not `gt merge` or label
   --rm SLUG        after enqueue, run `cstack-clone-rm SLUG`
+  --no-merge       print the tip PR; do not label
+  --interval N     accepted, unused (no CI poll)
   --classify-stdin classify one dry-run blob from stdin (exit 10–14)
   --gate-stdin     classify one `gh pr view --json` blob (exit 20–24)
   -h, --help
 
-Ready (affirmative only) → `gt merge`:
-  Your stack is ready to merge
-  (Ready to merge)
-  (Ready to merge as stack)
-
-Cannot determine → do NOT `gt merge`:
-  one `gt sync --no-interactive --no-restack`, retry dry-run
-  still undetermined + required GH green + CLEAN/UNSTABLE
-    → label the tip PR `merge-queue` (exit 0)
-  still pending CI → keep polling
-  required failed → exit 2
-
-NOT ready (keep waiting):
-  not ready to merge
-  (Waiting on CI...)
-
-Failed (exit 2, no more sleep):
-  Required checks failed
-  Failed CI
-
-Already queued (exit 0):
-  already merging
-  already in the merge queue
-  tip already has `merge-queue`
+Default: do not wait for PR CI / dry-run Ready.
+Label the tip. Not mergeable yet → Graphite MWR → MQ when validate is green.
+Already labeled / already in MQ → exit 0.
+Label rejected / no tip PR → exit 2.
 EOF
 }
 
-# Classify a `gt merge --dry-run` blob.
+# Classify a `gt merge --dry-run` blob (test hook only).
 # Prints: ready|queued|failed|undetermined|wait
 cstack_gt_classify() {
   local blob="$1"
@@ -76,7 +52,6 @@ cstack_gt_classify() {
     return 0
   fi
 
-  # Affirmative only. Never substring-match "ready to merge".
   if printf '%s' "$blob" | grep -qF 'Your stack is ready to merge'; then
     printf '%s\n' ready
     return 0
@@ -98,8 +73,7 @@ cstack_gt_classify() {
   printf '%s\n' wait
 }
 
-# Classify `gh pr view --json number,state,isDraft,mergeStateStatus,labels,statusCheckRollup`.
-# Prints: labeled|green|pending|failed|error
+# Classify `gh pr view --json` (test hook only).
 cstack_gt_gh_gate_from_json() {
   python3 -c '
 import json, sys
@@ -182,25 +156,15 @@ print("pending")
 '
 }
 
-cstack_gt_gh_gate() {
-  local json
-  if ! command -v gh >/dev/null 2>&1; then
-    printf '%s\n' error
-    return 0
-  fi
-  if ! command -v python3 >/dev/null 2>&1; then
-    printf '%s\n' error
-    return 0
-  fi
-  if ! json="$(gh pr view --json number,state,isDraft,mergeStateStatus,labels,statusCheckRollup 2>/dev/null)"; then
-    printf '%s\n' error
-    return 0
-  fi
-  printf '%s' "$json" | cstack_gt_gh_gate_from_json
-}
-
 cstack_gt_pr_number() {
   gh pr view --json number --jq .number 2>/dev/null || true
+}
+
+cstack_gt_has_mq_label() {
+  local number="$1"
+  local has
+  has="$(gh pr view "$number" --json labels --jq '[.labels[].name] | any(. == "merge-queue")' 2>/dev/null || true)"
+  [ "$has" = "true" ]
 }
 
 finish_ok() {
@@ -220,14 +184,13 @@ label_tip_enqueue() {
     echo "cstack-gt-wait-merge: would label merge-queue on #${number} (--no-merge)" >&2
     return 0
   fi
-  echo "cstack-gt-wait-merge: labeling merge-queue on #${number} (Cannot determine + mergeable)" >&2
+  echo "cstack-gt-wait-merge: labeling merge-queue on #${number} now (MWR if CI pending)" >&2
   gh pr edit "$number" --add-label merge-queue
 }
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --interval)
-      INTERVAL="${2:?--interval needs a number}"
       shift 2
       ;;
     --no-merge)
@@ -289,93 +252,26 @@ if [ "$GATE_STDIN" -eq 1 ]; then
   esac
 fi
 
-# Clamp: finer than 15–30s, not a hot spin.
-if ! [[ "$INTERVAL" =~ ^[0-9]+$ ]]; then
-  echo "cstack-gt-wait-merge: --interval must be an integer" >&2
-  exit 1
-fi
-if [ "$INTERVAL" -lt 5 ]; then
-  INTERVAL=5
-fi
-if [ "$INTERVAL" -gt 12 ]; then
-  INTERVAL=12
-fi
-
-if ! command -v gt >/dev/null 2>&1; then
-  echo "cstack-gt-wait-merge: gt not on PATH" >&2
+if ! command -v gh >/dev/null 2>&1; then
+  echo "cstack-gt-wait-merge: gh not on PATH" >&2
   exit 1
 fi
 
-echo "cstack-gt-wait-merge: poll every ${INTERVAL}s (affirmative Ready or label fallback)" >&2
+number="$(cstack_gt_pr_number)"
+if [ -z "$number" ]; then
+  echo "cstack-gt-wait-merge: no tip PR — run from the submitted stack tip after gt submit" >&2
+  exit 2
+fi
 
-while true; do
-  blob="$(gt merge --dry-run --no-interactive 2>&1 || true)"
-  kind="$(cstack_gt_classify "$blob")"
-  case "$kind" in
-    ready)
-      echo "cstack-gt-wait-merge: READY — enqueue via gt merge" >&2
-      if [ "$DO_MERGE" -eq 1 ]; then
-        gt merge --no-interactive
-      fi
-      finish_ok
-      ;;
-    queued)
-      echo "cstack-gt-wait-merge: already in MQ — stop" >&2
-      finish_ok
-      ;;
-    failed)
-      echo "cstack-gt-wait-merge: Required checks failed — stop waiting" >&2
-      printf '%s\n' "$blob" >&2
-      exit 2
-      ;;
-    undetermined)
-      if [ "$DID_SYNC" -eq 0 ]; then
-        echo "cstack-gt-wait-merge: Cannot determine — one gt sync --no-restack, then retry" >&2
-        gt sync --no-interactive --no-restack || true
-        DID_SYNC=1
-        continue
-      fi
-      echo "cstack-gt-wait-merge: Cannot determine after sync — GH probe (do not gt merge)" >&2
-      gate="$(cstack_gt_gh_gate)"
-      number="$(cstack_gt_pr_number)"
-      case "$gate" in
-        labeled)
-          echo "cstack-gt-wait-merge: tip already has merge-queue — stop" >&2
-          finish_ok
-          ;;
-        green)
-          if label_tip_enqueue "$number"; then
-            echo "cstack-gt-wait-merge: ENQUEUED via merge-queue label on #${number}" >&2
-            finish_ok
-          fi
-          echo "cstack-gt-wait-merge: label rejected — HANDOFF: grok-ci-merge" >&2
-          exit 2
-          ;;
-        failed)
-          echo "cstack-gt-wait-merge: required GH checks failed — stop waiting" >&2
-          exit 2
-          ;;
-        pending)
-          echo "cstack-gt-wait-merge: Cannot determine and GH not mergeable yet — sleep ${INTERVAL}s" >&2
-          sleep "$INTERVAL"
-          ;;
-        error)
-          echo "cstack-gt-wait-merge: GH probe failed after Cannot determine — HANDOFF: grok-ci-merge" >&2
-          exit 2
-          ;;
-        *)
-          echo "cstack-gt-wait-merge: unknown gate: $gate" >&2
-          exit 1
-          ;;
-      esac
-      ;;
-    wait)
-      echo "cstack-gt-wait-merge: not ready yet — sleep ${INTERVAL}s" >&2
-      sleep "$INTERVAL"
-      ;;
-    *)
-      echo "cstack-gt-wait-merge: unknown classify: $kind" >&2
-      exit 1
-      ;;
-  esac
-done
+if cstack_gt_has_mq_label "$number"; then
+  echo "cstack-gt-wait-merge: tip #${number} already has merge-queue — stop" >&2
+  finish_ok
+fi
+
+if label_tip_enqueue "$number"; then
+  echo "cstack-gt-wait-merge: ENQUEUED via merge-queue label on #${number} (MWR if CI still running)" >&2
+  finish_ok
+fi
+
+echo "cstack-gt-wait-merge: label rejected — HANDOFF: grok-ci-merge" >&2
+exit 2

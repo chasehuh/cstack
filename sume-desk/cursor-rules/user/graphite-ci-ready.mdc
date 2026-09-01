@@ -1,44 +1,47 @@
 ---
-description: Graphite ready-signal for CI — use gt dry-run poll, not gh pr checks
+description: Graphite enqueue at submit — label the tip now, do not wait for PR CI
 alwaysApply: true
 ---
 
-# Graphite CI ready-signal (Cursor / Opus / Grok)
+# Graphite enqueue at submit (Cursor / Opus / Grok)
 
-Policy SoT for enqueue/land ops:  
-`~/.agents/skills/sume-gt-mq/SKILL.md`  
-§ **"Ready-signal + poll loop"**
+Policy SoT for enqueue/land ops:
+`~/.agents/skills/sume-gt-mq/SKILL.md`
+§ **"Enqueue at submit (Chase lock 2026-09-01)"**.
 
-Also in orchestration:  
-`~/.agents/skills/sume-main-agent-orchestration/SKILL.md`  
-§ **"Review CI ready-signal (Chase lock 2026-08-07)"**.
+Also in orchestration:
+`~/.agents/skills/sume-main-agent-orchestration/SKILL.md`
+§ **"Enqueue at submit (Chase lock 2026-09-01)"**.
 
-## Locked (2026-08-07)
+## Locked (2026-09-01)
 
-After **`gt submit`** / **`gt submit --stack`**, decide “may enqueue” from
-the **Graphite-ready author clone**:
+After **`gt submit`** / **`gt submit --stack`**, from the
+**Graphite-ready author clone**:
 
-| Prefer | Avoid as primary |
-|--------|------------------|
-| **`cstack-gt-wait-merge`** (Ready → `gt merge`; Cannot determine + mergeable → tip `merge-queue` label) | Hand-rolled `sleep` + `grep` loops |
-| `gt info` / `gt log` → **`(Ready to merge)`** / as stack | Waiting on ignored Vercel rows |
-| Poll sleep **5–12s** (default **8s**) | Default **`sleep 20` / `60` / `75` / `180`** |
-| Break the loop on affirmative Ready | Fixed `for … sleep` after already green |
-| **`Required checks failed` → break + act** (rerun/fix) | Dry-run sleep while already failed |
+```bash
+cstack-gt-wait-merge --rm <job-slug>
+```
 
-Still waiting: dry-run not ready / `gt` shows **`(Waiting on CI...)`** with
-**no** failed checks.
+That labels the **tip** `merge-queue` immediately.
 
-**`Cannot determine` is not a wait-forever signal.** Do **not** `gt merge`.
-The binary syncs once (`--no-restack`), retries, then if required GH
-checks are green and `CLEAN`/`UNSTABLE`, labels the **tip** `merge-queue`
-and exits 0. That is Graphite’s official enqueue-from-anywhere path.
+| Prefer | Avoid |
+|--------|--------|
+| Tip `merge-queue` **now** (Graphite MWR if PR CI pending) | Waiting for PR CI / dry-run Ready |
+| **`cstack-gt-wait-merge`** | Hand-rolled `sleep` + `grep` / `gh pr checks` loops |
+| Label the **tip** (Graphite copies downstack) | Label only the base PR |
+| Author **STOP** after the label | Author poll until `gt merge` Ready |
 
-**Failed ≠ waiting (Chase lock 2026-08-08):** if dry-run says
-`Required checks failed` / `Failed CI`, **stop the wait loop immediately**.
-Do not keep polling for Ready. Same session: ≤2 `gh run rerun --failed` for
-known flake, else minimal CI unblock → `gt submit` → dry-run → merge (or
-`HANDOFF: grok-ci-merge`). SoT: `sume-gt-mq` § Ready-signal + § F.
+Not mergeable yet → Graphite treats the label as Merge when ready.
+`validate` green → the PR enters MQ → MQ draft CI still runs.
+Already mergeable → the label enqueues now.
+
+`Cannot determine` is irrelevant. Do **not** `gt merge` as the author
+wait path. Do **not** wait for Ready.
+
+**Failed CI is land, not author wait.** Label present + checks still
+running is **not** eject. Land: ≤2 `gh run rerun --failed` for known
+flake, else minimal CI unblock → `gt submit` → label again if dropped
+(or `HANDOFF: grok-ci-merge`). SoT: `sume-gt-mq` § Enqueue at submit + § F.
 
 ## Repo-wide CI flake (Chase lock 2026-08-07)
 
@@ -55,24 +58,15 @@ If required Test fails with **shifting timeouts** / same signature on
 
 ## Why
 
-Graphite docs: post-submit `gt log` includes PR status
-([visualize a stack](https://graphite.com/docs/visualize-stack)); merge
-waits on GitHub checks
-([merge PRs](https://graphite.com/docs/merge-pull-requests)).  
+Graphite documents two official enqueue paths: app/CLI merge, and a
+configured GitHub label (`merge-queue` here). Labeling at submit is
+Merge when ready — the worker is not the ready-signal. Wall clock is
+still PR CI then MQ CI; this lock only removes the author poll.
+
 `gh pr checks` inside Claude tool shells can **401** and also surfaces
-non-required noise (`Graphite / mergeability_check`, cancelled Vercel).  
-Long sleep defaults lag minutes after the stack is already Ready.
+non-required noise. Do not sit in that loop after submit.
 
-## Fallback only
-
-If `gt` is broken: filter `gh pr view --json statusCheckRollup` to
-Format / Typecheck / Test / Build / validate / Graphite CI optimizer.
-**401 ≠ pending.** Prefer fix `gt auth` and return to `cstack-gt-wait-merge`.
-
-Cook: **`cstack-gt-wait-merge`** after every `gt submit`. Affirmative Ready
-(`Your stack is ready to merge` / `(Ready to merge)` /
-`(Ready to merge as stack)`) → `gt merge`. `Cannot determine` + mergeable
-→ tip `merge-queue` label. Forbidden: substring grep `ready to merge`.
+**Forbidden:** `cstack-gt-wait-merge 2>&1 | tail`. Stay until it exits.
 
 Keep `sume-chase-work-loop.mdc` + `opus-background-terminal.mdc` GRAPHITE
 blocks in sync with **`sume-gt-mq`** + the orchestration delegation checklist.

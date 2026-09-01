@@ -26,7 +26,7 @@ silently become the sole implementer for work Chase expected on that flow.
 |-----|------|
 | Chase | Product locks, “go / defer / merge까지” |
 | Main (this chat) | Discuss (match Chase’s language), survey, issue, launch workers, **self-contained chat report** (Slack is a mirror) |
-| Opus | **Default author** if Chase did not name a model. BP → fresh clone → `gt submit` → `gt merge` (MQ) → **STOP** with `LANDED: no` / `NOT 완료` |
+| Opus | **Default author** if Chase did not name a model. BP → fresh clone → `gt submit` → tip `merge-queue` → **STOP** with `LANDED: no` / `NOT 완료` |
 | Fable | Author **only** when Chase said Fable. Same enqueue path as Opus → **STOP** (`LANDED: no`) |
 | Grok | **Always** MQ land babysit after Opus **or** Fable enqueue (`agent-human-stream --backend grok`) — **stay until `origin/main` `(#N)`**. Also author if Chase said Grok. Never Cursor `Task`. |
 | Composer | Explore only |
@@ -89,31 +89,21 @@ GRAPHITE (hard lock):
   shared Cursor checkout (#2383). Forbidden: `gh pr create` (single or stack).
   Publish ONLY via `gt submit`. If submit fails (trunk out of date): new
   `cstack-clone` → cherry-pick/track → `gt submit`. Never `gh pr create`.
-- After `gt submit`: SAME session — `cstack-gt-wait-merge`
-  (poll 5–12s, default 8s; `--rm <job-slug>` after enqueue).
-  That binary is the ready-signal. Do NOT write a `sleep` + `grep` loop.
-  Ready = ONLY `Your stack is ready to merge` or `(Ready to merge)` /
-  `(Ready to merge as stack)`. Forbidden: substring grep `ready to merge`
-  (false-matches `Cannot determine if stack is ready to merge` and
-  `not ready to merge`). Failed CI / `Required checks failed` → binary
-  exits 2 immediately — break, do NOT keep polling Ready.
-  Already merging / already in the merge queue → exit 0 (STOP).
-  Cannot determine → do NOT `gt merge`. Binary: one
-  `gt sync --no-interactive --no-restack`, retry dry-run; still
-  Cannot determine + required GH green + CLEAN/UNSTABLE → label the
-  **tip** PR `merge-queue` (Graphite official enqueue-from-anywhere)
-  and exit 0. Still pending CI → keep polling. Required failed or
-  label rejected → exit 2 / `HANDOFF: grok-ci-merge`.
-  Do not wait forever for a Ready that never comes.
-- Repo CI flake: ≤2 `gh run rerun --failed`, then minimal CI unblock commit.
-  Forbidden: endless rerun with no code change. Still blocked →
+- After `gt submit`: SAME session — `cstack-gt-wait-merge --rm <job-slug>`.
+  Label the **tip** `merge-queue` immediately. Do NOT wait for PR CI,
+  dry-run Ready, or `Cannot determine`. Do NOT write a sleep/grep loop.
+  Not mergeable yet → Graphite MWR; `validate` green → enters MQ.
+  Already labeled / already in MQ → exit 0.
+  Label rejected → exit 2 / `HANDOFF: grok-ci-merge`.
+- Repo CI flake (land, after the PR is in CI/MQ): ≤2 `gh run rerun --failed`,
+  then minimal CI unblock. Forbidden: endless rerun. Still blocked →
   `HANDOFF: grok-ci-merge`.
-- Forbidden: ScheduleWakeup then exit before enqueue evidence.
-  Stay in-session until enqueue confirmed (no minute cap).
-- Own only this train. STOP immediately after enqueue.
+- Forbidden: ScheduleWakeup then exit before the label is on the tip.
+  Enqueue evidence = `merge-queue` label (MWR counts). Then STOP.
+- Own only this train. STOP immediately after the label.
   Done report: clone path + Graphite URL + GitHub PR URL + enqueue
   evidence + `LANDED: no` + `NOT 완료` + `HANDOFF: grok-land`.
-  After enqueue: `cstack-clone-rm <job-slug>` (or `--rm` on the waiter)
+  After enqueue: `cstack-clone-rm <job-slug>` (or `--rm` on the binary)
   unless land still needs the tree.
 EOF
 cd <repo> && claude-human-stream --name <job-slug> "$(cat /tmp/sume-opus-prompts/<job-slug>.md)"
@@ -138,12 +128,13 @@ first-class like `gh` — never author with `gh pr create` on `sume-com`.
    loop — do not re-ask “머지할까요?”). Never Cursor `Task` / `cursor-grok-*`.
    **Do not tell Chase 완료** — enqueue is not landed.
 4. Stack / PR → Graphite MQ. **Opus should already have enqueued** via
-   `gt merge` (fallback label). Grok watches draft CI → **stays until**
+   tip `merge-queue` (MWR if PR CI is still running). Grok watches until
    `origin/main` has `(#N)` (re-enqueue on eject; do not STOP at enqueue).
-   Not GitHub `mergedAt` (Graphite FF often leaves `mergedAt: null` /
-   state `CLOSED`). Do not thrash restack while Graphite says “already
-   merging” / draft CI is running. If Opus used `HANDOFF: grok-ci-merge`,
-   Grok does CI → label → stay until main tip.
+   Label + pending CI is not eject. Not GitHub `mergedAt` (Graphite FF
+   often leaves `mergedAt: null` / state `CLOSED`). Do not thrash restack
+   while Graphite says “already merging” / draft CI is running. If Opus
+   used `HANDOFF: grok-ci-merge` (label rejected / missing), Grok labels
+   the tip now → stay until main tip.
 5. Say **완료** to Chase only after that `origin/main` proof.
 
 ### 7) Residuals
@@ -171,12 +162,11 @@ workers: follow Chase constraints (e.g. **api.dev curl, not MCP** when said).
 | Prose Shell titles (“Create arch…”, `Cursor (#…)`) | `description`: `Opus : <job-slug> (#N)` = board Job |
 | Exit after ScheduleWakeup before enqueue | Stay in-session until enqueue evidence (`sume-gt-mq`) |
 | `gh pr create` (any reason, incl. gt submit fail) | Fresh clone → `gt create` → `gt submit` |
-| `gh pr checks` + sleep loops as CI wait | `cstack-gt-wait-merge` (5–12s) → `gt merge` |
-| Dry-run sleep while `Required checks failed` | Break → ≤2 rerun / CI unblock / handoff (`sume-gt-mq`) |
+| `gh pr checks` + sleep loops as author wait | `cstack-gt-wait-merge` (label tip now) |
+| Author wait for PR CI / dry-run Ready | Label now; Graphite MWR |
 | Endless `gh run rerun` on repo flake | ≤2 reruns → minimal CI unblock → or `HANDOFF: grok-ci-merge` |
-| Default `sleep 20+` Ready wait | Cap **12s** (prefer 8s); use `cstack-gt-wait-merge` |
 | `git worktree` under Cursor checkout + `gt` | `cstack-clone <slug>` |
-| Grok clones / `gt track` just to merge | Label fallback only; prefer Opus `gt merge` |
+| Grok clones / `gt track` just to merge | Label the tip; stay until `main` |
 | Enqueue unbound `gh`-only PR | Repair `gt submit` first, then enqueue |
 | Habitual rebase / Update branch while in MQ | Wait for Graphite draft CI / restack |
 | Treat Graphite FF `CLOSED`+`mergedAt:null` as not landed | Check `origin/main` `(#N)` |
