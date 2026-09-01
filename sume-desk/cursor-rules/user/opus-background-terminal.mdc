@@ -102,7 +102,7 @@ Use the **same `cd` repo path** the original session used, or resume fails.
    - what started + title (`Opus : <job-slug> (#N)`) / `--name`
    - `session_id=…`
    - live log: wrapper prints `live_log: …/opus-live/<stamp>-<name>.log`
-   - watch: `tail -f ~/.agents/skills/sume-main-agent-orchestration/state/opus-live/LATEST.log`
+   - watch: `tail -f ~/.cstack/state/opus-live/LATEST.log`
 
 5. End your turn or do other work. Completion arrives as a **system
    notification** on the background Shell task — that is the monitor.
@@ -124,7 +124,7 @@ No `sleep` loops, no repeated `AwaitShell` polling.
 
 ```bash
 claude-human-stream --sessions
-# or: rg 'session_id=' ~/.agents/skills/sume-main-agent-orchestration/state/opus-live/
+# or: rg 'session_id=' ~/.cstack/state/opus-live/
 # or: rg '📎 session_id=' <finished-terminal>.txt
 ```
 
@@ -180,11 +180,11 @@ Opus owns land for that task.
    - **Forbidden:** `gh pr create` on `sume-com` (single or stack). If
      `gt submit` fails (“trunk out of date”), new fresh clone →
      cherry-pick/track → `gt submit`. Never fall back to `gh`.
-   - **After submit:** SAME session — poll **`gt merge --dry-run`** every
-     **15–30s** (default **20s**; **never** default `sleep 60+`) until
-     ready — **not** `gh pr checks` loops (**no minute cap**) → on dry-run
-     ready **immediately** **`gt merge --no-interactive`** (same clone).
-     Fallback: `gh pr edit <N> --add-label merge-queue`.
+   - **After submit:** SAME session — **`cstack-gt-wait-merge`**
+     (poll **5–12s**, default **8s**; **`--rm <slug>`** after enqueue).
+     That binary is the ready-signal. Do **not** write a sleep/grep loop
+     (**no minute cap**) → affirmative Ready → **immediately**
+     **`gt merge --no-interactive`**. Fallback: `merge-queue` label.
    - **On dry-run `Required checks failed`:** **break immediately** — do
      **not** keep polling Ready. Act: ≤2 `gh run rerun --failed` for known
      flake, else minimal CI unblock → `gt submit` → dry-run → merge.
@@ -203,7 +203,7 @@ Opus owns land for that task.
    - Opus prompt **must** include: `Required skill: read
      ~/.agents/skills/sume-gt-mq/SKILL.md before any gt submit/merge` plus
      the GRAPHITE hard-lock block from orchestration § "Delegation checklist"
-     / `sume-gt-mq` (incl. **poll ≤30s + dry-run → merge**, **no exit
+     / `sume-gt-mq` (incl. **`cstack-gt-wait-merge`**, **no exit
      before enqueue evidence**).
    - Follow BP / issue locks exactly.
    - Done report: clone path + Graphite URL + GitHub PR URL + enqueue

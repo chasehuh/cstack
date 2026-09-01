@@ -77,46 +77,38 @@ cat > /tmp/sume-opus-prompts/<job-slug>.md <<'EOF'
 Work in **English**.
 Issue: <url>
 Chase locks: …
-Stage: BP → cstack-clone → implement → gt create → gt submit → dry-run poll 15–30s → gt merge → STOP with LANDED: no / NOT 완료 → cstack-clone-rm
+Stage: BP → cstack-clone → implement → gt create → gt submit → cstack-gt-wait-merge → STOP with LANDED: no / NOT 완료 → cstack-clone-rm
 HANDOFF: grok-land
 Chase 완료 only after origin/main has (#N). Enqueue is not 완료.
 
 Required skill: read ~/.agents/skills/sume-gt-mq/SKILL.md before any gt submit/merge.
 
 GRAPHITE (hard lock):
-- Isolated clone only: `cstack-clone <job-slug>` → /tmp/sume-com-<slug>
-  from ~/.cstack/mirrors/sume-com.git. No full git clone when the mirror
-  exists. No git worktree under the shared Cursor checkout for gt (#2383).
-- After enqueue (author) or origin/main (#N) (land): `cstack-clone-rm <slug>`
-  unless a live worker still has that cwd.
-- Forbidden: gh pr create (single or stack). Publish ONLY via gt submit.
-- If gt submit fails (trunk out of date / poisoned): `cstack-clone --force`
-  (or new slug) → cherry-pick/track → gt submit. Never gh pr create.
-- After gt submit: SAME session — poll `gt merge --dry-run --no-interactive`
-  every 15–30s (default 20s; NEVER sleep 60+ as the wait loop). Primary
-  ready-signal is dry-run ready / gt Ready — NOT `gh pr checks` loops.
-  When dry-run says ready → immediately `gt merge --no-interactive` (break;
-  do not keep sleeping). Fallback: merge-queue label.
-- When dry-run says **Required checks failed** / Failed CI → **break
-  immediately** (do NOT keep polling Ready). Act: ≤2 `gh run rerun --failed`
-  for known flake, else minimal CI unblock → `gt submit` → dry-run → merge.
-  **Forbidden:** sleep/dry-run-only while last dry-run already failed.
-- Repo CI flake (shifting timeouts / same fail on unrelated PRs): **≤2
-  reruns**, then **minimal CI unblock commit** allowed (e.g. vitest
-  testTimeout). **Forbidden:** endless `gh run rerun` with no code change.
-  If still blocked → HANDOFF: grok-ci-merge (`sume-gt-mq` § F).
-- Forbidden: ScheduleWakeup/Monitor/background-wait then exit before
-  enqueue evidence; “I’ll merge when checks settle” then end session.
+- Isolated clone only: `CLONE="$(cstack-clone <job-slug>)"` then `cd "$CLONE"`.
+  All `gt` commands run in that clone. Forbidden: `git worktree` under the
+  shared Cursor checkout (#2383). Forbidden: `gh pr create` (single or stack).
+  Publish ONLY via `gt submit`. If submit fails (trunk out of date): new
+  `cstack-clone` → cherry-pick/track → `gt submit`. Never `gh pr create`.
+- After `gt submit`: SAME session — `cstack-gt-wait-merge`
+  (poll 5–12s, default 8s; `--rm <job-slug>` after enqueue).
+  That binary is the ready-signal. Do NOT write a `sleep` + `grep` loop.
+  Ready = ONLY `Your stack is ready to merge` or `(Ready to merge)` /
+  `(Ready to merge as stack)`. Forbidden: substring grep `ready to merge`
+  (false-matches `Cannot determine if stack is ready to merge` and
+  `not ready to merge`). Failed CI / `Required checks failed` → binary
+  exits 2 immediately — break, do NOT keep polling Ready.
+  Already merging / already in the merge queue → exit 0 (STOP).
+  Cannot determine → binary keeps waiting (do NOT `gt merge`).
+- Repo CI flake: ≤2 `gh run rerun --failed`, then minimal CI unblock commit.
+  Forbidden: endless rerun with no code change. Still blocked →
+  `HANDOFF: grok-ci-merge`.
+- Forbidden: ScheduleWakeup then exit before enqueue evidence.
   Stay in-session until enqueue confirmed (no minute cap).
-- Do not treat ignored Vercel rows or Graphite mergeability_check alone
-  as “CI not done” when gt already says Ready.
-- Own only this train’s PRs. Do not touch other stacks.
-- Author STOP after enqueue is a handoff, not 완료. Do NOT babysit MQ
-  draft / main tip / restack-while-merging unless this session owns land.
-- Follow the BP / issue locks exactly.
-- Done report: clone path + Graphite URL + GitHub PR URL + enqueue evidence
-  + LANDED: no + NOT 완료 + STOP. HANDOFF: grok-land
-- Never tell Chase 완료 / done / landed until origin/main has (#N).
+- Own only this train. STOP immediately after enqueue.
+  Done report: clone path + Graphite URL + GitHub PR URL + enqueue
+  evidence + `LANDED: no` + `NOT 완료` + `HANDOFF: grok-land`.
+  After enqueue: `cstack-clone-rm <job-slug>` (or `--rm` on the waiter)
+  unless land still needs the tree.
 EOF
 cd <repo> && claude-human-stream --name <job-slug> "$(cat /tmp/sume-opus-prompts/<job-slug>.md)"
 ```
@@ -173,10 +165,10 @@ workers: follow Chase constraints (e.g. **api.dev curl, not MCP** when said).
 | Prose Shell titles (“Create arch…”, `Cursor (#…)`) | `description`: `Opus : <job-slug> (#N)` = board Job |
 | Exit after ScheduleWakeup before enqueue | Stay in-session until enqueue evidence (`sume-gt-mq`) |
 | `gh pr create` (any reason, incl. gt submit fail) | Fresh clone → `gt create` → `gt submit` |
-| `gh pr checks` + sleep loops as CI wait | `gt merge --dry-run` every 15–30s → ready → `gt merge` |
+| `gh pr checks` + sleep loops as CI wait | `cstack-gt-wait-merge` (5–12s) → `gt merge` |
 | Dry-run sleep while `Required checks failed` | Break → ≤2 rerun / CI unblock / handoff (`sume-gt-mq`) |
 | Endless `gh run rerun` on repo flake | ≤2 reruns → minimal CI unblock → or `HANDOFF: grok-ci-merge` |
-| Default `sleep 60+` Ready wait | Cap **30s** (prefer 20s); break on dry-run ready |
+| Default `sleep 20+` Ready wait | Cap **12s** (prefer 8s); use `cstack-gt-wait-merge` |
 | `git worktree` under Cursor checkout + `gt` | `cstack-clone <slug>` |
 | Grok clones / `gt track` just to merge | Label fallback only; prefer Opus `gt merge` |
 | Enqueue unbound `gh`-only PR | Repair `gt submit` first, then enqueue |

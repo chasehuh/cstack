@@ -20,10 +20,10 @@ the **Graphite-ready author clone**:
 
 | Prefer | Avoid as primary |
 |--------|------------------|
-| **`gt merge --dry-run`** → ready → **immediate** `gt merge` | `gh pr checks` + `sleep` loops |
+| **`cstack-gt-wait-merge`** (dry-run Ready → **immediate** `gt merge`) | Hand-rolled `sleep` + `grep` loops |
 | `gt info` / `gt log` → **`(Ready to merge)`** / as stack | Waiting on ignored Vercel rows |
-| Poll sleep **15–30s** (default **20s**) | Default **`sleep 60` / `75` / `180`** |
-| Break the loop on dry-run ready | Fixed `for … sleep` after already green |
+| Poll sleep **5–12s** (default **8s**) | Default **`sleep 20` / `60` / `75` / `180`** |
+| Break the loop on affirmative Ready | Fixed `for … sleep` after already green |
 | **`Required checks failed` → break + act** (rerun/fix) | Dry-run sleep while already failed |
 
 Still waiting: dry-run not ready / `gt` shows **`(Waiting on CI...)`** with
@@ -62,7 +62,11 @@ Long sleep defaults lag minutes after the stack is already Ready.
 
 If `gt` is broken: filter `gh pr view --json statusCheckRollup` to
 Format / Typecheck / Test / Build / validate / Graphite CI optimizer.
-**401 ≠ pending.** Prefer fix `gt auth` and return to `gt merge --dry-run`.
+**401 ≠ pending.** Prefer fix `gt auth` and return to `cstack-gt-wait-merge`.
+
+Cook: **`cstack-gt-wait-merge`** after every `gt submit`. Affirmative Ready
+only (`Your stack is ready to merge` / `(Ready to merge)` /
+`(Ready to merge as stack)`). Forbidden: substring grep `ready to merge`.
 
 Keep `sume-chase-work-loop.mdc` + `opus-background-terminal.mdc` GRAPHITE
 blocks in sync with **`sume-gt-mq`** + the orchestration delegation checklist.

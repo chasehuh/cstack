@@ -20,8 +20,10 @@ while [[ -L "$SOURCE" ]]; do
 done
 ROOT="$(cd "$(dirname "$SOURCE")" && pwd)"
 SKILL_DIR="$(cd "$ROOT/.." && pwd)"
-REGISTRY="${AGENT_HUMAN_STREAM_REGISTRY:-${CLAUDE_HUMAN_STREAM_REGISTRY:-$SKILL_DIR/state/opus-sessions.jsonl}}"
-LIVE_DIR="${AGENT_HUMAN_STREAM_LIVE_DIR:-${CLAUDE_HUMAN_STREAM_LIVE_DIR:-$SKILL_DIR/state/opus-live}}"
+# Runtime logs live outside the git SoT tree (skills are symlinks into cstack).
+CSTACK_STATE="${CSTACK_STATE:-$HOME/.cstack/state}"
+REGISTRY="${AGENT_HUMAN_STREAM_REGISTRY:-${CLAUDE_HUMAN_STREAM_REGISTRY:-$CSTACK_STATE/opus-sessions.jsonl}}"
+LIVE_DIR="${AGENT_HUMAN_STREAM_LIVE_DIR:-${CLAUDE_HUMAN_STREAM_LIVE_DIR:-$CSTACK_STATE/opus-live}}"
 
 # Claude Code CLI 2.1.x (SDK + changelog): low|medium|high|xhigh|max.
 # Fable / Opus 4.7+ take `max` natively. Do NOT remap max → high.
@@ -91,7 +93,7 @@ Resume:
   --fork-session    new session id, copy history
 
 Watch:
-  tail -f ~/.agents/skills/sume-main-agent-orchestration/state/opus-live/LATEST.log
+  tail -f ~/.cstack/state/opus-live/LATEST.log
 
 On stream start/end the formatter prints:
   📎 session_id=<uuid>  backend=<claude|grok>

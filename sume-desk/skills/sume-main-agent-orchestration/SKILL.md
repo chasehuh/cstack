@@ -293,7 +293,7 @@ agent-human-stream --resume <uuid> "Follow-up …"               # backend from 
 - Claude: `stream-json` + tokenmaxxing `claude`. Grok: `streaming-messages-json`
   (`--permission-mode bypassPermissions --always-approve`). The formatter also
   reads Grok native ACP `streaming-json`.
-- Same live log dir (`state/opus-live/`) and registry (`state/opus-sessions.jsonl`)
+- Same live log dir (`~/.cstack/state/opus-live/`) and registry (`~/.cstack/state/opus-sessions.jsonl`)
   with a `backend` field. Resume hint prints `agent-human-stream --backend …`.
 - **Land and explicit Grok author use this wrapper.** Do **not** launch
   Cursor `Task` / `cursor-grok-*` for land babysit or Grok-authored trains.
@@ -406,7 +406,7 @@ follow-up already authorized (do not re-ask).
    `Task` uses `Explore : <job-slug>` the same way.
 2. **After spawn — make progress human-visible:** briefly tell the user what
    started **and** where to watch. The wrapper tees the human stream to
-   `~/.agents/skills/sume-main-agent-orchestration/state/opus-live/<stamp>-<name>.log`
+   `~/.cstack/state/opus-live/<stamp>-<name>.log`
    and updates `…/opus-live/LATEST.log`. Always surface in chat:
    - `session_id` (when printed)
    - `live_log` path (wrapper stderr banner + registry `live_log` field)
@@ -441,7 +441,7 @@ follow-up already authorized (do not re-ask).
    - Finished terminal log: grep `📎 session_id=`
    - Wrapper registry (prompt_head + cwd + live_log, no secrets):
      `claude-human-stream --sessions`
-     or `~/.agents/skills/sume-main-agent-orchestration/state/opus-sessions.jsonl`
+     or `~/.cstack/state/opus-sessions.jsonl`
    - On-disk Claude transcripts under
      `~/.claude/projects/<cwd-slug>/*.jsonl` — filename / `sessionId` field;
      match by mtime + first user `prompt` text (e.g. rg `1708` / `Audit`).
@@ -585,10 +585,10 @@ migrations, "figure out why and design the fix" asks.
    (**via Claude Code CLI**):
    - investigate / RCA; write the GitHub mega-issue when needed
      (`github-mega-issue` skill);
-   - then (same or resumed session) **fresh clone** → code → local green →
-     **`gt create` → `gt submit`** (single or stack) → poll
-     **`gt merge --dry-run`** every **15–30s** (default 20s; **no minute
-     cap**; not `gh pr checks`) → dry-run ready → **immediately**
+   - then (same or resumed session) **`cstack-clone`** → code → local green →
+     **`gt create` → `gt submit`** (single or stack) →
+     **`cstack-gt-wait-merge`** (poll **5–12s**, default **8s**; **no minute
+     cap**; not `gh pr checks`; affirmative Ready only) → **immediately**
      **`gt merge --no-interactive`** (same clone);
    - fallback enqueue: `gh pr edit <N> --add-label merge-queue` if `gt merge`
      fails;
@@ -686,8 +686,8 @@ Opus then illegally used `gh pr create`.
    I’ll just open with gh”.
 4. **Allowed `gh` uses (not authoring):** `gh pr view`, `gh pr comment`,
    `gh pr edit --add-label merge-queue`, issue tools. **`gh pr checks` is
-   fallback only** — primary ready-signal is **`gt info` / `gt log` /
-   `gt merge --dry-run`** (see “Review CI ready-signal” below).
+   fallback only** — primary ready-signal is **`cstack-gt-wait-merge`**
+   (`gt merge --dry-run` / `gt` Ready; see “Review CI ready-signal”).
 5. Always follow the **BP / mega-issue locks** for slice order, stop-at-PR
    vs merge, and non-goals. Do not invent a parallel land path.
 
@@ -707,9 +707,8 @@ EOF
 )"
 # edit files in $CLONE only; commit with gt modify -c or git commit
 gt submit --no-interactive --no-ai --publish
-# poll gt merge --dry-run every 15–30s (default 20s; never sleep 60+)
-# when dry-run ready → gt merge immediately (same session, no minute cap)
-gt merge --no-interactive   # Opus default enqueue (same clone)
+cstack-gt-wait-merge --rm <job-slug>   # 5–12s, default 8s; then gt merge
+# fallback if gt merge fails: gh pr edit <N> --add-label merge-queue
 # fallback if gt merge fails: gh pr edit <N> --add-label merge-queue
 # Done report MUST include: clone path + Graphite URL + GitHub PR URL
 #   + enqueue evidence (QUEUED / label / Graphite activity) + STOP
@@ -727,8 +726,7 @@ gt create -m "…"   # B on top of A
 # …implement B…
 gt create -m "…"   # C
 gt submit --stack --no-interactive --no-ai --publish
-# poll dry-run 15–30s → ready → gt merge for whole train
-gt merge --no-interactive   # enqueue whole train via Graphite MQ
+cstack-gt-wait-merge --rm <job-slug>   # enqueue whole train via Graphite MQ
 # STOP — HANDOFF: grok-land (do not babysit draft CI / main tip)
 ```
 
@@ -740,7 +738,7 @@ Common ops (same clone):
 | Amend / add commit on current | `gt modify -c` / `git commit` then stay tracked |
 | Publish / update PRs | **`gt submit`** (always required) |
 | Restack after trunk moves | `gt sync` / `gt restack` → **`gt submit` again** |
-| Ready for enqueue? | **`gt merge --dry-run`** ready (or `gt` Ready) — poll **15–30s** |
+| Ready for enqueue? | **`cstack-gt-wait-merge`** (dry-run Ready, poll **5–12s**) |
 | Enqueue MQ (**Opus default**) | dry-run ready → **immediately** **`gt merge --no-interactive`** |
 | Enqueue MQ (fallback / Grok fallback) | `gh pr edit <N> --add-label merge-queue` |
 
@@ -824,7 +822,7 @@ prefer **`gt merge --dry-run`**, also `gt info` / `gt log` Ready (docs:
 |--------|---------|--------|
 | `gt merge --dry-run` → **`Your stack is ready to merge`** | Enqueueable | **Immediately** `gt merge --no-interactive` |
 | `gt info` / `gt log` → **`(Ready to merge)`** / **`(Ready to merge as stack)`** | Graphite says review gates met | Same — merge now |
-| **`(Waiting on CI...)`** only (no failed) | Still running | Sleep **15–30s** (default **20s**), re-probe dry-run — **no minute cap** |
+| **`(Waiting on CI...)`** only (no failed) | Still running | Sleep **5–12s** (default **8s**), re-probe dry-run — **no minute cap** |
 | **`Cannot determine if stack is ready to merge`** | CLI undecided — **not Ready** | Do **not** `gt merge`. One-shot required GH probe; green → `merge-queue` label (`sume-gt-mq`) |
 | `not ready to merge` | Not ready | Sleep, re-probe |
 | **`Required checks failed`** / `Failed CI` | Will never Ready by waiting | **Break immediately** — rerun ≤2 / unblock / handoff (`sume-gt-mq`) |
@@ -837,7 +835,7 @@ loop. Do not copy an older substring grep from this file or from logs.
 **Forbidden as the primary CI wait path on `sume-com`:**
 
 - `gh pr checks` polling loops (esp. `sleep N; gh pr checks` in Opus)
-- Default **`sleep 60` / `75` / `180`** wait loops (cap **30s** per iteration)
+- Default **`sleep 20` / `60` / `75` / `180`** wait loops (cap **12s** per iteration; prefer `cstack-gt-wait-merge`)
 - Fixed `for i in 1..N; sleep …` that keeps sleeping after dry-run is ready
 - **Dry-run / sleep while last dry-run already said `Required checks failed`**
   (Ready will never arrive — act: ≤2 rerun / CI unblock / handoff)
@@ -872,10 +870,10 @@ separate Graphite UI toggle (automerge-style). Our default enqueue remains
 
 **Enqueue (Chase lock 2026-08-05 — Opus default = `gt merge`)**
 
-- **Opus default:** after `gt submit`, poll **`gt merge --dry-run`** every
-  **15–30s** (default 20s) in the **same** author clone; on ready run
-  **`gt merge --no-interactive`** **immediately** (single PR or whole stack).
-  No minute cap — stay until enqueue, then **STOP**.
+- **Opus default:** after `gt submit`, run **`cstack-gt-wait-merge`**
+  (poll **5–12s**, default **8s**) in the **same** author clone; on ready it
+  runs **`gt merge --no-interactive`** **immediately** (single PR or whole
+  stack). No minute cap — stay until enqueue, then **STOP**.
 - **Opus fallback:** `gh pr edit <N> --add-label merge-queue` if `gt merge`
   fails / bind issues.
 - **Grok fallback only:** same **label** path when Opus could not enqueue
@@ -961,47 +959,37 @@ Do **not** default back to `gh stack` on `sume-com` while Graphite MQ is on.
 Every **Opus** implement prompt on `sume-com` **must** include this block
 (verbatim intent; wording may match). Full ops: **`sume-gt-mq`**.
 
+Same text: `sume-desk/GRAPHITE-HARD-LOCK.md` in chasehuh/cstack.
+
 ```text
 Required skill: read ~/.agents/skills/sume-gt-mq/SKILL.md before any gt submit/merge.
 
 GRAPHITE (hard lock):
-- Isolated clone only: `cstack-clone <job-slug>` → /tmp/sume-com-<slug>
-  from ~/.cstack/mirrors/sume-com.git. No full git clone when the mirror
-  exists. No git worktree under the shared Cursor checkout for gt (#2383).
-- After enqueue (author) or origin/main (#N) (land): `cstack-clone-rm <slug>`
-  unless a live worker still has that cwd.
-- Forbidden: gh pr create (single or stack). Publish ONLY via gt submit.
-- If gt submit fails (trunk out of date / poisoned): new fresh clone →
-  cherry-pick/track → gt submit. Never gh pr create.
-- After gt submit: SAME session — poll `gt merge --dry-run --no-interactive`
-  every 15–30s (default 20s; NEVER sleep 60+ as the wait loop). Primary
-  ready-signal is dry-run ready / gt Ready — NOT `gh pr checks` loops.
+- Isolated clone only: `CLONE="$(cstack-clone <job-slug>)"` then `cd "$CLONE"`.
+  All `gt` commands run in that clone. Forbidden: `git worktree` under the
+  shared Cursor checkout (#2383). Forbidden: `gh pr create` (single or stack).
+  Publish ONLY via `gt submit`. If submit fails (trunk out of date): new
+  `cstack-clone` → cherry-pick/track → `gt submit`. Never `gh pr create`.
+- After `gt submit`: SAME session — `cstack-gt-wait-merge`
+  (poll 5–12s, default 8s; `--rm <job-slug>` after enqueue).
+  That binary is the ready-signal. Do NOT write a `sleep` + `grep` loop.
   Ready = ONLY `Your stack is ready to merge` or `(Ready to merge)` /
-  as stack. Forbidden grep: substring `ready to merge` (false-matches
-  `Cannot determine if stack is ready to merge` and `not ready to merge`).
-  Affirmative ready → immediately `gt merge --no-interactive`.
-  Cannot determine → do NOT gt merge; one-shot required GH probe; if
-  green/CLEAN → merge-queue label. Already queued → STOP.
-- When dry-run says **Required checks failed** / Failed CI → **break
-  immediately** (do NOT keep polling Ready). Act: ≤2 `gh run rerun --failed`
-  for known flake, else minimal CI unblock → `gt submit` → dry-run → merge.
-  **Forbidden:** sleep/dry-run-only while last dry-run already failed.
-- Repo CI flake (shifting timeouts / same fail on unrelated PRs): **≤2
-  reruns**, then **minimal CI unblock commit** allowed (e.g. vitest
-  testTimeout). **Forbidden:** endless `gh run rerun` with no code change.
-  If still blocked → HANDOFF: grok-ci-merge (`sume-gt-mq` § F).
-- Forbidden: ScheduleWakeup/Monitor/background-wait then exit before
-  enqueue evidence; “I’ll merge when checks settle” then end session.
+  `(Ready to merge as stack)`. Forbidden: substring grep `ready to merge`
+  (false-matches `Cannot determine if stack is ready to merge` and
+  `not ready to merge`). Failed CI / `Required checks failed` → binary
+  exits 2 immediately — break, do NOT keep polling Ready.
+  Already merging / already in the merge queue → exit 0 (STOP).
+  Cannot determine → binary keeps waiting (do NOT `gt merge`).
+- Repo CI flake: ≤2 `gh run rerun --failed`, then minimal CI unblock commit.
+  Forbidden: endless rerun with no code change. Still blocked →
+  `HANDOFF: grok-ci-merge`.
+- Forbidden: ScheduleWakeup then exit before enqueue evidence.
   Stay in-session until enqueue confirmed (no minute cap).
-- Do not treat ignored Vercel rows or Graphite mergeability_check alone
-  as “CI not done” when gt already says Ready.
-- Own only this train’s PRs. Do not touch other stacks.
-- Author STOP after enqueue is a handoff, not 완료. Do NOT babysit MQ
-  draft CI / main tip / restack-while-merging unless this session owns land.
-- Follow the BP / issue locks exactly.
-- Done report: clone path + Graphite URL + GitHub PR URL + enqueue evidence
-  + **LANDED: no** + **NOT 완료** + STOP. HANDOFF: grok-land
-- Never tell Chase 완료 / done / landed until `origin/main` has `(#N)`.
+- Own only this train. STOP immediately after enqueue.
+  Done report: clone path + Graphite URL + GitHub PR URL + enqueue
+  evidence + `LANDED: no` + `NOT 완료` + `HANDOFF: grok-land`.
+  After enqueue: `cstack-clone-rm <job-slug>` (or `--rm` on the waiter)
+  unless land still needs the tree.
 ```
 
 When the BP has a PR train, also say:
@@ -1009,7 +997,7 @@ When the BP has a PR train, also say:
 - Implement **all** locked slices in one session, then **`gt submit --stack`**.
 - Do not open only PR-A then stop.
 - Report Graphite + GitHub PR URLs for every layer.
-- Wait CI → **`gt merge`** for the **whole train** → **STOP** — Grok owns
+- **`cstack-gt-wait-merge`** → **`gt merge`** for the **whole train** → **STOP** — Grok owns
   land babysit unless the user said otherwise.
 - Do not invent extra slices beyond the BP train.
 

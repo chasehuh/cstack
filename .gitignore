@@ -1,0 +1,3 @@
+# Worker runtime — install migrates this to ~/.cstack/state
+sume-desk/skills/sume-main-agent-orchestration/state/
+.DS_Store

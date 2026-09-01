@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Install the Sume desk flow onto this machine so any agent follows it.
+# Real SoT is this checkout of chasehuh/cstack (pointed at ~/.cstack/src).
 # Usage:
 #   ./install.sh
 #   ./install.sh --sume-com /path/to/sume-com
+# One-click refresh:
+#   ./bootstrap.sh --sume-com ~/sume/sume-com
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,28 +30,43 @@ if [ ! -d "$DESK/skills/sume-main-agent-orchestration" ]; then
   exit 1
 fi
 
+mkdir -p "$HOME/.cstack/state"
+# Machine SoT pointer → this checkout (git tree, not a rsync fork).
+ln -sfn "$ROOT" "$HOME/.cstack/src"
+echo "SoT pointer: ~/.cstack/src → $ROOT"
+
+# Move wrapper logs out of the skill tree before we replace rsync copies
+# with symlinks into the git checkout.
+OLD_STATE="$HOME/.agents/skills/sume-main-agent-orchestration/state"
+if [ -d "$OLD_STATE" ] && [ ! -L "$HOME/.agents/skills/sume-main-agent-orchestration" ]; then
+  rsync -a "$OLD_STATE/" "$HOME/.cstack/state/"
+  echo "migrated runtime state → ~/.cstack/state"
+fi
+
 link_skill() {
   local name="$1"
   local src="$DESK/skills/$name"
+  local dest="$HOME/.agents/skills/$name"
   [ -d "$src" ] || return 0
   mkdir -p "$HOME/.agents/skills"
-  # Sync pack files without wiping local runtime state/ (opus-live logs, sessions).
-  mkdir -p "$HOME/.agents/skills/$name"
-  if command -v rsync >/dev/null 2>&1; then
-    rsync -a --delete --exclude state/ "$src/" "$HOME/.agents/skills/$name/"
+  if [ -L "$dest" ]; then
+    ln -sfn "$src" "$dest"
+  elif [ -d "$dest" ]; then
+    rm -rf "$dest"
+    ln -sfn "$src" "$dest"
   else
-    # cp fallback: refresh tracked files, keep state/
-    find "$HOME/.agents/skills/$name" -mindepth 1 -maxdepth 1 ! -name state -exec rm -rf {} +
-    cp -a "$src/." "$HOME/.agents/skills/$name/"
+    ln -sfn "$src" "$dest"
   fi
-  for dest in "$HOME/.cursor/skills" "$HOME/.claude/skills" "$HOME/.codex/skills"; do
-    mkdir -p "$dest"
-    ln -sfn "$HOME/.agents/skills/$name" "$dest/$name"
-    echo "linked: $dest/$name"
+  echo "skill SoT: $dest → $src"
+  for harness in "$HOME/.cursor/skills" "$HOME/.claude/skills" \
+                 "$HOME/.codex/skills" "$HOME/.grok/skills"; do
+    mkdir -p "$harness"
+    ln -sfn "$src" "$harness/$name"
+    echo "linked: $harness/$name"
   done
 }
 
-echo "== skills =="
+echo "== skills (symlink → cstack, not rsync copy) =="
 link_skill sume-main-agent-orchestration
 link_skill sume-gt-mq
 link_skill github-mega-issue
@@ -61,7 +79,6 @@ if command -v rsync >/dev/null 2>&1; then
 else
   cp -a "$DESK/cursor-rules/user/." "$HOME/.cursor/rules/"
 fi
-# Keep pointer template in sync with the installed skill
 if [ -x "$HOME/.agents/skills/sume-main-agent-orchestration/install-cursor-rule.sh" ]; then
   "$HOME/.agents/skills/sume-main-agent-orchestration/install-cursor-rule.sh" --user
 fi
@@ -74,25 +91,38 @@ if [ -n "$SUME_COM" ]; then
   else
     cp -a "$DESK/cursor-rules/sume-com/." "$SUME_COM/.cursor/rules/"
   fi
+  # Refresh pointer copies that already live in the product checkout.
+  # sume-com is not SoT — these stay in sync with cstack when present.
+  for f in graphite-ci-ready.mdc sume-chase-work-loop.mdc \
+           opus-background-terminal.mdc main-agent-orchestration.mdc; do
+    if [ -f "$SUME_COM/.cursor/rules/$f" ] && [ -f "$DESK/cursor-rules/user/$f" ]; then
+      cp "$DESK/cursor-rules/user/$f" "$SUME_COM/.cursor/rules/$f"
+    fi
+  done
   "$HOME/.agents/skills/sume-main-agent-orchestration/install-cursor-rule.sh" "$SUME_COM"
 fi
 
-echo "== agent-human-stream + cstack-clone on PATH =="
+echo "== host bins on PATH =="
 mkdir -p "$HOME/.local/bin"
 BIN="$HOME/.agents/skills/sume-main-agent-orchestration/bin"
 GTBIN="$HOME/.agents/skills/sume-gt-mq/bin"
 ln -sfn "$BIN/agent-human-stream.sh" "$HOME/.local/bin/agent-human-stream"
 ln -sfn "$BIN/claude-human-stream.sh" "$HOME/.local/bin/claude-human-stream"
+ln -sfn "$BIN/sume-bg-launch.sh" "$HOME/.local/bin/sume-bg-launch"
 ln -sfn "$GTBIN/cstack-clone.sh" "$HOME/.local/bin/cstack-clone"
 ln -sfn "$GTBIN/cstack-clone-rm.sh" "$HOME/.local/bin/cstack-clone-rm"
 ln -sfn "$GTBIN/cstack-mirror-sync.sh" "$HOME/.local/bin/cstack-mirror-sync"
+ln -sfn "$GTBIN/cstack-gt-wait-merge.sh" "$HOME/.local/bin/cstack-gt-wait-merge"
 chmod +x "$BIN/agent-human-stream.sh" "$BIN/agent-human-stream.py" \
   "$BIN/agent-human-stream.test.py" \
   "$BIN/claude-human-stream.sh" "$BIN/claude-human-stream.py" \
+  "$BIN/sume-bg-launch.sh" \
   "$HOME/.agents/skills/sume-main-agent-orchestration/check-wiring.sh" \
   "$HOME/.agents/skills/sume-gt-mq/install-symlinks.sh" \
   "$GTBIN/cstack-clone.sh" "$GTBIN/cstack-clone-rm.sh" \
-  "$GTBIN/cstack-mirror-sync.sh" || true
+  "$GTBIN/cstack-mirror-sync.sh" "$GTBIN/cstack-gt-wait-merge.sh" \
+  "$GTBIN/cstack-gt-wait-merge.test.sh" \
+  "$ROOT/bootstrap.sh" || true
 if ! echo ":$PATH:" | grep -q ":$HOME/.local/bin:"; then
   echo "NOTE: add \$HOME/.local/bin to PATH (e.g. in ~/.zshrc)"
 fi
@@ -116,6 +146,27 @@ append_entry "$HOME/.codex/AGENTS.md" \
 append_entry "$HOME/.claude/CLAUDE.md" \
   "$ROOT/sume-desk/claude-import-snippet.md" \
   "codex/AGENTS.md"
+append_entry "$HOME/.grok/AGENTS.md" \
+  "$ROOT/sume-desk/grok-agents-snippet.md" \
+  "sume-main-agent-orchestration/SKILL.md"
+
+# Existing snippets keep the old marker, so append the wait cook if missing.
+ensure_wait_hint() {
+  local f="$1"
+  [ -f "$f" ] || return 0
+  if ! grep -q "cstack-gt-wait-merge" "$f"; then
+    printf '\nAfter `gt submit` on sume-com, run `cstack-gt-wait-merge` (do not hand-roll a sleep/grep loop).\n' >> "$f"
+    echo "updated wait hint: $f"
+  fi
+}
+ensure_wait_hint "$HOME/.codex/AGENTS.md"
+ensure_wait_hint "$HOME/.claude/CLAUDE.md"
+ensure_wait_hint "$HOME/.grok/AGENTS.md"
+
+if [ -x "$GTBIN/cstack-gt-wait-merge.test.sh" ]; then
+  echo "== cstack-gt-wait-merge matcher =="
+  "$GTBIN/cstack-gt-wait-merge.test.sh"
+fi
 
 if [ -x "$HOME/.agents/skills/sume-main-agent-orchestration/check-wiring.sh" ]; then
   echo "== wiring check =="
@@ -140,10 +191,14 @@ if [ -x "$HOME/.local/bin/cstack-mirror-sync" ]; then
 fi
 
 echo ""
-echo "Installed. Next: open sume-com in Cursor and read AGENTS.md in this repo."
-echo "SoT: ~/.agents/skills/sume-main-agent-orchestration/SKILL.md"
-echo "gt:  ~/.agents/skills/sume-gt-mq/SKILL.md"
-echo "clone: cstack-clone / cstack-clone-rm / cstack-mirror-sync"
-echo "LC:  ~/.agents/skills/mobidoo-live-commerce-update/SKILL.md"
-echo "Claude: docs/TOKENMAXXING.md (tokenmaxxing pool, not a single login)"
+echo "Installed. SoT is chasehuh/cstack (this checkout), not a rsync fork."
+echo "pointer: ~/.cstack/src"
+echo "policy:  ~/.agents/skills/sume-main-agent-orchestration/SKILL.md"
+echo "gt:      ~/.agents/skills/sume-gt-mq/SKILL.md"
+echo "wait:    cstack-gt-wait-merge  (5–12s, default 8s; affirmative Ready)"
+echo "clone:   cstack-clone / cstack-clone-rm / cstack-mirror-sync"
+echo "state:   ~/.cstack/state/opus-live"
+echo "harness: Cursor + Claude Code + Codex + Grok Build (~/.grok/skills)"
+echo "LC:      ~/.agents/skills/mobidoo-live-commerce-update/SKILL.md"
+echo "Claude:  docs/TOKENMAXXING.md (tokenmaxxing pool, not a single login)"
 echo "Do not copy API keys / PEMs / tokenmaxxing accounts.json into this repo."

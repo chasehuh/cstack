@@ -11,11 +11,13 @@ Old `merge` / `audit` / `propose` copies that used to live here are
 ## After clone (human or agent)
 
 ```bash
-git clone git@github.com:chasehuh/cstack.git
-cd cstack
-./install.sh
-# optional: pin a sume-com checkout
-./install.sh --sume-com /path/to/sume-com
+# one-click (durable SoT at ~/.cstack/src)
+curl -fsSL https://raw.githubusercontent.com/chasehuh/cstack/main/bootstrap.sh \
+  | bash -s -- --sume-com ~/sume/sume-com
+
+# or from a clone
+git clone git@github.com:chasehuh/cstack.git ~/.cstack/src
+~/.cstack/src/install.sh --sume-com ~/sume/sume-com
 ```
 
 Then **read**, in this order:
@@ -52,9 +54,12 @@ and re-run `./install.sh`.
   ahead of the real CLI). Quota swap is automatic; expired parked tokens are
   not — see `docs/TOKENMAXXING.md`.
 - Terminal title / board Job = `Opus : <job-slug> (#N)` or `Fable : …`.
-- `sume-com` PRs: fresh clone + `gt create` + `gt submit`. **Forbidden:**
-  `gh pr create`. After submit: `gt merge --dry-run` every 15–30s →
-  `gt merge` → STOP. Grok owns land. Skill: `sume-gt-mq`.
+- `sume-com` PRs: `cstack-clone` + `gt create` + `gt submit`. **Forbidden:**
+  `gh pr create`. After submit: **`cstack-gt-wait-merge`** (5–12s, default
+  8s) → STOP. Grok owns land. Skill: `sume-gt-mq`.
+- Same SoT for **Cursor, Claude Code, Codex, and Grok Build**. Edit files
+  in this repo (`chasehuh/cstack`) and re-run `./install.sh`. Do not fork
+  into `~/.agents/skills` copies — those are symlinks into this tree.
 - Dev-only until Chase says otherwise. Prod test = Sumelabs + desk SoT key
   only (never paste keys).
 - Stay in the opened workspace; operate on worktrees/clones via paths.

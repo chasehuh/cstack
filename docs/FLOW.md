@@ -10,14 +10,14 @@ Discuss (same language as Chase) → lock nouns/defaults/non-goals →
 if Chase named Fable; `claude-human-stream` =
 `agent-human-stream --backend claude`, job slug 2–4 kebab tokens) →
 `cstack-clone <slug>` (`/tmp/sume-com-<slug>` from the bare mirror) →
-`gt create` → `gt submit` → poll `gt merge --dry-run` 15–30s →
+`gt create` → `gt submit` → **`cstack-gt-wait-merge`** (5–12s) →
 `gt merge` (MQ) → **STOP** → **Grok** land (`main` tip `(#N)`).
 
 Triggers: “그렇게 가보자”, “mega-issue → opus”, “플로우 타자”.
 
 Stage: `STOP at MQ enqueue` unless Chase said “merge까지 / landing까지”.
 
-## Layer 0 — SoT skills (install into `~/.agents/skills/`)
+## Layer 0 — SoT skills (symlink into `~/.agents/skills/` → this repo)
 
 | Path in this repo | Installs as | When |
 |---|---|---|
@@ -26,8 +26,8 @@ Stage: `STOP at MQ enqueue` unless Chase said “merge까지 / landing까지”.
 | `sume-desk/skills/github-mega-issue/` | `github-mega-issue` | Filing the durable issue the worker will execute without the chat |
 | `sume-desk/skills/mobidoo-live-commerce-update/` | `mobidoo-live-commerce-update` | **Formats SoT** — LC package pull/push, catalog pin vs execute, dest fire. UI chrome stays mega-issue + `gt`. |
 
-`sume-main-agent-orchestration/state/` is **not** shipped (live logs).
-The wrapper recreates it.
+Runtime logs live at **`~/.cstack/state/`** (not inside the git skill tree).
+The wrapper recreates that dir.
 
 Formats policy lives **only** in that skill. Do not fork it into FLOW.
 
@@ -41,7 +41,7 @@ duplicate the full SKILL into the `.mdc`.
 | `main-agent-orchestration.mdc` | Pointer at orchestration SKILL |
 | `sume-chase-work-loop.mdc` | Discuss → issue → Opus enqueue → Grok land |
 | `opus-background-terminal.mdc` | `claude-human-stream` recipe: prompt file, `cd` not `--cwd`, `block_until_ms: 0`, title = Job |
-| `graphite-ci-ready.mdc` | Ready-signal = `gt merge --dry-run`, poll ≤30s, fail ≠ wait |
+| `graphite-ci-ready.mdc` | Ready-signal = `cstack-gt-wait-merge`, poll 5–12s, fail ≠ wait |
 | `status-board.mdc` | Status board: `지금` / `스테이징` / `백로그` (24h). `지금` includes **진행** (one-shot live-log step). Confirm = resolve (drop; do not show `확인됨`) |
 | `active-workers-canvas.mdc` | Canvas surface of the status board |
 | `end-of-turn-worker-brief.mdc` | Chat work report is SoT (Slack-optional to read); every turn ends with the status board |
@@ -88,7 +88,7 @@ cat > /tmp/sume-opus-prompts/<job-slug>.md <<'EOF'
 Work in English.
 …
 Required skill: read ~/.agents/skills/sume-gt-mq/SKILL.md
-GRAPHITE hard lock (fresh clone, no gh pr create, dry-run 20s → gt merge → STOP)
+GRAPHITE hard lock (cstack-clone, no gh pr create, cstack-gt-wait-merge → STOP)
 HANDOFF: grok-land
 EOF
 cd /path/to/sume-com && claude-human-stream --name <job-slug> \
@@ -106,7 +106,7 @@ is the monitor.
   `~/.cstack/mirrors/sume-com.git`. **Not** `git worktree` under the
   Cursor checkout (`#2383`). After enqueue/land: `cstack-clone-rm <slug>`.
 - Host binaries: `cstack-clone` / `cstack-clone-rm` / `cstack-mirror-sync`
-  on `~/.local/bin` (install.sh).
+  / **`cstack-gt-wait-merge`** on `~/.local/bin` (install.sh).
 - Never `gh pr create` on `sumelabs/sume` / `sume-com`.
 - Dry-run **Required checks failed** → break, ≤2 rerun or CI unblock.
 - Landed = `main` commit `(#N)`. Graphite FF may show `CLOSED` + `mergedAt: null`.
@@ -120,7 +120,7 @@ is the monitor.
 
 ## Host binaries the flow assumes
 
-- `gh`, `gt` (Graphite CLI), `git`, `pnpm`, `cstack-clone`
+- `gh`, `gt` (Graphite CLI), `git`, `pnpm`, `cstack-clone`, `cstack-gt-wait-merge`
 - Claude Code CLI via **tokenmaxxing** (`claude` supervisor on PATH) for
   `claude-human-stream` / `agent-human-stream --backend claude` —
   see `docs/TOKENMAXXING.md`
@@ -128,5 +128,6 @@ is the monitor.
 - Cursor `Task` = Composer explore only
 - Grok land / Grok author = `agent-human-stream --backend grok` (not Task)
 
-`./install.sh` links `agent-human-stream` and `claude-human-stream` to
-`~/.local/bin`.
+`./install.sh` links `agent-human-stream`, `claude-human-stream`,
+`cstack-clone`, and `cstack-gt-wait-merge` to `~/.local/bin`.
+Skills also land in `~/.grok/skills` for Grok Build.
