@@ -88,7 +88,7 @@ Required skill: read ~/.agents/skills/sume-gt-mq/SKILL.md before gt submit/merge
 
 | Role | Owns | Must not |
 |------|------|----------|
-| **Opus** (author session) | Fresh clone → code → `gt submit` → wait **`gt` Ready** → **`gt merge`** → enqueue evidence → **STOP** with `LANDED: no` / `NOT 완료` | Exit before enqueue; say 완료; babysit other trains’ PRs |
+| **Opus** (author session) | `cstack-clone` → code → `gt submit` → wait **`gt` Ready** → **`gt merge`** → enqueue evidence → **STOP** with `LANDED: no` / `NOT 완료` → `cstack-clone-rm` | Exit before enqueue; say 완료; babysit other trains’ PRs |
 | **Grok land** | One **owned PR set** only; enqueue if needed → draft CI → **`origin/main` `(#N)`**; re-enqueue on eject | STOP at enqueue; say 완료 before main tip; `gt track` thrash; other stacks |
 | **Main agent** | Launch / steer / board; launch Grok after enqueue; **완료 to Chase only after main tip** | Tell Chase 완료 on enqueue/green CI; mid-flight steal of a live owner’s PRs |
 
@@ -99,13 +99,19 @@ owners. Never two workers `gt merge` / empty-commit / restack the same head.
 
 ## Hard locks (sume-com)
 
-1. **Fresh clone only** for all `gt` commands  
-   e.g. `/tmp/sume-com-<job-slug>`.  
-   **Forbidden:** `git worktree add` under the shared Cursor checkout (#2383).
+1. **Isolated clone only** for all `gt` commands — **`cstack-clone <job-slug>`**  
+   → `/tmp/sume-com-<job-slug>` from the bare mirror
+   `~/.cstack/mirrors/sume-com.git`.  
+   **Forbidden:** `git worktree add` under the shared Cursor checkout (#2383).  
+   **Forbidden:** a full `git clone` of `sume-com` when the mirror exists
+   (use `cstack-clone`; `--depth=100` is not the cook).  
+   After author enqueue (or land `origin/main` `(#N)`): **`cstack-clone-rm
+   <slug>`** unless a live worker still has that cwd.
 2. **Forbidden:** `gh pr create` (single or stack) as author path.  
    Publish **only** via `gt submit`.
-3. **`gt submit` fails** (trunk out of date / poisoned) → **new fresh clone** →
-   cherry-pick/track → `gt submit`. Never `gh pr create`.
+3. **`gt submit` fails** (trunk out of date / poisoned) → **new clone**
+   (`cstack-clone --force <slug>` or a new slug) → cherry-pick/track →
+   `gt submit`. Never `gh pr create`.
 4. After restack/sync: **`gt submit` again** before enqueue.
 5. **Primary ready-signal = `gt merge --dry-run` / `gt` Ready**, not
    `gh pr checks` loops. Poll **15–30s** (default 20s); dry-run ready →
@@ -208,14 +214,40 @@ when `gt` already says Ready / dry-run ready.
 
 ---
 
+## Clone / disk (Chase lock 2026-09-01)
+
+Graphite wants **one clean repo** and a stack. `#2383` forbids that repo
+from being the dirty Cursor checkout (shared `.git` poisons `gt submit`).
+
+Desk BP:
+
+| Piece | Path | Role |
+|---|---|---|
+| Bare mirror | `~/.cstack/mirrors/sume-com.git` | Object store only. `cstack-mirror-sync` / `cstack-clone --sync-only`. **Do not `gc --prune=now`** while job clones have alternates. |
+| Job clone | `/tmp/sume-com-<slug>` | `git clone --reference <mirror>` — **no `--dissociate`**, no `--depth`. Own `.git`, own `gt`. |
+| Cursor checkout | `~/sume/sume-com` | Read / chat root. **Never `gt` here. Never `git worktree add` + `gt`.** |
+| `node_modules` | per clone | Still `pnpm install --prefer-offline`. Do not symlink across clones. |
+
+Binaries (install.sh puts them on `~/.local/bin`):
+
+```bash
+cstack-clone <job-slug>           # prints /tmp/sume-com-<slug>
+cstack-clone --force <job-slug>   # wipe + remake
+cstack-mirror-sync                # fetch main into the mirror
+cstack-clone-rm <job-slug>        # after enqueue / land; refuses live cwd
+```
+
+---
+
 ## Canonical flow
 
 ```text
-fresh clone → gt init → gt create → commit(s) → gt submit [--stack]
+cstack-clone <slug> → gt init → gt create → commit(s) → gt submit [--stack]
   → poll gt merge --dry-run every 15–30s (same session, no minute cap)
   → dry-run ready → gt merge --no-interactive immediately
   → enqueue evidence
   → AUTHOR: STOP + LANDED: no + NOT 완료 + HANDOFF: grok-land
+  → cstack-clone-rm <slug> (unless land still needs the clone)
   → LAND: do not STOP — watch MQ → re-enqueue on eject → origin/main (#N)
   → only then STATUS: landed (Chase 완료)
 ```
@@ -345,10 +377,14 @@ Do **not** use Cursor `Task` / `cursor-grok-*` for land.
 Required skill: read ~/.agents/skills/sume-gt-mq/SKILL.md before any gt submit/merge.
 
 GRAPHITE (hard lock):
-- Fresh clone only for all gt commands (e.g. /tmp/sume-com-<job-slug>).
-- Forbidden: git worktree under the shared Cursor checkout for gt.
+- Isolated clone only: `cstack-clone <job-slug>` → /tmp/sume-com-<slug>
+  from ~/.cstack/mirrors/sume-com.git. No full git clone when the mirror
+  exists. No git worktree under the shared Cursor checkout for gt (#2383).
+- After enqueue (author) or origin/main (#N) (land): `cstack-clone-rm <slug>`
+  unless a live worker still has that cwd.
 - Forbidden: gh pr create (single or stack). Publish ONLY via gt submit.
-- If gt submit fails: new fresh clone → cherry-pick/track → gt submit. Never gh.
+- If gt submit fails: `cstack-clone --force` (or new slug) → cherry-pick/track
+  → gt submit. Never gh.
 - After gt submit: SAME session — poll `gt merge --dry-run --no-interactive`
   every 15–30s (default 20s; NEVER sleep 60+ as the wait loop). Primary
   ready-signal is dry-run ready / gt Ready — NOT `gh pr checks` loops.

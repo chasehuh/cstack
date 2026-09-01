@@ -9,7 +9,7 @@ Discuss (same language as Chase) → lock nouns/defaults/non-goals →
 **GitHub mega-issue** (`github-mega-issue` skill) → **Opus** (Fable only
 if Chase named Fable; `claude-human-stream` =
 `agent-human-stream --backend claude`, job slug 2–4 kebab tokens) →
-fresh `/tmp` clone →
+`cstack-clone <slug>` (`/tmp/sume-com-<slug>` from the bare mirror) →
 `gt create` → `gt submit` → poll `gt merge --dry-run` 15–30s →
 `gt merge` (MQ) → **STOP** → **Grok** land (`main` tip `(#N)`).
 
@@ -102,8 +102,11 @@ is the monitor.
 
 ## Graphite (sume-com only)
 
-- Fresh clone e.g. `/tmp/sume-com-<slug>` — **not** `git worktree` under the
-  Cursor checkout (`#2383`).
+- Isolated clone: **`cstack-clone <slug>`** → `/tmp/sume-com-<slug>` from
+  `~/.cstack/mirrors/sume-com.git`. **Not** `git worktree` under the
+  Cursor checkout (`#2383`). After enqueue/land: `cstack-clone-rm <slug>`.
+- Host binaries: `cstack-clone` / `cstack-clone-rm` / `cstack-mirror-sync`
+  on `~/.local/bin` (install.sh).
 - Never `gh pr create` on `sumelabs/sume` / `sume-com`.
 - Dry-run **Required checks failed** → break, ≤2 rerun or CI unblock.
 - Landed = `main` commit `(#N)`. Graphite FF may show `CLOSED` + `mergedAt: null`.
@@ -117,7 +120,7 @@ is the monitor.
 
 ## Host binaries the flow assumes
 
-- `gh`, `gt` (Graphite CLI), `git`, `pnpm`
+- `gh`, `gt` (Graphite CLI), `git`, `pnpm`, `cstack-clone`
 - Claude Code CLI via **tokenmaxxing** (`claude` supervisor on PATH) for
   `claude-human-stream` / `agent-human-stream --backend claude` —
   see `docs/TOKENMAXXING.md`

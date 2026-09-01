@@ -77,16 +77,22 @@ if [ -n "$SUME_COM" ]; then
   "$HOME/.agents/skills/sume-main-agent-orchestration/install-cursor-rule.sh" "$SUME_COM"
 fi
 
-echo "== agent-human-stream on PATH =="
+echo "== agent-human-stream + cstack-clone on PATH =="
 mkdir -p "$HOME/.local/bin"
 BIN="$HOME/.agents/skills/sume-main-agent-orchestration/bin"
+GTBIN="$HOME/.agents/skills/sume-gt-mq/bin"
 ln -sfn "$BIN/agent-human-stream.sh" "$HOME/.local/bin/agent-human-stream"
 ln -sfn "$BIN/claude-human-stream.sh" "$HOME/.local/bin/claude-human-stream"
+ln -sfn "$GTBIN/cstack-clone.sh" "$HOME/.local/bin/cstack-clone"
+ln -sfn "$GTBIN/cstack-clone-rm.sh" "$HOME/.local/bin/cstack-clone-rm"
+ln -sfn "$GTBIN/cstack-mirror-sync.sh" "$HOME/.local/bin/cstack-mirror-sync"
 chmod +x "$BIN/agent-human-stream.sh" "$BIN/agent-human-stream.py" \
   "$BIN/agent-human-stream.test.py" \
   "$BIN/claude-human-stream.sh" "$BIN/claude-human-stream.py" \
   "$HOME/.agents/skills/sume-main-agent-orchestration/check-wiring.sh" \
-  "$HOME/.agents/skills/sume-gt-mq/install-symlinks.sh" || true
+  "$HOME/.agents/skills/sume-gt-mq/install-symlinks.sh" \
+  "$GTBIN/cstack-clone.sh" "$GTBIN/cstack-clone-rm.sh" \
+  "$GTBIN/cstack-mirror-sync.sh" || true
 if ! echo ":$PATH:" | grep -q ":$HOME/.local/bin:"; then
   echo "NOTE: add \$HOME/.local/bin to PATH (e.g. in ~/.zshrc)"
 fi
@@ -128,10 +134,16 @@ else
   echo "      Docs: $ROOT/docs/TOKENMAXXING.md"
 fi
 
+if [ -x "$HOME/.local/bin/cstack-mirror-sync" ]; then
+  echo "== cstack mirror (sume-com objects) =="
+  "$HOME/.local/bin/cstack-mirror-sync" || echo "NOTE: seed later with cstack-mirror-sync"
+fi
+
 echo ""
 echo "Installed. Next: open sume-com in Cursor and read AGENTS.md in this repo."
 echo "SoT: ~/.agents/skills/sume-main-agent-orchestration/SKILL.md"
 echo "gt:  ~/.agents/skills/sume-gt-mq/SKILL.md"
+echo "clone: cstack-clone / cstack-clone-rm / cstack-mirror-sync"
 echo "LC:  ~/.agents/skills/mobidoo-live-commerce-update/SKILL.md"
 echo "Claude: docs/TOKENMAXXING.md (tokenmaxxing pool, not a single login)"
 echo "Do not copy API keys / PEMs / tokenmaxxing accounts.json into this repo."

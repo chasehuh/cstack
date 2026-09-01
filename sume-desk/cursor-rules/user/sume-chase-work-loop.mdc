@@ -77,18 +77,21 @@ cat > /tmp/sume-opus-prompts/<job-slug>.md <<'EOF'
 Work in **English**.
 Issue: <url>
 Chase locks: …
-Stage: BP → fresh clone → implement → gt create → gt submit → dry-run poll 15–30s → gt merge → STOP with LANDED: no / NOT 완료
+Stage: BP → cstack-clone → implement → gt create → gt submit → dry-run poll 15–30s → gt merge → STOP with LANDED: no / NOT 완료 → cstack-clone-rm
 HANDOFF: grok-land
 Chase 완료 only after origin/main has (#N). Enqueue is not 완료.
 
 Required skill: read ~/.agents/skills/sume-gt-mq/SKILL.md before any gt submit/merge.
 
 GRAPHITE (hard lock):
-- Fresh clone only for all gt commands (e.g. /tmp/sume-com-<job-slug>).
-- Forbidden: git worktree under the shared Cursor checkout for gt.
+- Isolated clone only: `cstack-clone <job-slug>` → /tmp/sume-com-<slug>
+  from ~/.cstack/mirrors/sume-com.git. No full git clone when the mirror
+  exists. No git worktree under the shared Cursor checkout for gt (#2383).
+- After enqueue (author) or origin/main (#N) (land): `cstack-clone-rm <slug>`
+  unless a live worker still has that cwd.
 - Forbidden: gh pr create (single or stack). Publish ONLY via gt submit.
-- If gt submit fails (trunk out of date / poisoned): new fresh clone →
-  cherry-pick/track → gt submit. Never gh pr create.
+- If gt submit fails (trunk out of date / poisoned): `cstack-clone --force`
+  (or new slug) → cherry-pick/track → gt submit. Never gh pr create.
 - After gt submit: SAME session — poll `gt merge --dry-run --no-interactive`
   every 15–30s (default 20s; NEVER sleep 60+ as the wait loop). Primary
   ready-signal is dry-run ready / gt Ready — NOT `gh pr checks` loops.
@@ -174,7 +177,7 @@ workers: follow Chase constraints (e.g. **api.dev curl, not MCP** when said).
 | Dry-run sleep while `Required checks failed` | Break → ≤2 rerun / CI unblock / handoff (`sume-gt-mq`) |
 | Endless `gh run rerun` on repo flake | ≤2 reruns → minimal CI unblock → or `HANDOFF: grok-ci-merge` |
 | Default `sleep 60+` Ready wait | Cap **30s** (prefer 20s); break on dry-run ready |
-| `git worktree` under Cursor checkout + `gt` | `/tmp/sume-com-<slug>` fresh clone |
+| `git worktree` under Cursor checkout + `gt` | `cstack-clone <slug>` |
 | Grok clones / `gt track` just to merge | Label fallback only; prefer Opus `gt merge` |
 | Enqueue unbound `gh`-only PR | Repair `gt submit` first, then enqueue |
 | Habitual rebase / Update branch while in MQ | Wait for Graphite draft CI / restack |

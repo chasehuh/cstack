@@ -673,11 +673,14 @@ Opus then illegally used `gh pr create`.
 
 **Locked (2026-08-04) — for every PR author (Opus / Grok / anyone):**
 
-1. **Do all `gt create` / `gt submit` / `gt restack` / `gt sync` in a
-   dedicated fresh clone**, e.g.
-   `/tmp/sume-com-<job-slug>` or `$REPO/_wt/<job-slug>-gt-clone`.
+1. **Do all `gt create` / `gt submit` / `gt restack` / `gt sync` in an
+   isolated clone** from `cstack-clone <job-slug>` →
+   `/tmp/sume-com-<job-slug>` (objects from
+   `~/.cstack/mirrors/sume-com.git`). Not `$REPO/_wt/…` under the Cursor
+   tree. After enqueue / land: `cstack-clone-rm <slug>`.
 2. **Forbidden for `gt`:** `git worktree add` under the shared Cursor /
-   agent checkout (they share poisoned trunk metadata).
+   agent checkout (they share poisoned trunk metadata). Full
+   `git clone --depth=100` when the mirror exists — use `cstack-clone`.
 3. **Forbidden:** `gh pr create` / `gh pr create --head` as the author
    path on `sume-com` — single PR or stack. Same for “submit failed so
    I’ll just open with gh”.
@@ -693,9 +696,7 @@ Opus then illegally used `gh pr create`.
 Single PR (default):
 
 ```bash
-CLONE=/tmp/sume-com-<job-slug>
-rm -rf "$CLONE"
-git clone --depth=100 git@github.com:sumelabs/sume-com.git "$CLONE"
+CLONE="$(cstack-clone <job-slug>)"   # /tmp/sume-com-<slug> via bare mirror
 cd "$CLONE"
 gt init --trunk main   # once per clone
 git fetch origin main && git checkout -B main origin/main
@@ -713,6 +714,7 @@ gt merge --no-interactive   # Opus default enqueue (same clone)
 # Done report MUST include: clone path + Graphite URL + GitHub PR URL
 #   + enqueue evidence (QUEUED / label / Graphite activity) + STOP
 # HANDOFF: grok-land
+# then: cstack-clone-rm <job-slug>
 ```
 
 PR train (A/B/C in one session):
@@ -963,8 +965,11 @@ Every **Opus** implement prompt on `sume-com` **must** include this block
 Required skill: read ~/.agents/skills/sume-gt-mq/SKILL.md before any gt submit/merge.
 
 GRAPHITE (hard lock):
-- Fresh clone only for all gt commands (e.g. /tmp/sume-com-<job-slug>).
-- Forbidden: git worktree under the shared Cursor checkout for gt.
+- Isolated clone only: `cstack-clone <job-slug>` → /tmp/sume-com-<slug>
+  from ~/.cstack/mirrors/sume-com.git. No full git clone when the mirror
+  exists. No git worktree under the shared Cursor checkout for gt (#2383).
+- After enqueue (author) or origin/main (#N) (land): `cstack-clone-rm <slug>`
+  unless a live worker still has that cwd.
 - Forbidden: gh pr create (single or stack). Publish ONLY via gt submit.
 - If gt submit fails (trunk out of date / poisoned): new fresh clone →
   cherry-pick/track → gt submit. Never gh pr create.

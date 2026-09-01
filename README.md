@@ -38,7 +38,8 @@ sume-desk/
 
 Discuss → lock → GitHub issue → `agent-human-stream` / `claude-human-stream`
 (Opus; Fable only if named; Grok Build via `--backend grok`) →
-fresh clone `gt submit` → `gt merge` (MQ) → STOP → Grok lands `main`.
+`cstack-clone` → `gt submit` → `gt merge` (MQ) → STOP → Grok lands `main`
+→ `cstack-clone-rm`.
 
 Details: `docs/FLOW.md` then the skills after install.
 Formats (LC package + dest fire): `mobidoo-live-commerce-update`.

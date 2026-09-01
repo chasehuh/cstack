@@ -2,7 +2,8 @@
 
 You are on **Chase’s agent desk**. This repo (`chasehuh/cstack`) is the
 **installable source of truth** for how Sume work is run: discuss → lock →
-GitHub issue → Opus (Fable only if named) through Graphite MQ → Grok land.
+GitHub issue → Opus (Fable only if named) through Graphite MQ (`cstack-clone`,
+not a Cursor worktree) → Grok land → `cstack-clone-rm`.
 
 Old `merge` / `audit` / `propose` copies that used to live here are
 **deprecated**. Ignore them. Use `sume-desk/` only.
