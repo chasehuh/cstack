@@ -1,0 +1,17 @@
+{
+  "description": "Sume desk: registry rows for agent-human-stream (sumelabs/sume#5706)",
+  "hooks": {
+    "Stop": [
+      {"hooks": [{"type": "command", "command": "\"__HOOK__\" stop", "timeout": 5}]}
+    ],
+    "StopFailure": [
+      {"hooks": [{"type": "command", "command": "\"__HOOK__\" stop_failure", "timeout": 5}]}
+    ],
+    "SessionEnd": [
+      {"hooks": [{"type": "command", "command": "\"__HOOK__\" session_end", "timeout": 5}]}
+    ],
+    "PostCompact": [
+      {"hooks": [{"type": "command", "command": "\"__HOOK__\" post_compact", "timeout": 5}]}
+    ]
+  }
+}
