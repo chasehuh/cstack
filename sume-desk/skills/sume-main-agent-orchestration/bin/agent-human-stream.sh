@@ -580,6 +580,54 @@ if [[ "$BACKEND" == "auto" ]]; then
   esac
 fi
 
+# Grok session guards (sumelabs/sume#5706): a second `grok -p --resume` against
+# a live session blocks forever in session_create (empty live log), and
+# `--continue` picks whichever job in this cwd started last.
+if [[ "$BACKEND" == "grok" && -n "$RESUME" && "${AGENT_HUMAN_STREAM_FORCE_RESUME:-0}" != "1" ]]; then
+  _held=$("$ROOT/agent-holders.sh" list "$RESUME" 2>/dev/null || true)
+  if [[ -n "$_held" ]]; then
+    echo "error: session $RESUME is still held by a live process:" >&2
+    printf '%s\n' "$_held" >&2
+    echo "steer with: sume-bg-launch --backend grok --name <slug> --resume $RESUME --prompt-file <path>" >&2
+    exit 3
+  fi
+fi
+if [[ "$BACKEND" == "grok" && "$CONTINUE" -eq 1 && "${AGENT_HUMAN_STREAM_ALLOW_CONTINUE:-0}" != "1" ]]; then
+  _open=$(python3 - "$REGISTRY" "$PWD" <<'PY2' || true
+import json, sys, time
+path, cwd = sys.argv[1], sys.argv[2]
+starts, closed = {}, set()
+cutoff = time.time() - 24 * 3600
+try:
+    for line in open(path, encoding="utf-8"):
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if rec.get("backend") != "grok" or rec.get("cwd") != cwd:
+            continue
+        pid = rec.get("pid")
+        ev = rec.get("event")
+        try:
+            ts = time.mktime(time.strptime(rec.get("ts", ""), "%Y-%m-%dT%H:%M:%SZ")) - time.timezone
+        except Exception:
+            ts = 0
+        if ev == "start" and ts >= cutoff:
+            starts[pid] = rec.get("name") or "?"
+        elif ev in ("end", "abort", "exit"):
+            closed.add(pid)
+except OSError:
+    pass
+print(" ".join(f"{pid}:{name}" for pid, name in starts.items() if pid not in closed))
+PY2
+)
+  if [[ -n "$_open" ]]; then
+    echo "error: --continue is ambiguous for grok: open job(s) in this cwd: $_open" >&2
+    echo "use --resume <uuid> (registry: agent-human-stream --sessions)" >&2
+    exit 3
+  fi
+fi
+
 _effort="$_passed_effort"
 if [[ "$BACKEND" == "claude" && "$_has_effort" -eq 0 ]]; then
   _model_lc=$(printf '%s' "${_resolved_model:-opus}" | tr '[:upper:]' '[:lower:]')

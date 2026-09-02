@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Cursor background-worker launcher. Reads the prompt from a file (no $(cat)
-# race) and, on --resume, stops older wrappers holding that session.
+# race) and, on --resume, stops every process still holding that session
+# (wrapper, tokenmaxxing supervisor, raw grok/claude child) before relaunching.
 #
 #   sume-bg-launch --backend grok --name job-slug --resume <uuid> \
 #     --prompt-file /tmp/sume-grok-prompts/job.md -- --effort high
@@ -8,6 +9,14 @@
 # Shell: description = "Grok : <job-slug> (#N)", block_until_ms = 0.
 # After spawn: read the terminal once for 📎 session_id= or exit_code.
 set -euo pipefail
+
+SOURCE=${BASH_SOURCE[0]}
+while [[ -L "$SOURCE" ]]; do
+  DIR=$(cd "$(dirname "$SOURCE")" && pwd)
+  SOURCE=$(readlink "$SOURCE")
+  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+ROOT="$(cd "$(dirname "$SOURCE")" && pwd)"
 
 BACKEND="grok"
 NAME=""
@@ -74,19 +83,17 @@ if [[ ! -s "$PROMPT_FILE" ]]; then
   exit 2
 fi
 
-# Steer: one live wrapper per session. Do not touch gt merge.
+# Steer: one live holder per session. agent-holders keys on the
+# `--resume <uuid>` / `--session-id <uuid>` argv tokens, kills the whole
+# process group (wrapper + tokenmaxxing supervisor + raw grok/claude child)
+# and waits for release. gt merge / gt submit processes are never touched.
+# Refuse to launch a second concurrent resume: that is the empty-live-log
+# hang (sumelabs/sume#5706 R1-R3).
 if [[ -n "$RESUME" ]]; then
-  _self=$$
-  while read -r _pid _rest; do
-    [[ -z "${_pid:-}" ]] && continue
-    [[ "$_pid" == "$_self" ]] && continue
-    case "$_rest" in
-      *gt\ merge*|*gt\ submit*) continue ;;
-    esac
-    echo "steer: stopping pid ${_pid} (same --resume ${RESUME})" >&2
-    kill "$_pid" 2>/dev/null || true
-  done < <(pgrep -af -- "$RESUME" | awk '/agent-human-stream|\/grok |grok -p/{print $1, $0}')
-  sleep 0.2
+  if ! "$ROOT/agent-holders.sh" kill "$RESUME"; then
+    echo "error: session $RESUME is still held by a live process; not launching a second resume" >&2
+    exit 3
+  fi
 fi
 
 WRAPPER="${SUME_BG_LAUNCH_WRAPPER:-$(command -v agent-human-stream)}"
