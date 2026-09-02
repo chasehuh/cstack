@@ -9,6 +9,7 @@
 #
 # Extra backend flags go after the prompt:
 #   agent-human-stream "…" --model opus
+#   agent-human-stream "…" --model fable   # → claude-fable-5-1 (Fable 5.1)
 #   agent-human-stream --backend grok --prompt-file job.md --effort high
 set -euo pipefail
 
@@ -28,6 +29,8 @@ LIVE_DIR="${AGENT_HUMAN_STREAM_LIVE_DIR:-${CLAUDE_HUMAN_STREAM_LIVE_DIR:-$CSTACK
 # Claude Code CLI 2.1.x (SDK + changelog): low|medium|high|xhigh|max.
 # Fable / Opus 4.7+ take `max` natively. Do NOT remap max → high.
 # Desk aliases: mid → medium, maximum → max, x-high → xhigh.
+# Desk --model fable → claude-fable-5-1 (Fable 5.1). Bare `fable` is not enough
+# after Claude Code 2.1.258 (help still lists the alias; wire the full id).
 _claude_effort_wire() {
   local lc
   lc=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
@@ -36,6 +39,18 @@ _claude_effort_wire() {
     max|maximum) printf '%s' max ;;
     xhigh|x-high|xh|extra-high|extrahigh) printf '%s' xhigh ;;
     low|medium|high) printf '%s' "$lc" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+# Chase lock 2026-09-02: desk "Fable" is Fable 5.1, not the generic alias.
+_claude_model_wire() {
+  local lc
+  lc=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+  case "$lc" in
+    fable|fable-5|fable5|fable-5.1|fable-5-1|claude-fable|claude-fable-5|claude-fable-5.1|claude-fable-5-1)
+      printf '%s' claude-fable-5-1
+      ;;
     *) printf '%s' "$1" ;;
   esac
 }
@@ -69,15 +84,16 @@ Auto backend (default):
   --backend grok / --grok / AGENT_HUMAN_STREAM_BACKEND=grok
   --model grok*  → grok
   --model opus|fable|sonnet|haiku|claude* → claude
+  --model fable → claude-fable-5-1 (Fable 5.1; do not leave bare fable)
   --resume <uuid> uses the last backend recorded for that session
   otherwise → claude (Opus/Fable path unchanged)
 
 Claude (tokenmaxxing `claude` on this desk):
   claude -p … --output-format stream-json --verbose --permission-mode bypassPermissions
-  Default --effort when omitted (code lane): opus → medium, fable → high,
+  Default --effort when omitted (code lane): opus → medium, fable → max,
   grok → xhigh. Research must pass --effort (grok medium / opus+fable low).
-  Named Claude levels pass through: low|medium|high|xhigh|max.
-  Chase "Fable max" / --effort max → claude --effort max (not high).
+  Fable 5.1 may use the full Claude enum: low|medium|high|xhigh|max.
+  Named levels pass through. Do not clamp Fable at high.
   Aliases: mid → medium, maximum → max, x-high → xhigh.
 
 Grok Build (`grok` on PATH):
@@ -270,6 +286,21 @@ if [[ "$SELF_TEST" -eq 1 ]]; then
     echo "self-test: claude effort high must stay high (got ${_got})" >&2
     exit 1
   fi
+  _got="$(_claude_model_wire fable)"
+  if [[ "$_got" != "claude-fable-5-1" ]]; then
+    echo "self-test: --model fable must wire to claude-fable-5-1 (got ${_got})" >&2
+    exit 1
+  fi
+  _got="$(_claude_model_wire claude-fable-5-1)"
+  if [[ "$_got" != "claude-fable-5-1" ]]; then
+    echo "self-test: claude-fable-5-1 must pass through (got ${_got})" >&2
+    exit 1
+  fi
+  _got="$(_claude_model_wire opus)"
+  if [[ "$_got" != "opus" ]]; then
+    echo "self-test: --model opus must stay opus (got ${_got})" >&2
+    exit 1
+  fi
   _tmp=$(mktemp -d)
   cat > "$_tmp/grok" <<'EOF'
 #!/usr/bin/env bash
@@ -360,6 +391,29 @@ EOF
   if grep -qx 'maximum' "$_tmp/claude-argv-maximum.txt"; then
     echo "self-test: claude argv still has bare maximum:" >&2
     cat "$_tmp/claude-argv-maximum.txt" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  if ! grep -qx 'claude-fable-5-1' "$_tmp/claude-argv.txt"; then
+    echo "self-test: claude argv missing model claude-fable-5-1 from --model fable:" >&2
+    cat "$_tmp/claude-argv.txt" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  if grep -qx 'fable' "$_tmp/claude-argv.txt"; then
+    echo "self-test: claude argv still has bare --model fable:" >&2
+    cat "$_tmp/claude-argv.txt" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  CLAUDE_ARGV_FILE="$_tmp/claude-argv-fable-default.txt" \
+    AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg.jsonl" \
+    AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live" \
+    PATH="$_tmp:$PATH" \
+    "$SOURCE" --backend claude --name self-test-fable-default "self-test fable default effort" --model fable >/dev/null
+  if ! grep -qx 'max' "$_tmp/claude-argv-fable-default.txt"; then
+    echo "self-test: fable omitted --effort must default to max:" >&2
+    cat "$_tmp/claude-argv-fable-default.txt" >&2
     rm -rf "$_tmp"
     exit 1
   fi
@@ -496,6 +550,13 @@ print(found)
 if [[ -z "$_resolved_model" && -n "$RESUME" ]]; then
   _resolved_model=$(lookup_session_field "$RESUME" model)
 fi
+if [[ -n "$_resolved_model" ]]; then
+  _wired_model="$(_claude_model_wire "$_resolved_model")"
+  if [[ "$_wired_model" != "$_resolved_model" ]]; then
+    echo "note: mapping claude --model ${_resolved_model} → ${_wired_model} (Fable 5.1)" >&2
+    _resolved_model="$_wired_model"
+  fi
+fi
 
 if [[ "$BACKEND" == "auto" && -n "$RESUME" ]]; then
   _reg_backend=$(lookup_session_field "$RESUME" backend)
@@ -519,12 +580,60 @@ if [[ "$BACKEND" == "auto" ]]; then
   esac
 fi
 
+# Grok session guards (sumelabs/sume#5706): a second `grok -p --resume` against
+# a live session blocks forever in session_create (empty live log), and
+# `--continue` picks whichever job in this cwd started last.
+if [[ "$BACKEND" == "grok" && -n "$RESUME" && "${AGENT_HUMAN_STREAM_FORCE_RESUME:-0}" != "1" ]]; then
+  _held=$("$ROOT/agent-holders.sh" list "$RESUME" 2>/dev/null || true)
+  if [[ -n "$_held" ]]; then
+    echo "error: session $RESUME is still held by a live process:" >&2
+    printf '%s\n' "$_held" >&2
+    echo "steer with: sume-bg-launch --backend grok --name <slug> --resume $RESUME --prompt-file <path>" >&2
+    exit 3
+  fi
+fi
+if [[ "$BACKEND" == "grok" && "$CONTINUE" -eq 1 && "${AGENT_HUMAN_STREAM_ALLOW_CONTINUE:-0}" != "1" ]]; then
+  _open=$(python3 - "$REGISTRY" "$PWD" <<'PY2' || true
+import json, sys, time
+path, cwd = sys.argv[1], sys.argv[2]
+starts, closed = {}, set()
+cutoff = time.time() - 24 * 3600
+try:
+    for line in open(path, encoding="utf-8"):
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if rec.get("backend") != "grok" or rec.get("cwd") != cwd:
+            continue
+        pid = rec.get("pid")
+        ev = rec.get("event")
+        try:
+            ts = time.mktime(time.strptime(rec.get("ts", ""), "%Y-%m-%dT%H:%M:%SZ")) - time.timezone
+        except Exception:
+            ts = 0
+        if ev == "start" and ts >= cutoff:
+            starts[pid] = rec.get("name") or "?"
+        elif ev in ("end", "abort", "exit"):
+            closed.add(pid)
+except OSError:
+    pass
+print(" ".join(f"{pid}:{name}" for pid, name in starts.items() if pid not in closed))
+PY2
+)
+  if [[ -n "$_open" ]]; then
+    echo "error: --continue is ambiguous for grok: open job(s) in this cwd: $_open" >&2
+    echo "use --resume <uuid> (registry: agent-human-stream --sessions)" >&2
+    exit 3
+  fi
+fi
+
 _effort="$_passed_effort"
 if [[ "$BACKEND" == "claude" && "$_has_effort" -eq 0 ]]; then
   _model_lc=$(printf '%s' "${_resolved_model:-opus}" | tr '[:upper:]' '[:lower:]')
   case "$_model_lc" in
     fable|fable*|claude-fable*)
-      _effort="${CLAUDE_HUMAN_STREAM_EFFORT_FABLE:-${AGENT_HUMAN_STREAM_EFFORT_FABLE:-high}}"
+      _effort="${CLAUDE_HUMAN_STREAM_EFFORT_FABLE:-${AGENT_HUMAN_STREAM_EFFORT_FABLE:-max}}"
       ;;
     *)
       _effort="${CLAUDE_HUMAN_STREAM_EFFORT_OPUS:-${AGENT_HUMAN_STREAM_EFFORT_OPUS:-medium}}"
@@ -545,6 +654,29 @@ if [[ "$BACKEND" == "claude" && ${#EXTRA[@]} -gt 0 ]]; then
   while [[ $_i -lt ${#EXTRA[@]} ]]; do
     _a="${EXTRA[$_i]}"
     case "$_a" in
+      --model|-m)
+        _val="${EXTRA[$((_i + 1))]:-}"
+        _wire="$(_claude_model_wire "$_val")"
+        if [[ "$_wire" != "$_val" ]]; then
+          echo "note: mapping claude --model ${_val} → ${_wire} (Fable 5.1)" >&2
+        fi
+        _filtered+=("$_a" "$_wire")
+        _resolved_model="$_wire"
+        _i=$((_i + 2))
+        continue
+        ;;
+      --model=*|-m=*)
+        _flag="${_a%%=*}"
+        _val="${_a#*=}"
+        _wire="$(_claude_model_wire "$_val")"
+        if [[ "$_wire" != "$_val" ]]; then
+          echo "note: mapping claude --model ${_val} → ${_wire} (Fable 5.1)" >&2
+        fi
+        _filtered+=("${_flag}=${_wire}")
+        _resolved_model="$_wire"
+        _i=$((_i + 1))
+        continue
+        ;;
       --effort|--reasoning-effort)
         _val="${EXTRA[$((_i + 1))]:-}"
         _wire="$(_claude_effort_wire "$_val")"

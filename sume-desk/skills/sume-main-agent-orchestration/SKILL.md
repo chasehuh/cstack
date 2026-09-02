@@ -175,13 +175,14 @@ rules.
 **Chase lock (2026-08-23) — default author is Opus.** Coding models are only
 **Fable / Opus / Grok**. If Chase does **not** name a model, launch **Opus**
 (`claude-human-stream`, default `--model opus`). Use **Fable** only when Chase
-says Fable / `--model fable`. **Grok** is land/ops (and explicit Grok author
-asks). Composer remains explore-only.
+says Fable / `--model fable`. The wrapper **must** pin **Fable 5.1**
+(`claude-fable-5-1`), not the generic `fable` alias. **Grok** is land/ops
+(and explicit Grok author asks). Composer remains explore-only.
 
 | Role | Model | Transport (from a Cursor main agent) |
 |------|-------|--------------------------------------|
 | Opus (default author: design / RCA / mega-issue / **code → MQ enqueue**) | Claude Opus via Claude Code subscription | **`claude-human-stream`**. Do **not** use Cursor `Task` with `claude-opus-*`. |
-| Fable (author only if Chase named Fable) | Claude Fable via same wrapper | **`claude-human-stream --model fable`**. Same Graphite enqueue path as Opus. |
+| Fable (author only if Chase named Fable) | Claude **Fable 5.1** (`claude-fable-5-1`) | **`claude-human-stream --model fable`** (wrapper rewrites to `--model claude-fable-5-1`). Same Graphite enqueue path as Opus. |
 | Grok (**MQ land babysit / deploy / ops**; author only if Chase said Grok) | Grok Build CLI (`grok` on PATH) | **`agent-human-stream --backend grok`**. Do **not** use Cursor `Task` with `cursor-grok-*`. |
 | Composer (explore only) | Composer | Cursor `Task` with `composer-*` / `explore` |
 
@@ -196,7 +197,7 @@ Pass `--effort` from the **job lane**. Cursor rule:
 
 | Lane | Opus | Fable | Grok |
 |------|------|-------|------|
-| **Code** (implement, PR, land, deploy, RCA that edits) | `medium` | `high` | `xhigh` |
+| **Code** (implement, PR, land, deploy, RCA that edits) | `medium` | `max` | `xhigh` |
 | **Research** (조사 / open-source scan / no code change) | `low` | `low` | `medium` |
 
 **Default research owner is Grok.** Most 조사 goes to
@@ -204,15 +205,16 @@ Pass `--effort` from the **job lane**. Cursor rule:
 only when Chase names them — still `--effort low`.
 
 Claude Code CLI enum is `low|medium|high|xhigh|max` (Fable / Opus 4.7+).
-When Chase names **max** or **xhigh**, pass that string through —
-**do not** remap Fable `max` → `high`. Wrapper aliases: `maximum` → `max`,
-`mid` → `medium`, `x-high` → `xhigh`.
+Fable 5.1 may use the **full** Claude effort enum
+(`low|medium|high|xhigh|max`). Do **not** clamp Fable at `high`.
+When Chase names **max** or **xhigh**, pass that string through.
+Wrapper aliases: `maximum` → `max`, `mid` → `medium`, `x-high` → `xhigh`.
 
 Grok CLI enum is `xhigh|high|medium|low` (no `max` / `mid`). The wrapper
 maps `mid` → `medium` and `max`/`maximum` → `xhigh` (Grok ceiling).
 
 Wrapper default when `--effort` is omitted = **code lane** (Opus
-`medium`, Fable `high`, Grok `xhigh`). Named `max` is not that default.
+`medium`, Fable `max`, Grok `xhigh`).
 Research **must** pass `--effort`. Mixed research-then-implement in one
 worker → code lane.
 
@@ -238,9 +240,9 @@ When the main agent needs an **Opus** worker/subagent:
    Default local config already targets Opus
    (`~/.claude/settings.json` → `"model": "opus[1m]"`, `"effortLevel": "medium"`).
    `claude-human-stream` / `agent-human-stream --backend claude` injects
-   `--effort` when omitted: **Opus → medium**, **Fable → high**
-   (code lane). Named `--effort max` / `xhigh` pass through to Claude
-   Code (do not remap to `high`). Research → pass `--effort low`. See
+   `--effort` when omitted: **Opus → medium**, **Fable → max**
+   (code lane; Fable 5.1 may use low through max). Named `--effort`
+   `high` / `xhigh` / `max` pass through. Research → pass `--effort low`. See
    § "Worker reasoning effort".
 2. Prefer the human-readable wrapper (stream-json under the hood, printable lines).
    Canonical launcher: `agent-human-stream` (Claude + Grok Build).
