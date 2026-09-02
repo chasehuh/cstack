@@ -77,7 +77,8 @@ Human-readable wrapper around Claude Code and Grok Build headless NDJSON.
   agent-human-stream --claude "…"                 # same as --backend claude
   agent-human-stream --grok "…"                   # same as --backend grok
   agent-human-stream --resume <uuid> --prompt-file <path>
-  agent-human-stream --sessions
+  agent-human-stream --sessions [--backend grok|claude]
+  agent-human-stream --export <uuid>              # grok export → ~/.cstack/state/opus-live/<uuid>.transcript.md
   agent-human-stream --self-test
 
 Auto backend (default):
@@ -136,6 +137,7 @@ NAME=""
 CONTINUE=0
 FORK=0
 LIST_SESSIONS=0
+EXPORT_SESSION=""
 SELF_TEST=0
 PROMPT=""
 PROMPT_FILE=""
@@ -157,6 +159,10 @@ while [[ $# -gt 0 ]]; do
     --sessions)
       LIST_SESSIONS=1
       shift
+      ;;
+    --export)
+      EXPORT_SESSION=${2:?--export needs a session uuid}
+      shift 2
       ;;
     --self-test)
       SELF_TEST=1
@@ -282,8 +288,45 @@ if [[ "$LIST_SESSIONS" -eq 1 ]]; then
     echo "(no registry yet: $REGISTRY)" >&2
     exit 0
   fi
-  tail -n 30 "$REGISTRY"
+  # --sessions [--backend grok|claude]: last 30 rows (filtered), one line each.
+  python3 - "$REGISTRY" "$BACKEND" <<'PYSESS'
+import json, sys
+path, backend = sys.argv[1], sys.argv[2].lower()
+rows = []
+try:
+    for line in open(path, encoding="utf-8"):
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if backend in ("claude", "grok") and rec.get("backend") != backend:
+            continue
+        rows.append(rec)
+except OSError:
+    pass
+for rec in rows[-30:]:
+    extra = " ".join(
+        f"{k}={rec[k]}" for k in ("exit_code", "landed", "context_pct", "total_cost_usd", "child_pid") if rec.get(k) is not None
+    )
+    print(f"{rec.get('ts','')} {rec.get('event',''):<8} {rec.get('backend') or '-':<6} {(rec.get('session_id') or '-')[:8]} {rec.get('name') or '-'} model={rec.get('model') or '-'} {extra}".rstrip())
+PYSESS
   exit 0
+fi
+
+if [[ -n "$EXPORT_SESSION" ]]; then
+  # --export <uuid>: Grok transcript (Markdown) next to the live logs; works from any cwd.
+  if ! command -v grok >/dev/null 2>&1; then
+    echo "error: grok not on PATH" >&2
+    exit 127
+  fi
+  mkdir -p "$LIVE_DIR"
+  _out="$LIVE_DIR/${EXPORT_SESSION}.transcript.md"
+  if grok export "$EXPORT_SESSION" "$_out"; then
+    echo "$_out"
+    exit 0
+  fi
+  echo "error: grok export failed for $EXPORT_SESSION (grok sessions list is cwd-scoped; export by uuid is global)" >&2
+  exit 1
 fi
 
 if [[ "$SELF_TEST" -eq 1 ]]; then
