@@ -307,8 +307,13 @@ agent-human-stream --resume <uuid> "Follow-up …"               # backend from 
 When the main agent needs a **Grok** worker (default **land babysit**, or
 author only if Chase named Grok):
 
-1. Run **Grok Build** on the local machine (`grok` on PATH, currently
-   `~/.grok/bin/grok` via `~/.local/bin/grok`). Not Cursor `Task`.
+1. Run **Grok Build** on the local machine. `grok` on PATH is the
+   **tokenmaxxing** `__supervise-grok` shim (`~/.config/tokenmaxxing/bin/grok`,
+   also `~/.local/bin/grok`); the binary that actually runs is the pin in
+   `~/.config/tokenmaxxing/config.json` `grokBin` (a `~/.grok/downloads/`
+   build — **1.0.11** as of 2026-09-02), **not** `~/.grok/bin/grok`.
+   `install.sh` prints both; `docs/TOKENMAXXING.md` § Grok Build pool is the
+   SoT. Not Cursor `Task`.
 2. Launch with the same human-stream wrapper:
    `agent-human-stream --backend grok --name <job-slug> "<prompt>"`
    Extra `grok` flags go **after** the prompt (`--model grok-4.6`, `--effort`,
@@ -323,8 +328,35 @@ author only if Chase named Grok):
    exits 2 (`missing prompt`) before Grok starts. Pass `--prompt-file`.
    Same job slug stem as the Opus train when this is land babysit.
 5. Do **not** route Grok land/author through Cursor `Task` / `cursor-grok-*`.
-6. Steer / second `--resume`: use `sume-bg-launch` so the previous wrapper
-   on that uuid is stopped first (two `grok -p --resume` = empty live log).
+6. Steer / second `--resume`: **only** via `sume-bg-launch --resume <uuid>`.
+   It runs `agent-holders kill <uuid>` first: TERMs the whole holder group
+   (wrapper + tokenmaxxing supervisor + the raw grok child, which the
+   supervisor does not forward signals to), waits, KILL-escalates, and
+   refuses to launch (exit 3) if the uuid is still held. A bare second
+   `agent-human-stream --backend grok --resume <uuid>` is refused while a
+   holder exists — a second `grok -p --resume` on a live session blocks
+   forever in Grok `session_create` with no output (the empty live log).
+   Never `--continue` for Grok: every desk job shares one cwd, so it picks
+   whichever job started last (the wrapper refuses it when another Grok
+   job is open here).
+7. **Land babysit contract** (#5697 / #5702 class): `grok -p` returns when
+   the **model turn** ends, not when the job ends — a `monitor` /
+   `scheduler_*` hand-off ends the run with a snapshot final. Launch land
+   jobs with **`--until-landed <PR#>`** (+ `--wall-timeout 6h`): the wrapper
+   re-prompts the **same session** until `git log origin/main
+   --grep='(#N)'` hits, denies `monitor,scheduler_create,scheduler_delete`,
+   keeps the laptop awake (`caffeinate -i`), and always appends
+   `LANDED: yes|no` after the last `—— final ——`. Prompt wording like
+   "do not exit" cannot replace this; the prompt only says *how* to watch
+   (block in `run_terminal_command`, ≤10 min slices).
+8. Session id is pre-assigned: fresh Grok launches mint `--session-id`, so
+   the stderr banner shows `📎 session_id=<uuid> … (pre-assigned)` at t=0
+   and the live log is `<stamp>-<name>-<uuid8>.log` (also
+   `LATEST-<name>.log`). `--resume <uuid>` works from any cwd but runs in
+   the session's **original** cwd. Registry rows carry model, child pid,
+   exit code, `landed`, context %, compaction count
+   (`agent-human-stream --sessions --backend grok`); transcript:
+   `agent-human-stream --export <uuid>`.
 
 Copy-paste:
 
@@ -340,7 +372,11 @@ Required skill: read ~/.agents/skills/sume-gt-mq/SKILL.md
 EOF
 # Shell description: Grok : <job-slug> (#N)
 cd /path/to/repo && sume-bg-launch --backend grok --name <job-slug> \
+  --until-landed <PR#> --wall-timeout 6h \
   --prompt-file /tmp/sume-grok-prompts/<job-slug>.md -- --effort xhigh
+# Steer the same session later (kills the live holder group first):
+cd /path/to/repo && sume-bg-launch --backend grok --name <job-slug> --resume <uuid> \
+  --until-landed <PR#> --prompt-file /tmp/sume-grok-prompts/<job-slug>-steer.md
 ```
 
 ### Cursor-only — Opus / background-worker monitoring
@@ -948,6 +984,12 @@ When the BP has a PR train, also say:
 - **`cstack-gt-wait-merge`** labels the **tip** (whole train) → **STOP** — Grok owns
   land babysit unless the user said otherwise.
 - Do not invent extra slices beyond the BP train.
+
+Launch every Grok land job through `sume-bg-launch … --until-landed <PR#>`
+(§ "Grok transport" 7): the wrapper owns "stay until `origin/main`" and the
+`LANDED:` line; the prompt owns the *method*. The prompt must forbid
+`monitor` / `scheduler_*` (they end the `-p` turn) and tell Grok to block in
+`run_terminal_command` with ≤10 min slices.
 
 The **Grok** land prompt must say: MQ already enqueued → watch draft CI →
 **stay until** `origin/main` has `(#N)` (re-enqueue on eject; do **not**
