@@ -119,6 +119,7 @@ GTBIN="$HOME/.agents/skills/sume-gt-mq/bin"
 ln -sfn "$BIN/agent-human-stream.sh" "$HOME/.local/bin/agent-human-stream"
 ln -sfn "$BIN/claude-human-stream.sh" "$HOME/.local/bin/claude-human-stream"
 ln -sfn "$BIN/sume-bg-launch.sh" "$HOME/.local/bin/sume-bg-launch"
+ln -sfn "$BIN/agent-holders.sh" "$HOME/.local/bin/agent-holders"
 ln -sfn "$GTBIN/cstack-clone.sh" "$HOME/.local/bin/cstack-clone"
 ln -sfn "$GTBIN/cstack-clone-rm.sh" "$HOME/.local/bin/cstack-clone-rm"
 ln -sfn "$GTBIN/cstack-mirror-sync.sh" "$HOME/.local/bin/cstack-mirror-sync"
@@ -126,7 +127,9 @@ ln -sfn "$GTBIN/cstack-gt-wait-merge.sh" "$HOME/.local/bin/cstack-gt-wait-merge"
 chmod +x "$BIN/agent-human-stream.sh" "$BIN/agent-human-stream.py" \
   "$BIN/agent-human-stream.test.py" \
   "$BIN/claude-human-stream.sh" "$BIN/claude-human-stream.py" \
-  "$BIN/sume-bg-launch.sh" \
+  "$BIN/sume-bg-launch.sh" "$BIN/sume-bg-launch.test.sh" \
+  "$BIN/agent-holders.sh" "$BIN/agent-registry.py" \
+  "$BIN/grok-desk-hook.sh" "$BIN/grok-desk-hook.test.sh" \
   "$HOME/.agents/skills/sume-main-agent-orchestration/check-wiring.sh" \
   "$HOME/.agents/skills/sume-gt-mq/install-symlinks.sh" \
   "$GTBIN/cstack-clone.sh" "$GTBIN/cstack-clone-rm.sh" \
@@ -177,6 +180,22 @@ if [ -x "$GTBIN/cstack-gt-wait-merge.test.sh" ]; then
   echo "== cstack-gt-wait-merge matcher =="
   "$GTBIN/cstack-gt-wait-merge.test.sh"
 fi
+if [ -x "$BIN/sume-bg-launch.test.sh" ]; then
+  echo "== sume-bg-launch steer-kill (agent-holders) =="
+  "$BIN/sume-bg-launch.test.sh"
+fi
+if [ -x "$BIN/grok-desk-hook.test.sh" ]; then
+  echo "== grok-desk-hook =="
+  "$BIN/grok-desk-hook.test.sh"
+fi
+
+# Grok Build hooks → desk registry (Stop / StopFailure / SessionEnd / PostCompact).
+# Sibling of tokenmaxxing-grok.json; absolute path because Grok runs hooks
+# from any cwd. Re-written on every install so the path follows the SoT.
+echo "== Grok Build desk hook =="
+mkdir -p "$HOME/.grok/hooks"
+sed "s|__HOOK__|$BIN/grok-desk-hook.sh|g" "$DESK/grok-hooks/sume-desk.json.tmpl" > "$HOME/.grok/hooks/sume-desk.json"
+echo "installed: ~/.grok/hooks/sume-desk.json → $BIN/grok-desk-hook.sh"
 
 if [ -x "$HOME/.agents/skills/sume-main-agent-orchestration/check-wiring.sh" ]; then
   echo "== wiring check =="
@@ -194,6 +213,21 @@ else
   echo "      Install: bun add -g tokenmaxxing && tokenmaxxing init"
   echo "      Docs: $ROOT/docs/TOKENMAXXING.md"
 fi
+
+echo ""
+echo "== Grok Build (desk pin) =="
+# `grok` on PATH is the tokenmaxxing shim; the binary that actually runs is
+# config.json grokBin (pinned download), not ~/.grok/bin/grok. Say which.
+GROK_PIN="$(python3 -c 'import json,os; print(json.load(open(os.path.expanduser("~/.config/tokenmaxxing/config.json"))).get("grokBin",""))' 2>/dev/null || true)"
+if [ -n "$GROK_PIN" ] && [ -x "$GROK_PIN" ]; then
+  echo "runs:  $GROK_PIN ($("$GROK_PIN" --version 2>/dev/null | head -1))"
+else
+  echo "runs:  $(command -v grok 2>/dev/null || echo 'grok not on PATH') (no tokenmaxxing grokBin pin)"
+fi
+if [ -x "$HOME/.grok/bin/grok" ]; then
+  echo "bin:   ~/.grok/bin/grok ($("$HOME/.grok/bin/grok" --version 2>/dev/null | head -1)) — NOT what desk workers run when the pin above is set"
+fi
+echo "SoT: docs/TOKENMAXXING.md § Grok Build pool"
 
 if [ -x "$HOME/.local/bin/cstack-mirror-sync" ]; then
   echo "== cstack mirror (sume-com objects) =="

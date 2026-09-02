@@ -76,6 +76,18 @@ else
   bad "cstack-gt-wait-merge not on PATH"
 fi
 
+if [ -f "$HOME/.grok/hooks/sume-desk.json" ] && grep -q "grok-desk-hook.sh" "$HOME/.grok/hooks/sume-desk.json"; then
+  ok "Grok desk hook installed (~/.grok/hooks/sume-desk.json)"
+else
+  bad "Grok desk hook missing: run install.sh (sumelabs/sume#5706)"
+fi
+
+if command -v agent-holders >/dev/null 2>&1; then
+  ok "agent-holders on PATH"
+else
+  bad "agent-holders not on PATH (steer-kill helper)"
+fi
+
 if command -v cstack-clone >/dev/null 2>&1; then
   ok "cstack-clone on PATH"
 else
