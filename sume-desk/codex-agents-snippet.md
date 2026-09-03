@@ -1,7 +1,8 @@
 ## Sume Orchestration
 
-When this harness is the Sume **main agent**, read and follow:
+When this harness is the Sume **main agent**, read and follow, in order:
 
+`~/.cstack/src/AGENTS.md`
 `~/.agents/skills/sume-main-agent-orchestration/SKILL.md`
 
 Ignore sections marked **Cursor-only** unless you are Cursor. Before any

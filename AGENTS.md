@@ -20,6 +20,10 @@ git clone git@github.com:chasehuh/cstack.git ~/.cstack/src
 ~/.cstack/src/install.sh --sume-com ~/sume/sume-com
 ```
 
+Cursor user-global always-apply primer: `~/.cursor/rules/cstack-desk.mdc`
+(points at this file). Codex / Claude Code / Grok Build get the same
+order via `~/.codex/AGENTS.md`, `~/.claude/CLAUDE.md`, `~/.grok/AGENTS.md`.
+
 Then **read**, in this order:
 
 1. `~/.agents/skills/sume-main-agent-orchestration/SKILL.md` (policy SoT)
