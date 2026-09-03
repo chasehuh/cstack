@@ -39,6 +39,7 @@ duplicate the full SKILL into the `.mdc`.
 
 | File | Role |
 |---|---|
+| `cstack-desk.mdc` | Pointer at `~/.cstack/src/AGENTS.md` (desk primer every agent reads first) |
 | `main-agent-orchestration.mdc` | Pointer at orchestration SKILL |
 | `sume-chase-work-loop.mdc` | Discuss → issue → Opus enqueue → Grok land |
 | `opus-background-terminal.mdc` | `claude-human-stream` recipe: prompt file, `cd` not `--cwd`, `block_until_ms: 0`, title = Job |

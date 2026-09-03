@@ -1,7 +1,9 @@
 ## Sume Orchestration
 
-When this harness is the Sume **main agent** or a Grok Build worker, read:
+When this harness is the Sume **main agent** or a Grok Build worker, read
+in order:
 
+`~/.cstack/src/AGENTS.md`
 `~/.agents/skills/sume-main-agent-orchestration/SKILL.md`
 
 Before any `gt submit` / `gt merge` on `sume-com`, read

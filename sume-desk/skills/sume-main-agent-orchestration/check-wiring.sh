@@ -139,8 +139,19 @@ check_pointer "$HOME/.cursor/rules/main-agent-orchestration.mdc"
 
 while IFS= read -r rule; do
   check_pointer "$rule"
-done < <(find "$HOME/sume" "$HOME/chase" "$HOME/dooi" -maxdepth 4 \
+done < <(find "$HOME/sume" "$HOME/sumelabs" "$HOME/chase" "$HOME/dooi" -maxdepth 4 \
   -path "*/.cursor/rules/main-agent-orchestration.mdc" \
   -not -path "*/node_modules/*" -not -path "*worktree*" -not -path "*PURGE*" 2>/dev/null)
+
+if [ -f "$HOME/.cursor/rules/cstack-desk.mdc" ]; then
+  if grep -q "$HOME/.cstack/src/AGENTS.md" "$HOME/.cursor/rules/cstack-desk.mdc" \
+     || grep -q '~/.cstack/src/AGENTS.md' "$HOME/.cursor/rules/cstack-desk.mdc"; then
+    ok "cursor desk primer points at ~/.cstack/src/AGENTS.md"
+  else
+    bad "cursor desk primer missing AGENTS.md pointer: ~/.cursor/rules/cstack-desk.mdc"
+  fi
+else
+  bad "cursor desk primer missing: ~/.cursor/rules/cstack-desk.mdc"
+fi
 
 exit $fail

@@ -1,0 +1,27 @@
+---
+description: CStack desk primer — first file every agent on this machine reads
+alwaysApply: true
+---
+
+# CStack desk (pointer)
+
+This machine’s installable SoT is **`chasehuh/cstack`**.
+
+Read this file first, then stop forking it into chat memory:
+
+`~/.cstack/src/AGENTS.md`
+
+Then the policy skill:
+
+`~/.agents/skills/sume-main-agent-orchestration/SKILL.md`
+
+Map of files → when: `~/.cstack/src/docs/FLOW.md`
+
+Refresh after `git pull` in `~/.cstack/src`:
+
+```bash
+~/.cstack/src/install.sh --sume-com /Users/chasehuh/sumelabs/sume
+```
+
+Do not edit `~/.agents/skills/*` copies. Those are symlinks into
+`~/.cstack/src/sume-desk/skills/`.
