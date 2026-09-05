@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Human-readable wrapper for Claude Code and Grok Build headless streams.
+# Human-readable wrapper for Claude Code, Grok Build and Codex headless streams.
 #
 #   agent-human-stream "Audit #1708 …"
 #   agent-human-stream --backend grok --name land-4414 "Watch MQ …"
+#   agent-human-stream --backend codex --name probe-api "Audit routes …"
 #   agent-human-stream --resume <uuid> "Follow-up …"
 #   agent-human-stream --prompt-file /tmp/sume-grok-prompts/job.md
 #   claude-human-stream "…"          # alias: --backend claude
@@ -10,6 +11,7 @@
 # Extra backend flags go after the prompt:
 #   agent-human-stream "…" --model opus
 #   agent-human-stream --backend grok --prompt-file job.md --effort high
+#   agent-human-stream --backend codex "…" --model gpt-5.5 --effort xhigh
 set -euo pipefail
 
 SOURCE=${BASH_SOURCE[0]}
@@ -53,14 +55,29 @@ _grok_effort_wire() {
   esac
 }
 
+# Codex CLI has no --effort flag; reasoning depth is the config key
+# model_reasoning_effort = none|minimal|low|medium|high|xhigh (no max / mid).
+# Aliases: mid → medium, max|maximum → xhigh (Codex ceiling).
+_codex_effort_wire() {
+  local lc
+  lc=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+  case "$lc" in
+    mid) printf '%s' medium ;;
+    max|maximum|xhigh|x-high|xh|extra-high|extrahigh) printf '%s' xhigh ;;
+    none|minimal|low|medium|high) printf '%s' "$lc" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
 usage() {
   cat <<'EOF'
-Human-readable wrapper around Claude Code and Grok Build headless NDJSON.
+Human-readable wrapper around Claude Code, Grok Build and Codex headless NDJSON.
 
-  agent-human-stream [--backend claude|grok|auto] [--name <slug>] <prompt> [backend flags…]
+  agent-human-stream [--backend claude|grok|codex|auto] [--name <slug>] <prompt> [backend flags…]
   agent-human-stream --prompt-file <path>         # read prompt after flags; no $(cat)
   agent-human-stream --claude "…"                 # same as --backend claude
   agent-human-stream --grok "…"                   # same as --backend grok
+  agent-human-stream --codex "…"                  # same as --backend codex
   agent-human-stream --resume <uuid> --prompt-file <path>
   agent-human-stream --sessions
   agent-human-stream --self-test
@@ -68,6 +85,7 @@ Human-readable wrapper around Claude Code and Grok Build headless NDJSON.
 Auto backend (default):
   --backend grok / --grok / AGENT_HUMAN_STREAM_BACKEND=grok
   --model grok*  → grok
+  --model gpt-*|o3*|o4*|codex* → codex
   --model opus|fable|sonnet|haiku|claude* → claude
   --resume <uuid> uses the last backend recorded for that session
   otherwise → claude (Opus/Fable path unchanged)
@@ -87,6 +105,17 @@ Grok Build (`grok` on PATH):
   Grok --effort enum: xhigh, high, medium, low (not mid / not max).
   Aliases: mid → medium, max|maximum → xhigh (Grok ceiling).
 
+Codex (tokenmaxxing `codex` on this desk; Codex pool, not the Claude pool):
+  codex exec --json --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check … </dev/null
+  --resume <id>  → codex exec resume <id> "…"      --continue → codex exec resume --last "…"
+  --fork-session is not supported by Codex (exit 2).
+  --effort has no CLI flag; the wrapper maps it to -c model_reasoning_effort="…"
+  (enum none|minimal|low|medium|high|xhigh; mid → medium, max|maximum → xhigh).
+  Default --effort when omitted: high (AGENT_HUMAN_STREAM_EFFORT_CODEX).
+  --model/-m pass through. Claude-only --verbose / --permission-mode /
+  --output-format / --always-approve are dropped with a note.
+  Session swap (tokenmaxxing switch --codex) applies on the NEXT codex start.
+
 Resume:
   --resume <uuid>   | AGENT_RESUME_SESSION / CLAUDE_RESUME_SESSION / GROK_RESUME_SESSION
   --continue        most recent session in this cwd
@@ -96,7 +125,7 @@ Watch:
   tail -f ~/.cstack/state/opus-live/LATEST.log
 
 On stream start/end the formatter prints:
-  📎 session_id=<uuid>  backend=<claude|grok>
+  📎 session_id=<uuid>  backend=<claude|grok|codex>
 and again just above —— final ——.
 EOF
 }
@@ -128,7 +157,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --backend)
       if [[ $# -lt 2 || "$2" == -* ]]; then
-        echo "error: --backend requires claude|grok|auto" >&2
+        echo "error: --backend requires claude|grok|codex|auto" >&2
         exit 2
       fi
       BACKEND=$2
@@ -144,6 +173,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --grok)
       BACKEND=grok
+      shift
+      ;;
+    --codex)
+      BACKEND=codex
       shift
       ;;
     --resume|-r)
@@ -245,6 +278,23 @@ if [[ "$SELF_TEST" -eq 1 ]]; then
       exit 1
     fi
   done
+  _got="$(_codex_effort_wire mid)"
+  if [[ "$_got" != "medium" ]]; then
+    echo "self-test: codex effort alias mid → medium failed (got ${_got})" >&2
+    exit 1
+  fi
+  _got="$(_codex_effort_wire max)"
+  if [[ "$_got" != "xhigh" ]]; then
+    echo "self-test: codex effort alias max → xhigh failed (got ${_got})" >&2
+    exit 1
+  fi
+  for _keep in none minimal low medium high xhigh; do
+    _got="$(_codex_effort_wire "$_keep")"
+    if [[ "$_got" != "$_keep" ]]; then
+      echo "self-test: codex effort ${_keep} should pass through (got ${_got})" >&2
+      exit 1
+    fi
+  done
   _got="$(_claude_effort_wire max)"
   if [[ "$_got" != "max" ]]; then
     echo "self-test: claude effort max must stay max (got ${_got})" >&2
@@ -283,6 +333,14 @@ printf '%s\n' "$@" > "${CLAUDE_ARGV_FILE:?}"
 echo '{"type":"result","session_id":"00000000-0000-0000-0000-000000000000","result":"ok"}'
 EOF
   chmod +x "$_tmp/claude"
+  cat > "$_tmp/codex" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "${CODEX_ARGV_FILE:?}"
+echo '{"type":"thread.started","thread_id":"00000000-0000-0000-0000-00000000c0de"}'
+echo '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"ok"}}'
+echo '{"type":"turn.completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":1}}'
+EOF
+  chmod +x "$_tmp/codex"
   GROK_ARGV_FILE="$_tmp/argv.txt" \
     AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg.jsonl" \
     AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live" \
@@ -363,6 +421,86 @@ EOF
     rm -rf "$_tmp"
     exit 1
   fi
+  # Codex: exec --json + bypass + effort → -c model_reasoning_effort, stdin closed.
+  CODEX_ARGV_FILE="$_tmp/codex-argv.txt" \
+    AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg.jsonl" \
+    AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live" \
+    TOKENMAXXING_REQUIRE_SUPERVISOR=0 \
+    PATH="$_tmp:$PATH" \
+    "$SOURCE" --backend codex --name self-test-codex "self-test codex mid" --model gpt-5.5 --effort mid --verbose >"$_tmp/codex-out.txt"
+  for _want in exec --json --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check \
+      'model_reasoning_effort="medium"' gpt-5.5 'self-test codex mid'; do
+    if ! grep -qxF -- "$_want" "$_tmp/codex-argv.txt"; then
+      echo "self-test: codex argv missing ${_want}:" >&2
+      cat "$_tmp/codex-argv.txt" >&2
+      rm -rf "$_tmp"
+      exit 1
+    fi
+  done
+  for _bad in --effort mid --verbose --permission-mode --output-format --name resume; do
+    if grep -qxF -- "$_bad" "$_tmp/codex-argv.txt"; then
+      echo "self-test: codex argv still has ${_bad}:" >&2
+      cat "$_tmp/codex-argv.txt" >&2
+      rm -rf "$_tmp"
+      exit 1
+    fi
+  done
+  if ! grep -q 'session_id=00000000-0000-0000-0000-00000000c0de  backend=codex' "$_tmp/codex-out.txt"; then
+    echo "self-test: codex formatter did not surface thread_id as session_id:" >&2
+    cat "$_tmp/codex-out.txt" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  if ! grep -q '"backend": "codex"' "$_tmp/reg.jsonl"; then
+    echo "self-test: registry missing backend=codex rows" >&2
+    cat "$_tmp/reg.jsonl" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  # Codex auto-detect from --model gpt-* + resume → `codex exec resume <id> "…"`.
+  CODEX_ARGV_FILE="$_tmp/codex-argv-resume.txt" \
+    AGENT_HUMAN_STREAM_BACKEND=auto \
+    AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg.jsonl" \
+    AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live" \
+    TOKENMAXXING_REQUIRE_SUPERVISOR=0 \
+    PATH="$_tmp:$PATH" \
+    "$SOURCE" --resume 00000000-0000-0000-0000-00000000c0de "self-test codex resume" --model gpt-5.5 --effort max >/dev/null
+  if ! grep -qxF -- 'resume' "$_tmp/codex-argv-resume.txt"; then
+    echo "self-test: codex --resume did not use exec resume:" >&2
+    cat "$_tmp/codex-argv-resume.txt" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  if grep -qxF -- '--resume' "$_tmp/codex-argv-resume.txt"; then
+    echo "self-test: codex argv has Claude-style --resume:" >&2
+    cat "$_tmp/codex-argv-resume.txt" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  if ! grep -qxF -- '00000000-0000-0000-0000-00000000c0de' "$_tmp/codex-argv-resume.txt"; then
+    echo "self-test: codex resume id missing from argv" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  if ! grep -qxF -- 'model_reasoning_effort="xhigh"' "$_tmp/codex-argv-resume.txt"; then
+    echo "self-test: codex --effort max → xhigh failed:" >&2
+    cat "$_tmp/codex-argv-resume.txt" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  # Registry-only resume (no --model) must pick backend=codex from the record.
+  CODEX_ARGV_FILE="$_tmp/codex-argv-reg.txt" \
+    AGENT_HUMAN_STREAM_BACKEND=auto \
+    AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg.jsonl" \
+    AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live" \
+    TOKENMAXXING_REQUIRE_SUPERVISOR=0 \
+    PATH="$_tmp:$PATH" \
+    "$SOURCE" --resume 00000000-0000-0000-0000-00000000c0de "self-test codex registry resume" >/dev/null
+  if [[ ! -s "$_tmp/codex-argv-reg.txt" ]]; then
+    echo "self-test: --resume did not route to codex from registry backend" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
   rm -rf "$_tmp"
   exec python3 "$ROOT/agent-human-stream.test.py"
 fi
@@ -389,7 +527,7 @@ fi
 
 if [[ -z "$PROMPT" ]]; then
   echo "error: missing prompt" >&2
-  echo "usage: $0 [--backend claude|grok|auto] [--resume <uuid>|--continue] [--name <label>] (--prompt-file <path> | <prompt>) [backend args...]" >&2
+  echo "usage: $0 [--backend claude|grok|codex|auto] [--resume <uuid>|--continue] [--name <label>] (--prompt-file <path> | <prompt>) [backend args...]" >&2
   exit 2
 fi
 
@@ -400,9 +538,9 @@ fi
 
 BACKEND=$(printf '%s' "$BACKEND" | tr '[:upper:]' '[:lower:]')
 case "$BACKEND" in
-  claude|grok|auto) ;;
+  claude|grok|codex|auto) ;;
   *)
-    echo "error: --backend must be claude, grok, or auto (got: $BACKEND)" >&2
+    echo "error: --backend must be claude, grok, codex, or auto (got: $BACKEND)" >&2
     exit 2
     ;;
 esac
@@ -413,6 +551,7 @@ _passed_effort=""
 _has_output_format=0
 _has_permission_mode=0
 _has_always_approve=0
+_has_sandbox=0
 _i=0
 while [[ $_i -lt ${#EXTRA[@]} ]]; do
   _a="${EXTRA[$_i]}"
@@ -464,6 +603,11 @@ while [[ $_i -lt ${#EXTRA[@]} ]]; do
       _i=$((_i + 1))
       continue
       ;;
+    --dangerously-bypass-approvals-and-sandbox|--full-auto|--sandbox|-s|--sandbox=*|-a|--ask-for-approval|--ask-for-approval=*)
+      _has_sandbox=1
+      _i=$((_i + 1))
+      continue
+      ;;
   esac
   _i=$((_i + 1))
 done
@@ -500,7 +644,7 @@ fi
 if [[ "$BACKEND" == "auto" && -n "$RESUME" ]]; then
   _reg_backend=$(lookup_session_field "$RESUME" backend)
   case "$_reg_backend" in
-    claude|grok) BACKEND=$_reg_backend ;;
+    claude|grok|codex) BACKEND=$_reg_backend ;;
   esac
 fi
 
@@ -509,6 +653,9 @@ if [[ "$BACKEND" == "auto" ]]; then
   case "$_model_lc" in
     grok|grok*|grok-*)
       BACKEND=grok
+      ;;
+    gpt|gpt-*|gpt*|o3|o3-*|o3*|o4|o4-*|o4*|codex|codex*)
+      BACKEND=codex
       ;;
     opus|opus*|fable|fable*|sonnet|sonnet*|haiku|haiku*|claude|claude-*)
       BACKEND=claude
@@ -536,6 +683,10 @@ elif [[ "$BACKEND" == "grok" && "$_has_effort" -eq 0 ]]; then
   _effort="$(_grok_effort_wire "${AGENT_HUMAN_STREAM_EFFORT_GROK:-xhigh}")"
   EXTRA+=(--effort "$_effort")
   echo "effort: ${_effort} (default for grok code lane; research → --effort medium)" >&2
+elif [[ "$BACKEND" == "codex" && "$_has_effort" -eq 0 ]]; then
+  _effort="$(_codex_effort_wire "${AGENT_HUMAN_STREAM_EFFORT_CODEX:-high}")"
+  EXTRA+=(--effort "$_effort")
+  echo "effort: ${_effort} (default for codex code lane; research → --effort medium)" >&2
 fi
 
 # Claude: rewrite desk aliases so --effort max/xhigh reach the CLI as-is.
@@ -633,8 +784,121 @@ if [[ "$BACKEND" == "grok" && ${#EXTRA[@]} -gt 0 ]]; then
   EXTRA=("${_filtered[@]+"${_filtered[@]}"}")
 fi
 
+# Codex: no --effort / --verbose / --permission-mode / --output-format flags.
+# --effort becomes the config override -c model_reasoning_effort="…".
+if [[ "$BACKEND" == "codex" && ${#EXTRA[@]} -gt 0 ]]; then
+  _filtered=()
+  _i=0
+  while [[ $_i -lt ${#EXTRA[@]} ]]; do
+    _a="${EXTRA[$_i]}"
+    case "$_a" in
+      --verbose|--always-approve|--yolo|--no-auto-update|--fork-session)
+        echo "note: dropping ${_a} (not a codex exec flag)" >&2
+        _i=$((_i + 1))
+        continue
+        ;;
+      --output-format|--permission-mode|--name|--max-turns)
+        echo "note: dropping ${_a} ${EXTRA[$((_i + 1))]:-} (not a codex exec flag)" >&2
+        _i=$((_i + 2))
+        continue
+        ;;
+      --output-format=*|--permission-mode=*|--name=*|--max-turns=*)
+        echo "note: dropping ${_a} (not a codex exec flag)" >&2
+        _i=$((_i + 1))
+        continue
+        ;;
+      --effort|--reasoning-effort)
+        _val="${EXTRA[$((_i + 1))]:-}"
+        _wire="$(_codex_effort_wire "$_val")"
+        if [[ "$_wire" != "$_val" ]]; then
+          echo "note: mapping codex --effort ${_val} → ${_wire} (model_reasoning_effort enum)" >&2
+        fi
+        _filtered+=(-c "model_reasoning_effort=\"${_wire}\"")
+        _effort="$_wire"
+        _i=$((_i + 2))
+        continue
+        ;;
+      --effort=*|--reasoning-effort=*)
+        _val="${_a#*=}"
+        _wire="$(_codex_effort_wire "$_val")"
+        if [[ "$_wire" != "$_val" ]]; then
+          echo "note: mapping codex --effort ${_val} → ${_wire} (model_reasoning_effort enum)" >&2
+        fi
+        _filtered+=(-c "model_reasoning_effort=\"${_wire}\"")
+        _effort="$_wire"
+        _i=$((_i + 1))
+        continue
+        ;;
+      --model=*)
+        _filtered+=(-m "${_a#*=}")
+        _i=$((_i + 1))
+        continue
+        ;;
+      --model)
+        _filtered+=(-m "${EXTRA[$((_i + 1))]:-}")
+        _i=$((_i + 2))
+        continue
+        ;;
+    esac
+    _filtered+=("$_a")
+    _i=$((_i + 1))
+  done
+  EXTRA=("${_filtered[@]+"${_filtered[@]}"}")
+fi
+
+# Codex must be the tokenmaxxing supervisor when this desk has one. Hard-fail
+# only when TOKENMAXXING_REQUIRE_SUPERVISOR=1 or when ~/.config/tokenmaxxing
+# has a codex shim that PATH does not pick first (PATH order bug).
+_codex_supervisor_check() {
+  local real shim="$HOME/.config/tokenmaxxing/bin/codex"
+  real=$(command -v codex 2>/dev/null || true)
+  if [[ -z "$real" ]]; then
+    echo "error: codex not on PATH (want tokenmaxxing supervisor on this desk: tokenmaxxing init --codex)" >&2
+    exit 127
+  fi
+  case "$real" in
+    */.config/tokenmaxxing/bin/codex) return 0 ;;
+  esac
+  if [[ "${TOKENMAXXING_REQUIRE_SUPERVISOR:-0}" == "1" ]]; then
+    echo "error: codex resolves to ${real}, not the tokenmaxxing supervisor (TOKENMAXXING_REQUIRE_SUPERVISOR=1)" >&2
+    exit 127
+  fi
+  if [[ -x "$shim" ]]; then
+    if [[ "${TOKENMAXXING_REQUIRE_SUPERVISOR:-}" == "0" ]]; then
+      echo "note: codex is ${real}, not ${shim} (TOKENMAXXING_REQUIRE_SUPERVISOR=0 bypass)" >&2
+      return 0
+    fi
+    echo "error: ${shim} exists but PATH picks ${real} first. Put ~/.config/tokenmaxxing/bin ahead (tokenmaxxing doctor)." >&2
+    echo "       TOKENMAXXING_REQUIRE_SUPERVISOR=0 to bypass on purpose." >&2
+    exit 127
+  else
+    echo "note: codex is ${real} (no tokenmaxxing codex pool on this machine)" >&2
+  fi
+}
+
 CMD=()
-if [[ "$BACKEND" == "claude" ]]; then
+if [[ "$BACKEND" == "codex" ]]; then
+  _codex_supervisor_check
+  if [[ "$FORK" -eq 1 ]]; then
+    echo "error: --fork-session is not supported by codex exec (resume appends to the thread)" >&2
+    exit 2
+  fi
+  CMD=(codex exec)
+  if [[ -n "$RESUME" || "$CONTINUE" -eq 1 ]]; then
+    CMD+=(resume)
+  fi
+  CMD+=(--json --skip-git-repo-check)
+  if [[ "$_has_sandbox" -eq 0 ]]; then
+    CMD+=(--dangerously-bypass-approvals-and-sandbox)
+  fi
+  CMD+=("${EXTRA[@]+"${EXTRA[@]}"}")
+  if [[ -n "$RESUME" ]]; then
+    CMD+=("$RESUME")
+  elif [[ "$CONTINUE" -eq 1 ]]; then
+    CMD+=(--last)
+  fi
+  CMD+=("$PROMPT")
+elif [[ "$BACKEND" == "claude" ]]; then
   if ! command -v claude >/dev/null 2>&1; then
     echo "error: claude not on PATH (want tokenmaxxing supervisor on this desk)" >&2
     exit 127
@@ -661,21 +925,22 @@ else
   CMD+=(--no-auto-update)
 fi
 
-if [[ -n "$RESUME" ]]; then
-  CMD+=(--resume "$RESUME")
+if [[ "$BACKEND" != "codex" ]]; then
+  if [[ -n "$RESUME" ]]; then
+    CMD+=(--resume "$RESUME")
+  fi
+  if [[ "$CONTINUE" -eq 1 ]]; then
+    CMD+=(--continue)
+  fi
+  if [[ "$FORK" -eq 1 ]]; then
+    CMD+=(--fork-session)
+  fi
+  # Claude /resume picker; Grok/Codex have no --name display flag — logs only.
+  if [[ -n "$NAME" && "$BACKEND" == "claude" ]]; then
+    CMD+=(--name "$NAME")
+  fi
+  CMD+=("${EXTRA[@]+"${EXTRA[@]}"}")
 fi
-if [[ "$CONTINUE" -eq 1 ]]; then
-  CMD+=(--continue)
-fi
-if [[ "$FORK" -eq 1 ]]; then
-  CMD+=(--fork-session)
-fi
-# Claude /resume picker; Grok has no --name display flag — keep it in our logs only.
-if [[ -n "$NAME" && "$BACKEND" == "claude" ]]; then
-  CMD+=(--name "$NAME")
-fi
-
-CMD+=("${EXTRA[@]+"${EXTRA[@]}"}")
 
 PROMPT_HEAD=$(printf '%s' "$PROMPT" | tr '\n' ' ' | cut -c1-200)
 
@@ -742,4 +1007,10 @@ echo "👁 live_log: $LIVE_LOG" >&2
 echo "👁 watch:    tail -f $(printf %q "$LIVE_LOG")" >&2
 echo "👁 latest:   tail -f $(printf %q "$LIVE_DIR/LATEST.log")" >&2
 
-"${CMD[@]}" | python3 -u "$ROOT/agent-human-stream.py"
+if [[ "$BACKEND" == "codex" ]]; then
+  # codex exec appends piped stdin to the prompt and blocks on a non-tty
+  # stdin (background Shells) — always close it.
+  "${CMD[@]}" </dev/null | python3 -u "$ROOT/agent-human-stream.py"
+else
+  "${CMD[@]}" | python3 -u "$ROOT/agent-human-stream.py"
+fi

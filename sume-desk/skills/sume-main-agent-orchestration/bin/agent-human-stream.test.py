@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline fixtures for agent-human-stream.py (Claude + Grok NDJSON)."""
+"""Offline fixtures for agent-human-stream.py (Claude + Grok + Codex NDJSON)."""
 from __future__ import annotations
 
 import json
@@ -105,6 +105,60 @@ GROK_ACP = [
     },
 ]
 
+# Shapes from a live `codex exec --json` probe (codex-cli 0.135): thread.started
+# carries thread_id (the resume id); items arrive as item.started/completed.
+CODEX_STREAM = [
+    {"type": "thread.started", "thread_id": "44444444-4444-7444-8444-444444444444"},
+    {"type": "turn.started"},
+    {
+        "type": "item.completed",
+        "item": {"id": "item_0", "type": "reasoning", "text": "Need to look at the tree first."},
+    },
+    {
+        "type": "item.started",
+        "item": {
+            "id": "item_1",
+            "type": "command_execution",
+            "command": "/bin/zsh -lc 'git status --short'",
+            "status": "in_progress",
+        },
+    },
+    {
+        "type": "item.completed",
+        "item": {
+            "id": "item_1",
+            "type": "command_execution",
+            "command": "/bin/zsh -lc 'git status --short'",
+            "aggregated_output": " M README.md\n",
+            "exit_status": 0,
+            "status": "completed",
+        },
+    },
+    {
+        "type": "item.completed",
+        "item": {
+            "id": "item_2",
+            "type": "file_change",
+            "changes": [{"path": "README.md", "kind": "update"}],
+            "status": "completed",
+        },
+    },
+    {
+        "type": "item.completed",
+        "item": {"id": "item_3", "type": "agent_message", "text": "Codex done."},
+    },
+    {
+        "type": "turn.completed",
+        "usage": {"input_tokens": 20216, "cached_input_tokens": 10624, "output_tokens": 17},
+    },
+]
+
+CODEX_FAILED = [
+    {"type": "thread.started", "thread_id": "55555555-5555-7555-8555-555555555555"},
+    {"type": "turn.started"},
+    {"type": "turn.failed", "error": {"message": "usage limit reached"}},
+]
+
 
 def run_stream(events: list[dict], backend: str) -> str:
     payload = "".join(json.dumps(ev) + "\n" for ev in events)
@@ -160,7 +214,30 @@ def main() -> None:
     require(grok_acp, "📎 tool → {'lines': 3}")
     require(grok_acp, "ACP done.")
 
-    print("agent-human-stream self-test: ok (claude + grok messages + grok acp)")
+    codex = run_stream(CODEX_STREAM, "codex")
+    require(codex, "📎 session_id=44444444-4444-7444-8444-444444444444")
+    require(codex, "backend=codex")
+    require(codex, "(thinking) Need to look at the tree first.")
+    require(codex, "🔧 $ /bin/zsh -lc 'git status --short'")
+    require(codex, "📎 tool →  M README.md")
+    require(codex, "🔧 update README.md")
+    require(codex, "🤖 Codex done.")
+    require(codex, "usage: in=20216 cached=10624 out=17")
+    require(codex, "—— final ——\nCodex done.")
+    require(codex, "agent-human-stream --backend codex --resume 44444444-4444-7444-8444-444444444444")
+    if "claude-human-stream --resume" in codex:
+        raise SystemExit(f"codex output must not print the claude alias hint:\n{codex}")
+
+    codex_failed = run_stream(CODEX_FAILED, "codex")
+    require(codex_failed, "❌ usage limit reached")
+    require(codex_failed, "—— final ——\nusage limit reached")
+
+    # Claude + Grok must not change: no codex-only lines leak into them.
+    for out in (claude, grok_msg, grok_acp):
+        if "usage: in=" in out:
+            raise SystemExit(f"codex-only line leaked into claude/grok output:\n{out}")
+
+    print("agent-human-stream self-test: ok (claude + grok messages + grok acp + codex)")
 
 
 if __name__ == "__main__":

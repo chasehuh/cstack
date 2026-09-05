@@ -210,9 +210,11 @@ When Chase names **max** or **xhigh**, pass that string through —
 
 Grok CLI enum is `xhigh|high|medium|low` (no `max` / `mid`). The wrapper
 maps `mid` → `medium` and `max`/`maximum` → `xhigh` (Grok ceiling).
+Codex has no `--effort` flag; the wrapper writes `-c model_reasoning_effort`
+(`none|minimal|low|medium|high|xhigh`, same alias mapping, default `high`).
 
 Wrapper default when `--effort` is omitted = **code lane** (Opus
-`medium`, Fable `high`, Grok `xhigh`). Named `max` is not that default.
+`medium`, Fable `high`, Grok `xhigh`, Codex `high`). Named `max` is not that default.
 Research **must** pass `--effort`. Mixed research-then-implement in one
 worker → code lane.
 
@@ -277,23 +279,35 @@ When the main agent needs an **Opus** worker/subagent:
    anymore — that burns Cursor-side Opus routing; Claude Code subscription is
    the Opus path.
 
-### Agent human stream — Claude + Grok Build
+### Agent human stream — Claude + Grok Build + Codex
 
-Canonical wrapper for **headless** Claude Code and **Grok Build** (`grok` CLI):
+Canonical wrapper for **headless** Claude Code, **Grok Build** (`grok` CLI)
+and **Codex** (`codex exec --json`):
 
 ```bash
 agent-human-stream --name <job-slug> "…" --model opus          # auto → claude
 agent-human-stream --backend grok --name <job-slug> "…"        # Grok Build
+agent-human-stream --backend codex --name <job-slug> "…"       # Codex (only if Chase named Codex)
 agent-human-stream --resume <uuid> "Follow-up …"               # backend from registry
 ```
 
 - `claude-human-stream` stays the Opus/Fable command. It execs
   `agent-human-stream --backend claude`. Do not break existing recipes.
-- `--backend auto` (default): `grok*` model → grok; opus/fable/sonnet/haiku
-  → claude; `--resume` uses the last `backend` recorded for that session.
+- `--backend auto` (default): `grok*` model → grok; `gpt-*`/`o3*`/`o4*`/`codex*`
+  → codex; opus/fable/sonnet/haiku → claude; `--resume` uses the last
+  `backend` recorded for that session.
 - Claude: `stream-json` + tokenmaxxing `claude`. Grok: `streaming-messages-json`
   (`--permission-mode bypassPermissions --always-approve`). The formatter also
   reads Grok native ACP `streaming-json`.
+- Codex: `codex exec --json --skip-git-repo-check
+  --dangerously-bypass-approvals-and-sandbox "<prompt>" </dev/null` via the
+  tokenmaxxing `codex` shim (**Codex pool**, separate from the Claude pool —
+  `docs/TOKENMAXXING.md` § Codex pool). Resume id = Codex `thread_id`;
+  `--resume <id>` → `codex exec resume <id> "…"`; `--continue` →
+  `resume --last`; no `--fork-session`. `--effort` → `-c
+  model_reasoning_effort="…"` (`mid` → medium, `max` → xhigh; omitted →
+  `high`). Claude-only `--verbose` / `--permission-mode` / `--output-format`
+  are dropped with a note. Account swaps apply on the next `codex` start.
 - Same live log dir (`~/.cstack/state/opus-live/`) and registry (`~/.cstack/state/opus-sessions.jsonl`)
   with a `backend` field. Resume hint prints `agent-human-stream --backend …`.
 - **Land and explicit Grok author use this wrapper.** Do **not** launch

@@ -47,7 +47,9 @@ and re-run `./install.sh`.
 - Cursor main agent: Opus/Fable = `claude-human-stream` (=
   `agent-human-stream --backend claude`) in a **background**
   Shell (`block_until_ms: 0`). Grok land / Grok author =
-  `agent-human-stream --backend grok` (same Shell recipe).
+  `agent-human-stream --backend grok` (same Shell recipe). Codex worker
+  (only if Chase named Codex) = `agent-human-stream --backend codex`
+  (same Shell recipe; tokenmaxxing Codex pool — `docs/TOKENMAXXING.md`).
   Never Cursor `Task` + `claude-opus-*` or `cursor-grok-*`.
   Composer explore stays Cursor `Task`.
   That wrapper must hit **tokenmaxxing’s** `claude` (`~/.config/tokenmaxxing/bin`

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Format Claude Code + Grok Build headless NDJSON into short human lines.
+"""Format Claude Code + Grok Build + Codex headless NDJSON into short human lines.
 
 Accepts:
 
@@ -7,6 +7,9 @@ Accepts:
 - Grok ``--output-format streaming-messages-json`` (same Messages wire)
 - Grok native ``--output-format streaming-json`` (ACP: text / thought /
   tool_call / tool_call_update / end)
+- Codex ``codex exec --json`` (thread.started / turn.started /
+  item.started|updated|completed / turn.completed / turn.failed / error;
+  ``thread_id`` is the resume id)
 
 Surfaces a resume id once when first seen and again just above
 ``—— final ——``:
@@ -93,7 +96,7 @@ def _tool_line(name: str, inp) -> str:
 
 
 def extract_session_id(ev: dict) -> str | None:
-    for key in ("session_id", "sessionId"):
+    for key in ("session_id", "sessionId", "thread_id"):
         sid = ev.get(key)
         if isinstance(sid, str) and sid.strip():
             return sid.strip()
@@ -157,13 +160,107 @@ def _acp_tool_line(ev: dict) -> str:
     return f"{line} ({status})" if status and status != "in_progress" else line
 
 
+def _codex_item_lines(typ: str, item: dict) -> tuple[list[str], str | None]:
+    """Codex ``item.*`` events. Returns (lines, agent_message text if any)."""
+    lines: list[str] = []
+    text: str | None = None
+    kind = item.get("type") or ""
+    done = typ == "item.completed"
+    started = typ == "item.started"
+    if kind == "agent_message":
+        if done:
+            body = item.get("text") or ""
+            text = body
+            lines.extend(f"🤖 {row}" for row in str(body).splitlines() if row)
+    elif kind == "reasoning":
+        if done:
+            th = _short(item.get("text") or "", 80)
+            if th:
+                lines.append(f"(thinking) {th}")
+    elif kind == "command_execution":
+        cmd = _short(item.get("command") or "")
+        if started or (done and not cmd):
+            if cmd:
+                lines.append(f"🔧 $ {cmd}")
+        if done:
+            out = _short(item.get("aggregated_output") or "", 200)
+            status = item.get("status") or ""
+            exit_status = item.get("exit_status")
+            tail = ""
+            if exit_status not in (None, 0):
+                tail = f" (exit {exit_status})"
+            elif status and status not in {"completed", "in_progress"}:
+                tail = f" ({status})"
+            if out:
+                lines.append(f"📎 tool → {out}{tail}")
+            elif tail:
+                lines.append(f"📎 tool{tail}")
+    elif kind == "file_change":
+        if done:
+            changes = item.get("changes") or []
+            for ch in changes if isinstance(changes, list) else []:
+                if isinstance(ch, dict):
+                    lines.append(f"🔧 {ch.get('kind') or 'edit'} {ch.get('path') or ''}".rstrip())
+            status = item.get("status") or ""
+            if status and status != "completed":
+                lines.append(f"📎 file_change {status}")
+    elif kind == "mcp_tool_call":
+        name = f"{item.get('server') or 'mcp'}.{item.get('tool') or 'tool'}"
+        if started:
+            lines.append(f"🔧 {_tool_line(name, item.get('arguments') or {})}")
+        elif done:
+            res = item.get("result")
+            err = item.get("error")
+            if err:
+                lines.append(f"❌ {name} {_short(err, 200)}")
+            elif res not in (None, "", [], {}):
+                lines.append(f"📎 tool → {_short(res, 200)}")
+            else:
+                lines.append(f"📎 tool {item.get('status') or 'completed'}")
+    elif kind == "web_search":
+        if started or done:
+            q = _short(item.get("query") or "", 120)
+            if q and (started or not lines):
+                lines.append(f"🔍 {q}")
+    elif kind == "todo_list":
+        if done:
+            items = item.get("items") or []
+            lines.append(f"📋 {_short(items, 160)}")
+    elif kind == "error":
+        lines.append(f"❌ {_short(item.get('message') or item, 240)}")
+    return lines, text
+
+
 def format_event(ev: dict) -> tuple[list[str], str | None]:
     """Return (human lines, final-result-if-terminal)."""
     typ = ev.get("type")
     lines: list[str] = []
     final: str | None = None
 
-    if typ == "assistant":
+    if isinstance(typ, str) and typ.startswith("item."):
+        item = ev.get("item") if isinstance(ev.get("item"), dict) else {}
+        lines, text = _codex_item_lines(typ, item)
+        return lines, text
+    elif typ == "thread.started":
+        lines.append("init")
+    elif typ == "turn.started":
+        pass
+    elif typ == "turn.completed":
+        usage = ev.get("usage") if isinstance(ev.get("usage"), dict) else {}
+        if usage:
+            lines.append(
+                "usage: in={} cached={} out={}".format(
+                    usage.get("input_tokens", 0),
+                    usage.get("cached_input_tokens", 0),
+                    usage.get("output_tokens", 0),
+                )
+            )
+    elif typ == "turn.failed":
+        err = ev.get("error")
+        msg = err.get("message") if isinstance(err, dict) else err
+        lines.append(f"❌ {_short(msg or 'turn failed', 240)}")
+        final = str(msg) if msg else "turn failed"
+    elif typ == "assistant":
         msg = ev.get("message") or {}
         bit = text_bits(msg.get("content"))
         if bit:
@@ -285,7 +382,10 @@ def main() -> None:
                 live_emit(row)
             if ev.get("type") == "text" and isinstance(ev.get("data"), str):
                 last_text = ev.get("data")
-            if maybe_final is not None and ev.get("type") in {"result", "end", "error"}:
+            if ev.get("type") == "item.completed" and maybe_final is not None:
+                # Codex: the last completed agent_message is the turn's answer.
+                last_text = maybe_final
+            if maybe_final is not None and ev.get("type") in {"result", "end", "error", "turn.failed"}:
                 final = maybe_final
 
         if final is None:
