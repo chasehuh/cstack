@@ -50,7 +50,7 @@ duplicate the full SKILL into the `.mdc`.
 | `canvas-user-language.mdc` | Canvas visible copy = Chase’s chat language (Korean thread → Korean) |
 | `chat-title-folder-prefix.mdc` | Rename chats `[workspace-folder] …` |
 | `origin-main-sot.mdc` | Code Q&A reads `origin/main`, not dirty local main |
-| `worker-reasoning-effort.mdc` | Code default: opus medium / fable high / grok xhigh. Named Claude `max`/`xhigh` pass through. Grok `max` → xhigh. Research: grok medium (opus+fable low) |
+| `worker-reasoning-effort.mdc` | Code default: opus medium / fable high / grok xhigh / codex high. Named Claude `max`/`xhigh` pass through. Grok and Codex `max` → xhigh. Research: grok medium (opus+fable low) |
 
 ## Layer 2 — `sume-com` repo rules (install into `<sume-com>/.cursor/rules/`)
 
@@ -66,21 +66,38 @@ duplicate the full SKILL into the `.mdc`.
 | `chat-title-prefix.mdc` | `[sume-com] …` |
 | `opus-via-claude-cli.mdc` | Pointer: Opus transport = shared SoT |
 
-## Layer 3 — local Claude (tokenmaxxing)
+## Layer 3 — local Claude + Codex (tokenmaxxing)
 
-`claude` on this desk is **[tokenmaxxing](https://github.com/anaclumos/tokenmaxxing)**:
-a supervisor in front of Claude Code that pools subscription accounts and
-swaps near 5h / weekly limits. `claude-human-stream` /
-`agent-human-stream --backend claude` uses that `claude`.
-Local Grok Build (`grok` CLI) uses `agent-human-stream --backend grok`.
+`claude` and `codex` on this desk are **[tokenmaxxing](https://github.com/anaclumos/tokenmaxxing)**
+supervisors: shims in front of Claude Code / Codex CLI that pool
+subscription accounts and swap near quota limits. `claude-human-stream` /
+`agent-human-stream --backend claude` uses that `claude`;
+`agent-human-stream --backend codex` uses that `codex`.
+Local Grok Build (`grok` CLI, no pool) uses `agent-human-stream --backend grok`.
 
 SoT: **`docs/TOKENMAXXING.md`**. Short version:
 
-- PATH: `~/.config/tokenmaxxing/bin` **before** the real CLI
-- Pool (Chase machine): `chase@sume.com` + `dev@sume.com`, Max 20x
+- PATH: `~/.config/tokenmaxxing/bin` **before** the real CLIs
+- Claude pool (Chase machine): `chase@sume.com` + `dev@sume.com`, Max 20x
+- Codex pool (separate): active `dev@dooilabs.com` (Pro); swaps apply on
+  the **next** `codex` start, not mid-turn
 - `tokenmaxxing doctor` / `status` before blaming the wrapper
 - Do not commit tokens or paste `accounts.json`
 - `./install.sh` does **not** install tokenmaxxing; it only checks if present
+
+### Agent stream — one wrapper, three backends
+
+```bash
+agent-human-stream --name <job-slug> "…" --model opus            # auto → claude
+agent-human-stream --backend grok  --name <job-slug> "…"         # Grok Build
+agent-human-stream --backend codex --name <job-slug> "…"         # Codex (codex exec --json)
+sume-bg-launch --backend codex --name <job-slug> --prompt-file /tmp/job.md --
+agent-human-stream --resume <id> "Follow-up …"                   # backend from registry
+```
+
+Auto backend: `grok*` → grok, `gpt-*|o3*|o4*|codex*` → codex, Claude names
+→ claude. Every backend prints `📎 session_id=<id>  backend=<…>`, tees to
+`~/.cstack/state/opus-live/`, and appends to the same registry.
 
 ## Transport (Cursor main agent)
 
@@ -126,9 +143,11 @@ is the monitor.
   `claude-human-stream` / `agent-human-stream --backend claude` —
   see `docs/TOKENMAXXING.md`
 - Grok Build CLI (`grok` on PATH) for `agent-human-stream --backend grok`
+- Codex CLI via **tokenmaxxing** (`codex` supervisor on PATH, Codex pool)
+  for `agent-human-stream --backend codex`
 - Cursor `Task` = Composer explore only
 - Grok land / Grok author = `agent-human-stream --backend grok` (not Task)
 
 `./install.sh` links `agent-human-stream`, `claude-human-stream`,
-`cstack-clone`, and `cstack-gt-wait-merge` to `~/.local/bin`.
+`sume-bg-launch`, `cstack-clone`, and `cstack-gt-wait-merge` to `~/.local/bin`.
 Skills also land in `~/.grok/skills` for Grok Build.

@@ -4,8 +4,10 @@
 #
 #   sume-bg-launch --backend grok --name job-slug --resume <uuid> \
 #     --prompt-file /tmp/sume-grok-prompts/job.md -- --effort high
+#   sume-bg-launch --backend codex --name job-slug \
+#     --prompt-file /tmp/sume-codex-prompts/job.md -- --model gpt-5.5
 #
-# Shell: description = "Grok : <job-slug> (#N)", block_until_ms = 0.
+# Shell: description = "Grok : <job-slug> (#N)" (or "Codex : …"), block_until_ms = 0.
 # After spawn: read the terminal once for 📎 session_id= or exit_code.
 set -euo pipefail
 
@@ -17,7 +19,7 @@ EXTRA=()
 
 usage() {
   cat <<'EOF'
-sume-bg-launch --backend grok|claude --name <slug> --prompt-file <path> \
+sume-bg-launch --backend grok|claude|codex --name <slug> --prompt-file <path> \
   [--resume <uuid>] -- [backend flags…]
 EOF
 }
@@ -57,6 +59,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+case "$BACKEND" in
+  grok|claude|codex|auto) ;;
+  *)
+    echo "error: --backend must be grok, claude, codex, or auto (got: $BACKEND)" >&2
+    exit 2
+    ;;
+esac
 if [[ -z "$NAME" ]]; then
   echo "error: --name is required" >&2
   exit 2
@@ -85,7 +94,7 @@ if [[ -n "$RESUME" ]]; then
     esac
     echo "steer: stopping pid ${_pid} (same --resume ${RESUME})" >&2
     kill "$_pid" 2>/dev/null || true
-  done < <(pgrep -af -- "$RESUME" | awk '/agent-human-stream|\/grok |grok -p/{print $1, $0}')
+  done < <(pgrep -af -- "$RESUME" | awk '/agent-human-stream|\/grok |grok -p|codex exec|claude -p/{print $1, $0}')
   sleep 0.2
 fi
 
