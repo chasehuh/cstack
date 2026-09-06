@@ -4,9 +4,9 @@ description: >-
   Sume Graphite (`gt`) author → tip `merge-queue` at submit → land
   playbook for sumelabs/sume-com. Use whenever creating/updating PRs
   with Graphite, running `gt submit`, labeling `merge-queue` (MWR),
-  unsticking BLOCKED PRs with zero CI after restack, or handing off
-  Grok land babysit. Hard rules against gh pr create, shared-checkout
-  worktrees, and exiting before the tip label.
+  unsticking BLOCKED PRs with zero CI after restack. The author session
+  stays until origin/main. Hard rules against gh pr create, shared-checkout
+  worktrees, HANDOFF: grok-land, and exiting before the main tip.
 ---
 
 # Sume Graphite MQ (`sume-gt-mq`)
@@ -47,20 +47,16 @@ finished to Chase):
 - PR opened / Graphite “Your changes” still lists it
 - PR-branch CI green / `gt` Ready / `CLEAN`
 - Enqueued / `merge-queue` label / MQ draft open
-- `HANDOFF: grok-land` / author STOP after enqueue
+- `HANDOFF: grok-land` / author STOP after enqueue (forbidden default)
 - Worker process exited
 
-Author **may** STOP after enqueue (role split). That report must say
-**`LANDED: no`** and **`NOT 완료`**. It is a handoff, not a finish.
-
-**Land owner must not STOP at enqueue.** Stay until `origin/main` has
-`(#N)`. MQ eject → re-enqueue **same session**. Forbidden: land worker
-exits with `HANDOFF: grok-land` (that is handing off to yourself) or
-“back in the queue, session stops.”
+**Chase lock 2026-09-06:** the **author session owns land**. Do not STOP
+after enqueue. Stay until `origin/main` has `(#N)`. MQ eject → re-enqueue
+**same session**. Forbidden: `HANDOFF: grok-land`.
 
 Main agent: never translate enqueue / green checks into “완료됐습니다”
-to Chase. Launch or resume land. Graphite leftover “Your changes” =
-land still open.
+to Chase. If the author exited early, **resume that same session** — do
+not launch Grok land. Graphite leftover “Your changes” = land still open.
 
 ---
 
@@ -73,8 +69,8 @@ Read this file **before** any of:
 - `merge-queue` label / Graphite MWR / land babysit
 - Restack / sync after trunk moves
 - Unstick BLOCKED / CI-missing PRs
-- Writing `HANDOFF: grok-land` or `HANDOFF: grok-ci-merge`
-- Main agent launching Opus/Grok for PR trains
+- Writing `HANDOFF: grok-land` (forbidden) or exiting before main tip
+- Main agent launching Opus/Astra/Fable/Grok **author** trains
 
 Main-agent Opus prompts on `sume-com` must say:
 
@@ -88,9 +84,8 @@ Required skill: read ~/.agents/skills/sume-gt-mq/SKILL.md before gt submit/merge
 
 | Role | Owns | Must not |
 |------|------|----------|
-| **Opus** (author session) | `cstack-clone` → code → `gt submit` → **`cstack-gt-wait-merge`** (tip `merge-queue` now) → **STOP** with `LANDED: no` / `NOT 완료` → `cstack-clone-rm` | Exit before the label; say 완료; babysit other trains’ PRs |
-| **Grok land** | One **owned PR set** only; enqueue if needed → draft CI → **`origin/main` `(#N)`**; re-enqueue on eject | STOP at enqueue; say 완료 before main tip; `gt track` thrash; other stacks |
-| **Main agent** | Launch / steer / board; launch Grok after enqueue; **완료 to Chase only after main tip** | Tell Chase 완료 on enqueue/green CI; mid-flight steal of a live owner’s PRs |
+| **Author** (Opus / Astra / Fable / Grok-if-named) | `cstack-clone` → code → `gt submit` → **`cstack-gt-wait-merge`** → MQ draft → **`origin/main` `(#N)`** → then `cstack-clone-rm` | STOP at enqueue; `HANDOFF: grok-land`; say 완료 before main tip; other trains |
+| **Main agent** | Launch / steer / board; resume **same** author if they exited early; **완료 to Chase only after main tip** | Launch Grok land by default; tell Chase 완료 on enqueue/green CI |
 
 **Ownership rule:** one job slug ↔ one PR stack. Parallel trains = parallel
 owners. Never two workers label / empty-commit / restack the same head.
@@ -121,9 +116,8 @@ owners. Never two workers label / empty-commit / restack the same head.
    fallback if the binary cannot label:
    `gh pr edit <N> --add-label merge-queue`. Do **not** `gt merge` as
    the author wait path.
-7. **Author STOP after enqueue is a handoff, not 완료.** Land owner
-   stays until `origin/main` has `(#N)`. Grok owns land unless Chase
-   said the author owns land (`merge까지` / `landing까지`).
+7. **Author stays after enqueue.** Land is the same session until
+   `origin/main` has `(#N)`. Do not hand MQ to Grok.
 
 ---
 
@@ -135,7 +129,7 @@ These are **failed handoffs**, not “still waiting”:
 |-----|-----|----------|
 | Arm `Monitor` / `ScheduleWakeup` then **end the session** with “I’ll enqueue when green” | Wrapper exits; label never lands | **Stay in-session** until the tip has `merge-queue` (MWR counts) |
 | Done report without enqueue evidence | Looks green, no label | Evidence = tip `merge-queue` label |
-| `HANDOFF: grok-land` when never labeled | Grok assumes queued | Use `HANDOFF: grok-ci-merge` **only** if the label was rejected |
+| `HANDOFF: grok-land` | Wrong split (2026-09-06) | Author labels + stays until main |
 
 **Forbidden:** “wakeup in 20 min” / Monitor / “I’ll merge when checks settle”
 then process exit before the label.
@@ -214,9 +208,8 @@ git rejects it.
 cstack-clone <slug> → gt init → gt create → commit(s) → gt submit [--stack]
   → cstack-gt-wait-merge --rm <slug>   # label tip now; same session
   → enqueue evidence
-  → AUTHOR: STOP + LANDED: no + NOT 완료 + HANDOFF: grok-land
-  → cstack-clone-rm <slug> (unless land still needs the clone)
-  → LAND: do not STOP — watch MQ → re-enqueue on eject → origin/main (#N)
+  → AUTHOR stays: watch MQ → re-enqueue on eject → origin/main (#N)
+  → then LANDED: yes + cstack-clone-rm
   → only then STATUS: landed (Chase 완료)
 ```
 
@@ -233,10 +226,9 @@ At least one of:
 - `merge-queue` label present on the PR(s)
 - Graphite activity / MQ draft reference
 
-Plus: clone path + Graphite URL + GitHub PR URL(s) + **`LANDED: no`** +
-**`NOT 완료`** + `HANDOFF: grok-land` (or `grok-ci-merge`).
-
-Author enqueue evidence is **not** a Chase-facing “done.”
+Plus: clone path + Graphite URL + GitHub PR URL(s). Enqueue-only reports
+must say **`LANDED: no`** and **keep the session**. Chase-facing done
+only after main-tip proof + **`LANDED: yes`**.
 
 ---
 
@@ -263,7 +255,7 @@ Expected on intermediate stack PRs. Label the **tip**.
 
 ### D. MQ draft red
 
-Grok land: fix or bounce to Opus. Do not thrash restack while Graphite says
+Author land: fix in the same session. Do not thrash restack while Graphite says
 already merging unless entry failed / evicted.
 
 ### E. Graphite FF land
@@ -303,22 +295,21 @@ PR forever.”
 
 - Infinite / double-digit `gh run rerun --failed` with **zero code change**
 - Simultaneous mass-reruns of many PRs that overload the self-hosted pool
-- Calling flake “not my problem” then **STOP without enqueue** and no
-  `HANDOFF: grok-ci-merge` — either unblock or hand off explicitly
+- Calling flake “not my problem” then **STOP without land** — unblock
+  in the same session
 - Large suite rewrites / unrelated refactors as “CI fix”
 
-**Handoff:** If you still cannot enqueue after a minimal unblock + green
-(or Chase killed the loop): done report with flake evidence →
-**`HANDOFF: grok-ci-merge`**.
+If you still cannot land after a minimal unblock: stay, report flake
+evidence to main, do **not** `HANDOFF: grok-land`.
 
 ---
 
-## Grok land (after enqueue — stay until main)
+## Author land (after enqueue — stay until main)
 
 1. **Do not re-enqueue** if already queued **and still in MQ**.
    Evicted / labels empty / Graphite “Your changes” leftover →
    **re-enqueue same session**. Do not exit.
-2. Own **only** the handed-off PR numbers.
+2. Own **only** this train.
 3. Watch MQ draft CI; act on red only.
 4. **Do not STOP / do not say 완료** until
    `git fetch origin main && git log origin/main --oneline --grep='(#N)'`
@@ -327,18 +318,13 @@ PR forever.”
 
 Forbidden land exits:
 
-- `HANDOFF: grok-land` (you **are** land)
+- `HANDOFF: grok-land`
 - “back in the queue, this session stops”
 - Done report that only lists enqueue evidence
 
-`HANDOFF: grok-ci-merge`: if the tip has no `merge-queue` label, **label
-now** (do not wait for PR CI). Then **stay until main tip**. If PR never
-Graphite-bound → reject; repair with fresh-clone `gt submit` first.
-Label present + CI still running is **MWR, not eject**.
-
-Grok land from a Cursor main agent: **`agent-human-stream --backend grok`**
-in a background Shell (`block_until_ms: 0`, title `Grok : <job-slug> (#N)`).
-Do **not** use Cursor `Task` / `cursor-grok-*` for land.
+If the tip has no `merge-queue` label, **label now**. Then **stay until
+main tip**. If PR never Graphite-bound → repair with fresh-clone
+`gt submit` first. Label present + CI still running is **MWR, not eject**.
 
 ---
 
@@ -349,7 +335,7 @@ Same text: `sume-desk/GRAPHITE-HARD-LOCK.md` in chasehuh/cstack.
 ```text
 Required skill: read ~/.agents/skills/sume-gt-mq/SKILL.md before any gt submit/merge.
 
-GRAPHITE (hard lock):
+GRAPHITE (hard lock) — Chase 2026-09-06: author owns land to origin/main:
 - Isolated clone only: `CLONE="$(cstack-clone <job-slug>)"` then `cd "$CLONE"`.
   All `gt` commands run in that clone. Forbidden: `git worktree` under the
   shared Cursor checkout (#2383). Forbidden: `gh pr create` (single or stack).
@@ -359,18 +345,15 @@ GRAPHITE (hard lock):
   Label the **tip** `merge-queue` immediately. Do NOT wait for PR CI,
   dry-run Ready, or `Cannot determine`. Do NOT write a sleep/grep loop.
   Not mergeable yet → Graphite MWR; `validate` green → enters MQ.
-  Already labeled / already in MQ → exit 0.
-  Label rejected → exit 2 / `HANDOFF: grok-ci-merge`.
-- Repo CI flake (land, after the PR is in CI/MQ): ≤2 `gh run rerun --failed`,
-  then minimal CI unblock. Forbidden: endless rerun. Still blocked →
-  `HANDOFF: grok-ci-merge`.
-- Forbidden: ScheduleWakeup then exit before the label is on the tip.
-  Enqueue evidence = `merge-queue` label (MWR counts). Then STOP.
-- Own only this train. STOP immediately after the label.
-  Done report: clone path + Graphite URL + GitHub PR URL + enqueue
-  evidence + `LANDED: no` + `NOT 완료` + `HANDOFF: grok-land`.
-  After enqueue: `cstack-clone-rm <job-slug>` (or `--rm` on the binary)
-  unless land still needs the tree.
+  Already labeled / already in MQ → keep going (do not STOP).
+  Label rejected → `gh pr edit <N> --add-label merge-queue` and continue.
+- Then **stay until** `git fetch origin main && git log origin/main --oneline --grep='(#N)'`.
+  Re-enqueue on eject. Repo CI flake: ≤2 `gh run rerun --failed`, then
+  minimal CI unblock. Forbidden: endless rerun. Forbidden: `HANDOFF: grok-land`.
+- Forbidden: ScheduleWakeup then exit before the main tip.
+  Enqueue is not 완료. Done report only after main-tip proof:
+  clone path + Graphite URL + GitHub PR URL + SHA + `LANDED: yes`.
+  `cstack-clone-rm <job-slug>` after land (keep the tree while unblocking).
 ```
 
 **Grok land prompt must also say:** stay until `origin/main` `(#N)`;

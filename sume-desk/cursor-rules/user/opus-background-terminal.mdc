@@ -165,14 +165,14 @@ as the steer launch — do not leave the old terminal running.
 - Do not block the user turn on a background worker unless they explicitly
   asked to wait, or the next action is hard-blocked on that result.
 
-## Handoff after Opus enqueues MQ (**default**)
+## After enqueue (**default: same worker lands**)
 
-**Chase lock (2026-08-05):** Opus authors through **Graphite MQ enqueue**;
-Grok **lands**. Always hand off land babysit unless the user explicitly said
-Opus owns land for that task.
+**Chase lock (2026-09-06):** the author (Opus / Astra / Fable / Grok-if-named)
+**stays until `origin/main` `(#N)`**. CI is thinner. Do **not** hand MQ to
+Grok. Forbidden: `HANDOFF: grok-land`.
 
-1. Opus: **fresh clone only** → fix → local green → Graphite open →
-   label tip → **STOP**.
+1. Author: **fresh clone only** → fix → local green → Graphite open →
+   label tip → **stay**.
    - **Always:** `gt create` → **`gt submit`** (required). Treat `gt` like
      `gh` — first-class, not optional.
    - **Forbidden:** `git worktree add` under the shared Cursor checkout for
@@ -184,46 +184,21 @@ Opus owns land for that task.
      That binary labels the **tip** `merge-queue` **now**. Do **not**
      wait for PR CI / dry-run Ready. Do **not** write a sleep/grep loop.
      Not mergeable yet → Graphite MWR; `validate` green → enters MQ.
-     Already labeled / already in MQ → exit 0. Label rejected → exit 2.
-   - **PR / MQ CI red** is land, not author wait. Land: ≤2
+     Already labeled / already in MQ → keep going. Label rejected →
+     `gh pr edit <N> --add-label merge-queue`.
+   - **PR / MQ CI red** is still this session. ≤2
      `gh run rerun --failed` for known flake, else minimal CI unblock.
-     **Forbidden:** endless `gh run rerun` with no code change. Still
-     blocked → `HANDOFF: grok-ci-merge` (`sume-gt-mq` § F).
+     **Forbidden:** endless `gh run rerun` with no code change.
    - **PR-A/B/C train:** all layers in one session → `gt submit --stack` →
      label the **tip**. Do **not** “open A only → merge → resume for B”.
-   - **STOP** immediately after the tip has `merge-queue` (MWR counts)
-     with **`LANDED: no` + `NOT 완료`**. Do **not** babysit MQ draft CI /
-     `main` tip / restack-while-merging unless this session owns land.
-     **Do not tell Chase 완료.**
-   - Opus prompt **must** include: `Required skill: read
-     ~/.agents/skills/sume-gt-mq/SKILL.md before any gt submit/merge` plus
-     the GRAPHITE hard-lock block from orchestration § "Delegation checklist"
-     / `sume-gt-mq` (incl. **`cstack-gt-wait-merge`**, **no exit
-     before enqueue evidence**).
-   - Follow BP / issue locks exactly.
-   - Done report: clone path + Graphite URL + GitHub PR URL + enqueue
-     evidence + **`LANDED: no` + `NOT 완료`** + `HANDOFF: grok-land`.
-2. Main agent: on Opus completion (enqueue done), launch **Grok Build** via
-   `agent-human-stream --backend grok` (**Shell `block_until_ms: 0`**,
-   title `Grok : <job-slug> (#N)`) to babysit land → deploy.
-   **Do not tell Chase 완료** until `origin/main` has `(#N)`.
-   - **Default:** MQ already enqueued — watch draft CI → **stay until**
-     `main` tip `(#N)` (re-enqueue on eject; do not STOP at enqueue) →
-     issue comment / authorized ops. Do **not** re-enqueue if still in MQ.
-   - **Fallback** (`HANDOFF: grok-ci-merge`): label missing / rejected →
-     `gh pr edit <N> --add-label merge-queue` now (no clone) → land.
-   - If Opus only opened via `gh pr create`: **reject** — repair with
-     fresh-clone `gt submit` before enqueue.
-   - After restack: **`gt submit` again**, then Opus (or fallback Grok)
-     re-enqueues.
-   - Landed / Chase **완료** = commit on `origin/main` with `(#N)`;
-     Graphite FF may show GitHub `CLOSED` / `mergedAt: null`. Enqueue,
-     green PR checks, and Graphite “Your changes” are **not** 완료.
-   - Never mid-stack GitHub-only squash; never sibling `main` PRs on one train.
-3. Do **not** leave Opus long-polling land after enqueue. If an Opus session
-   is already on land babysit, **kill that Shell** and reassign to Grok
-   (same turn). Grok land must **not** exit at enqueue. Surface the MQ
-   draft URL; intervene on red / eject; stay until `origin/main` `(#N)`.
+   - **Stay** until `origin/main` has `(#N)`. Re-enqueue on eject.
+     **Do not tell Chase 완료** before that grep.
+   - Prompt **must** include the GRAPHITE hard-lock block from
+     `GRAPHITE-HARD-LOCK.md` / `sume-gt-mq`.
+   - Done report only after main-tip proof: clone path + Graphite URL +
+     GitHub PR URL + SHA + **`LANDED: yes`**.
+2. Main agent: on author completion, read `—— final ——`. If they exited
+   at enqueue (`LANDED: no`), **resume the same session** — do not launch
+   Grok land. Say **완료** only after `origin/main` `(#N)`.
 
-Policy SoT: `sume-main-agent-orchestration` § Pipeline 1 + hard model rules +
-§ "PR trains and Graphite (`gt`)". **Enqueue/land ops:** `sume-gt-mq`.
+Policy SoT: `sume-main-agent-orchestration` + **`sume-gt-mq`**.

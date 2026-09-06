@@ -26,17 +26,16 @@ Harness notes (do not fork policy here):
   See SoT § "Opus transport" + § "Grok transport".
 - **Chase work loop (always apply on user install):**
   `~/.cursor/rules/sume-chase-work-loop.mdc`
-  (discuss → lock → mega-issue → Opus through MQ enqueue → Grok land).
-  SoT § "Chase work loop — discuss → lock → mega-issue → Opus → Grok".
+  (discuss → lock → mega-issue → author through origin/main).
+  SoT § "Chase work loop — discuss → lock → mega-issue → author → main".
 - **Opus Shell cookbook (always apply on user install):**
   `~/.cursor/rules/opus-background-terminal.mdc`
   (`block_until_ms: 0`, prompt file, `cd` not `--cwd`, `--resume`, no Task;
   Shell `description` / terminal title = `Opus : <job-slug> (#N)` =
   board Job; **default:** Opus `cstack-clone` → `gt submit` →
   **`cstack-gt-wait-merge`** (tip `merge-queue` now) →
-  STOP with `LANDED: no` / `NOT 완료`, then Grok land babysit **until
-  `origin/main` `(#N)`**; see SoT Graphite hard lock + Chase lock
-  2026-08-26 완료 + “Enqueue at submit”).
+  stay until `origin/main` `(#N)`; see SoT Graphite hard lock + Chase lock
+  2026-09-06 author-owns-land + 2026-08-26 완료 + “Enqueue at submit”).
 - **Graphite enqueue at submit (always apply on user install):**
   `~/.cursor/rules/graphite-ci-ready.mdc`
   (`cstack-gt-wait-merge` labels the tip now — not `gh pr checks` /

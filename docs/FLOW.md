@@ -40,7 +40,7 @@ duplicate the full SKILL into the `.mdc`.
 | File | Role |
 |---|---|
 | `main-agent-orchestration.mdc` | Pointer at orchestration SKILL |
-| `sume-chase-work-loop.mdc` | Discuss → issue → Opus enqueue → Grok land |
+| `sume-chase-work-loop.mdc` | Discuss → issue → author through origin/main |
 | `opus-background-terminal.mdc` | `claude-human-stream` recipe: prompt file, `cd` not `--cwd`, `block_until_ms: 0`, title = Job |
 | `graphite-ci-ready.mdc` | After submit, `cstack-gt-wait-merge` labels the tip now (no CI wait) |
 | `status-board.mdc` | Status board: `지금` / `스테이징` / `백로그` (24h). `지금` includes **진행** (one-shot live-log step). Confirm = resolve (drop; do not show `확인됨`) |
@@ -106,8 +106,7 @@ cat > /tmp/sume-opus-prompts/<job-slug>.md <<'EOF'
 Work in English.
 …
 Required skill: read ~/.agents/skills/sume-gt-mq/SKILL.md
-GRAPHITE hard lock (cstack-clone, no gh pr create, cstack-gt-wait-merge → STOP)
-HANDOFF: grok-land
+GRAPHITE hard lock (cstack-clone, no gh pr create, cstack-gt-wait-merge → stay to origin/main)
 EOF
 cd /path/to/sume-com && claude-human-stream --name <job-slug> \
   "$(cat /tmp/sume-opus-prompts/<job-slug>.md)" --model opus

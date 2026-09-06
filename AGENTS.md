@@ -58,7 +58,8 @@ and re-run `./install.sh`.
 - Terminal title / board Job = `Opus : <job-slug> (#N)` or `Fable : …`.
 - `sume-com` PRs: `cstack-clone` + `gt create` + `gt submit`. **Forbidden:**
   `gh pr create`. After submit: **`cstack-gt-wait-merge`** (tip
-  `merge-queue` now) → STOP. Grok owns land. Skill: `sume-gt-mq`.
+  `merge-queue` now) → **stay until `origin/main` `(#N)`**. The author
+  owns land. Skill: `sume-gt-mq`.
 - Same SoT for **Cursor, Claude Code, Codex, and Grok Build**. Edit files
   in this repo (`chasehuh/cstack`) and re-run `./install.sh`. Do not fork
   into `~/.agents/skills` copies — those are symlinks into this tree.
@@ -68,6 +69,5 @@ and re-run `./install.sh`.
 
 ## What “done” looks like
 
-A coding train is done when Graphite MQ is **enqueued** (or `merge-queue`
-label) and a Grok land babysit is running — not when a worker is still
-polling `main`.
+A coding train is done when `origin/main` has `(#N)`. Enqueue and a
+running land watch are **not** done.
