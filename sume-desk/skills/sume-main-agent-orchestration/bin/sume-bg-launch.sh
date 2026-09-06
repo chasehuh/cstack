@@ -88,6 +88,17 @@ if [[ ! -s "$PROMPT_FILE" ]]; then
   exit 2
 fi
 
+# Fork is a wrapper operation even when supplied with backend flags.
+_filtered=()
+for _arg in "${EXTRA[@]+"${EXTRA[@]}"}"; do
+  if [[ "$_arg" == "--fork-session" ]]; then
+    FORK=1
+  else
+    _filtered+=("$_arg")
+  fi
+done
+EXTRA=("${_filtered[@]+"${_filtered[@]}"}")
+
 if [[ "$FORK" -eq 1 && -z "$RESUME" ]]; then
   echo "error: --fork-session requires --resume <uuid>" >&2
   exit 2

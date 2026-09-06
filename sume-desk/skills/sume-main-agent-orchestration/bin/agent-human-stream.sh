@@ -536,6 +536,17 @@ if [[ -n "$RESUME" && "$CONTINUE" -eq 1 ]]; then
   exit 2
 fi
 
+# Fork is a wrapper operation even when supplied with backend flags.
+_filtered=()
+for _arg in "${EXTRA[@]+"${EXTRA[@]}"}"; do
+  if [[ "$_arg" == "--fork-session" ]]; then
+    FORK=1
+  else
+    _filtered+=("$_arg")
+  fi
+done
+EXTRA=("${_filtered[@]+"${_filtered[@]}"}")
+
 if [[ "$FORK" -eq 1 && -z "$RESUME" && "$CONTINUE" -eq 0 ]]; then
   echo "error: --fork-session requires --resume <uuid> or --continue" >&2
   exit 2
@@ -797,7 +808,7 @@ if [[ "$BACKEND" == "codex" && ${#EXTRA[@]} -gt 0 ]]; then
   while [[ $_i -lt ${#EXTRA[@]} ]]; do
     _a="${EXTRA[$_i]}"
     case "$_a" in
-      --verbose|--always-approve|--yolo|--no-auto-update|--fork-session)
+      --verbose|--always-approve|--yolo|--no-auto-update)
         echo "note: dropping ${_a} (not a codex exec flag)" >&2
         _i=$((_i + 1))
         continue

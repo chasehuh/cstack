@@ -223,8 +223,8 @@ else:
         wrapper = str(ROOT / "agent-human-stream.sh")
         for backend in ("codex", "claude", "grok"):
             args = [wrapper, "--backend", backend, "--resume", parent,
-                    "--fork-session", "--name", "fork-test", "--prompt-file", str(prompt),
-                    "--effort", "low"]
+                    "--name", "fork-test", "--prompt-file", str(prompt),
+                    "--effort", "low", "--fork-session"]
             proc = subprocess.run(args, env=env, text=True, capture_output=True)
             assert proc.returncode == 0, proc.stderr
             argv = json.loads((base / "argv.json").read_text())
@@ -263,10 +263,11 @@ else:
             env["SUME_BG_LAUNCH_WRAPPER"] = str(base / "codex")
             launch = [str(ROOT / "sume-bg-launch.sh"), "--backend", "codex", "--name", "child",
                       "--resume", parent, "--prompt-file", str(prompt)]
-            fork = subprocess.run(launch + ["--fork-session"], env=env, capture_output=True, text=True)
-            assert fork.returncode == 0, fork.stderr
-            assert parent_proc.poll() is None, "fork killed parent"
-            assert "--fork-session" in json.loads((base / "argv.json").read_text())
+            for flags in (["--fork-session"], ["--", "--fork-session"]):
+                fork = subprocess.run(launch + flags, env=env, capture_output=True, text=True)
+                assert fork.returncode == 0, fork.stderr
+                assert parent_proc.poll() is None, "fork killed parent"
+                assert "--fork-session" in json.loads((base / "argv.json").read_text())
             steer = subprocess.run(launch, env=env, capture_output=True, text=True)
             assert steer.returncode == 0, steer.stderr
             assert parent_proc.wait(timeout=2) != 0, "steer did not stop parent"
