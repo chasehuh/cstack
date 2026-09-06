@@ -268,6 +268,8 @@ When the main agent needs an **Opus** worker/subagent:
    recent session in **this cwd** only — easy to grab the wrong one).
    Use `--fork-session` with resume/continue when you want a new session id
    that copies history (parallel branch) instead of appending to the original.
+   All backends accept `--resume <uuid> --fork-session`; `sume-bg-launch`
+   passes it through and leaves parent wrappers running.
    Wrong cwd / project slug → Claude cannot find the session; resume from the
    same working directory (or project) the original worker used.
 4. **Cursor-only launch + monitor** (see next subsection). Other harnesses:
@@ -304,10 +306,14 @@ agent-human-stream --resume <uuid> "Follow-up …"               # backend from 
   tokenmaxxing `codex` shim (**Codex pool**, separate from the Claude pool —
   `docs/TOKENMAXXING.md` § Codex pool). Resume id = Codex `thread_id`;
   `--resume <id>` → `codex exec resume <id> "…"`; `--continue` →
-  `resume --last`; no `--fork-session`. `--effort` → `-c
+  `resume --last`; `--resume <id> --fork-session` → `exec fork <id>`
+  (Codex requires an explicit id, not `--continue`). `--effort` → `-c
   model_reasoning_effort="…"` (`mid` → medium, `max` → xhigh; omitted →
   `high`). Claude-only `--verbose` / `--permission-mode` / `--output-format`
   are dropped with a note. Account swaps apply on the next `codex` start.
+- Forks emit the new child `session_id`; registry `resume_from` records the
+  parent id. Grok passes `--resume` + `--fork-session` to its CLI; backend
+  errors propagate without falling back to resume.
 - Same live log dir (`~/.cstack/state/opus-live/`) and registry (`~/.cstack/state/opus-sessions.jsonl`)
   with a `backend` field. Resume hint prints `agent-human-stream --backend …`.
 - **Land and explicit Grok author use this wrapper.** Do **not** launch
