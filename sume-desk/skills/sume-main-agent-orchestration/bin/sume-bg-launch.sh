@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Cursor background-worker launcher. Reads the prompt from a file (no $(cat)
-# race) and, on --resume, stops older wrappers holding that session.
+# race) and, on --resume without --fork-session, stops older wrappers holding that session.
 #
 #   sume-bg-launch --backend grok --name job-slug --resume <uuid> \
 #     --prompt-file /tmp/sume-grok-prompts/job.md -- --effort high
@@ -14,13 +14,14 @@ set -euo pipefail
 BACKEND="grok"
 NAME=""
 RESUME=""
+FORK=0
 PROMPT_FILE=""
 EXTRA=()
 
 usage() {
   cat <<'EOF'
 sume-bg-launch --backend grok|claude|codex --name <slug> --prompt-file <path> \
-  [--resume <uuid>] -- [backend flags…]
+  [--resume <uuid> [--fork-session]] -- [backend flags…]
 EOF
 }
 
@@ -41,6 +42,10 @@ while [[ $# -gt 0 ]]; do
     --resume)
       RESUME=$2
       shift 2
+      ;;
+    --fork-session)
+      FORK=1
+      shift
       ;;
     --prompt-file)
       PROMPT_FILE=$2
@@ -83,8 +88,13 @@ if [[ ! -s "$PROMPT_FILE" ]]; then
   exit 2
 fi
 
-# Steer: one live wrapper per session. Do not touch gt merge.
-if [[ -n "$RESUME" ]]; then
+if [[ "$FORK" -eq 1 && -z "$RESUME" ]]; then
+  echo "error: --fork-session requires --resume <uuid>" >&2
+  exit 2
+fi
+
+# Steer: one live wrapper per session. Fork leaves the parent running.
+if [[ -n "$RESUME" && "$FORK" -eq 0 ]]; then
   _self=$$
   while read -r _pid _rest; do
     [[ -z "${_pid:-}" ]] && continue
@@ -107,6 +117,9 @@ fi
 CMD=("$WRAPPER" --backend "$BACKEND" --name "$NAME" --prompt-file "$PROMPT_FILE")
 if [[ -n "$RESUME" ]]; then
   CMD+=(--resume "$RESUME")
+fi
+if [[ "$FORK" -eq 1 ]]; then
+  CMD+=(--fork-session)
 fi
 if [[ ${#EXTRA[@]} -gt 0 ]]; then
   CMD+=("${EXTRA[@]}")

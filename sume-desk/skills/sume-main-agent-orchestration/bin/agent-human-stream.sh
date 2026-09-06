@@ -108,7 +108,7 @@ Grok Build (`grok` on PATH):
 Codex (tokenmaxxing `codex` on this desk; Codex pool, not the Claude pool):
   codex exec --json --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check … </dev/null
   --resume <id>  → codex exec resume <id> "…"      --continue → codex exec resume --last "…"
-  --fork-session is not supported by Codex (exit 2).
+  --resume <id> --fork-session → codex exec fork <id> "…" (explicit id required).
   --effort has no CLI flag; the wrapper maps it to -c model_reasoning_effort="…"
   (enum none|minimal|low|medium|high|xhigh; mid → medium, max|maximum → xhigh).
   Default --effort when omitted: high (AGENT_HUMAN_STREAM_EFFORT_CODEX).
@@ -119,7 +119,7 @@ Codex (tokenmaxxing `codex` on this desk; Codex pool, not the Claude pool):
 Resume:
   --resume <uuid>   | AGENT_RESUME_SESSION / CLAUDE_RESUME_SESSION / GROK_RESUME_SESSION
   --continue        most recent session in this cwd
-  --fork-session    new session id, copy history
+  --fork-session    new session id, copy history; requires --resume/--continue
 
 Watch:
   tail -f ~/.cstack/state/opus-live/LATEST.log
@@ -536,6 +536,11 @@ if [[ -n "$RESUME" && "$CONTINUE" -eq 1 ]]; then
   exit 2
 fi
 
+if [[ "$FORK" -eq 1 && -z "$RESUME" && "$CONTINUE" -eq 0 ]]; then
+  echo "error: --fork-session requires --resume <uuid> or --continue" >&2
+  exit 2
+fi
+
 BACKEND=$(printf '%s' "$BACKEND" | tr '[:upper:]' '[:lower:]')
 case "$BACKEND" in
   claude|grok|codex|auto) ;;
@@ -879,12 +884,14 @@ _codex_supervisor_check() {
 CMD=()
 if [[ "$BACKEND" == "codex" ]]; then
   _codex_supervisor_check
-  if [[ "$FORK" -eq 1 ]]; then
-    echo "error: --fork-session is not supported by codex exec (resume appends to the thread)" >&2
+  if [[ "$FORK" -eq 1 && "$CONTINUE" -eq 1 ]]; then
+    echo "error: Codex --fork-session requires --resume <uuid>; exec fork has no --last" >&2
     exit 2
   fi
   CMD=(codex exec)
-  if [[ -n "$RESUME" || "$CONTINUE" -eq 1 ]]; then
+  if [[ "$FORK" -eq 1 ]]; then
+    CMD+=(fork)
+  elif [[ -n "$RESUME" || "$CONTINUE" -eq 1 ]]; then
     CMD+=(resume)
   fi
   CMD+=(--json --skip-git-repo-check)
@@ -972,7 +979,11 @@ LIVE_STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 LIVE_LABEL="${NAME:-$BACKEND}"
 LIVE_LABEL=${LIVE_LABEL//[^a-zA-Z0-9._-]/_}
 if [[ -n "$RESUME" ]]; then
-  LIVE_LABEL="${LIVE_LABEL}-resume-${RESUME:0:8}"
+  if [[ "$FORK" -eq 1 ]]; then
+    LIVE_LABEL="${LIVE_LABEL}-fork-${RESUME:0:8}"
+  else
+    LIVE_LABEL="${LIVE_LABEL}-resume-${RESUME:0:8}"
+  fi
 fi
 LIVE_LOG="$LIVE_DIR/${LIVE_STAMP}-${LIVE_LABEL}.log"
 : >"$LIVE_LOG"

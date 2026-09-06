@@ -189,7 +189,95 @@ def require(haystack: str, needle: str) -> None:
         raise SystemExit(f"missing {needle!r} in:\n{haystack}")
 
 
+def test_fork_launchers() -> None:
+    parent = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    child = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        env = os.environ.copy()
+        for key in list(env):
+            if key.startswith(("AGENT_", "CLAUDE_", "GROK_")):
+                env.pop(key)
+        env.update(PATH=f"{tmp}:{env['PATH']}", TOKENMAXXING_REQUIRE_SUPERVISOR="0",
+                   AGENT_HUMAN_STREAM_REGISTRY=str(base / "registry.jsonl"),
+                   AGENT_HUMAN_STREAM_LIVE_DIR=str(base / "live"),
+                   ARGV_FILE=str(base / "argv.json"))
+        stub = f"""#!/usr/bin/env python3
+import json, os, sys
+from pathlib import Path
+Path(os.environ['ARGV_FILE']).write_text(json.dumps(sys.argv[1:]))
+if os.environ.get('FAIL_FORK'):
+    sys.stderr.write('error: --fork-session unavailable\\n')
+    sys.exit(2)
+if Path(sys.argv[0]).name == 'codex':
+    print(json.dumps({{'type': 'thread.started', 'thread_id': '{child}'}}))
+else:
+    print(json.dumps({{'type': 'system', 'subtype': 'init', 'session_id': '{child}'}}))
+"""
+        for backend in ("codex", "claude", "grok"):
+            binary = base / backend
+            binary.write_text(stub)
+            binary.chmod(0o755)
+        prompt = base / "prompt.md"
+        prompt.write_text("Fork fixture prompt")
+        wrapper = str(ROOT / "agent-human-stream.sh")
+        for backend in ("codex", "claude", "grok"):
+            args = [wrapper, "--backend", backend, "--resume", parent,
+                    "--fork-session", "--name", "fork-test", "--prompt-file", str(prompt),
+                    "--effort", "low"]
+            proc = subprocess.run(args, env=env, text=True, capture_output=True)
+            assert proc.returncode == 0, proc.stderr
+            argv = json.loads((base / "argv.json").read_text())
+            assert parent in argv and "Fork fixture prompt" in argv, argv
+            if backend == "codex":
+                assert argv[:2] == ["exec", "fork"], argv
+                assert "resume" not in argv and "--resume" not in argv, argv
+                assert "--json" in argv and "--skip-git-repo-check" in argv, argv
+                assert 'model_reasoning_effort="low"' in argv, argv
+            else:
+                assert "--fork-session" in argv and "--resume" in argv, argv
+            require(proc.stdout, f"session_id={child}")
+            records = [json.loads(line) for line in (base / "registry.jsonl").read_text().splitlines()]
+            assert any(r.get("session_id") == child and r.get("resume_from") == parent
+                       and r.get("backend") == backend for r in records), records
+            assert all(r.get("session_id") != parent for r in records), records
+            require(proc.stderr, "fork-aaaaaaaa")
+            invalid = subprocess.run([wrapper, "--backend", backend, "--fork-session", "prompt"],
+                                     env=env, text=True, capture_output=True)
+            assert invalid.returncode == 2, invalid.stderr
+            require(invalid.stderr, "requires --resume")
+        failed = subprocess.run(args, env={**env, "FAIL_FORK": "1"}, text=True, capture_output=True)
+        assert failed.returncode == 2, failed.stderr
+        require(failed.stderr, "--fork-session unavailable")
+        invalid = subprocess.run([wrapper, "--backend", "codex", "--continue", "--fork-session", "prompt"],
+                                 env=env, text=True, capture_output=True)
+        assert invalid.returncode == 2, invalid.stderr
+        require(invalid.stderr, "requires --resume")
+
+        # A matching live parent must survive fork, but still be stopped by steer.
+        parent_proc = subprocess.Popen(["sleep", "60"])
+        try:
+            pgrep = base / "pgrep"
+            pgrep.write_text(f"#!/bin/sh\necho '{parent_proc.pid} agent-human-stream --resume {parent}'\n")
+            pgrep.chmod(0o755)
+            env["SUME_BG_LAUNCH_WRAPPER"] = str(base / "codex")
+            launch = [str(ROOT / "sume-bg-launch.sh"), "--backend", "codex", "--name", "child",
+                      "--resume", parent, "--prompt-file", str(prompt)]
+            fork = subprocess.run(launch + ["--fork-session"], env=env, capture_output=True, text=True)
+            assert fork.returncode == 0, fork.stderr
+            assert parent_proc.poll() is None, "fork killed parent"
+            assert "--fork-session" in json.loads((base / "argv.json").read_text())
+            steer = subprocess.run(launch, env=env, capture_output=True, text=True)
+            assert steer.returncode == 0, steer.stderr
+            assert parent_proc.wait(timeout=2) != 0, "steer did not stop parent"
+        finally:
+            if parent_proc.poll() is None:
+                parent_proc.terminate()
+                parent_proc.wait()
+
+
 def main() -> None:
+    test_fork_launchers()
     claude = run_stream(CLAUDE_STREAM, "claude")
     require(claude, "📎 session_id=11111111-1111-1111-1111-111111111111")
     require(claude, "backend=claude")
