@@ -54,8 +54,7 @@ Harness notes (do not fork policy here):
   `~/.cursor/rules/end-of-turn-worker-brief.mdc`
 - **Slack #coding-agents (always apply on user install):**
   `~/.cursor/rules/slack-coding-agents.mdc`
-  (new Job = thread; updates = replies; `loading` / `eyes` /
-  `white_check_mark`).
+  (not every turn: 4–5 turns / ~30m / Chase-asked; then one burst).
 - **Canvas language (always apply on user install):**
   `~/.cursor/rules/canvas-user-language.mdc`
   (visible canvas copy matches Chase’s chat language).

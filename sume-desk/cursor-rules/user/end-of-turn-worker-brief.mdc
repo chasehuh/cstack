@@ -12,8 +12,8 @@ the report in this thread.
 ## Work report (body of the turn)
 
 Write a report Chase can follow **without opening Slack, the canvas, or
-a worker log**. Same language as Chase. Do this even when you also
-posted a Slack parent or reply that turn.
+a worker log**. Same language as Chase. Slack is **not** every turn
+(`slack-coding-agents.mdc` cadence). Do this even on turns with no Slack.
 
 Required when anything material happened (plan, fire, worker signal,
 PR/MQ, dest/prod, a lock, a blocker):

@@ -1,5 +1,5 @@
 ---
-description: Slack #coding-agents — one thread per Job, updates as replies, lane reactions
+description: Slack #coding-agents — rare team mirror (4–5 turns / 30m / Chase-asked)
 alwaysApply: true
 ---
 
@@ -14,11 +14,34 @@ Same Jobs as the **status board** (`status-board.mdc`). Slack is the
 does **not** let you shrink or skip that report.
 
 Chat/canvas do **not** show `확인됨`; Slack still marks resolve with a
-check.
+check — **only on an allowed Slack window** (below).
 
 Do not invent a second job list.
 
-## When a Job is born
+## Cadence (Chase lock 2026-09-08)
+
+Slack MCP is **expensive**. It must **not** run every main-agent turn.
+
+**Default: skip Slack this turn.** Chat + canvas still update.
+
+Call Slack MCP only when **at least one** is true:
+
+1. **4–5 user turns** since the last Slack write in this chat, **or**
+2. **~30 minutes** since the last Slack write (desk or that Job), **or**
+3. Chase **explicitly** asked to post / update Slack
+
+When a window opens, do **one burst**: missing parents, at most one
+digest reply per live Job thread, then lane reactions. Do not fire
+Slack once per Job per turn.
+
+**Forbidden every turn:** Slack search, parent post, replies,
+`loading` / `eyes` / `white_check_mark`, `closed:` — just because
+the board or a worker moved.
+
+New Job / resolve / steer still wait for the same window unless
+Chase asked for Slack now.
+
+## When a Job is born (window only)
 
 If there is no parent thread for that Job yet, **post a new channel
 message** (not a reply). That message is the thread root.
@@ -36,9 +59,9 @@ Then set the parent reaction to **`loading`**.
 
 Do **not** open a thread for a Job that already has a live parent.
 
-## Updates
+## Updates (window only)
 
-Each material change = **one reply** on that thread. Do not edit the
+At most **one reply** per Job thread per burst. Do not edit the
 parent into a changelog. Prefixes (existing desk voice):
 
 | Prefix | When |
@@ -49,9 +72,10 @@ parent into a changelog. Prefixes (existing desk voice):
 | `HANDOFF —` | SHA / PR / leftover for the next owner |
 | `closed:` | Chase stop / train ended |
 
-One-shot. No poll loop just to write `5m —`.
+No poll loop just to write `5m —`. The 5m prefix is **not** a 5-minute
+Slack timer.
 
-## Reactions = board lane (on the **parent**)
+## Reactions = board lane (on the **parent**, window only)
 
 | Board | Slack emoji (no colons) | When |
 |-------|-------------------------|------|
@@ -59,9 +83,10 @@ One-shot. No poll loop just to write `5m —`.
 | `스테이징` | `eyes` | finished, waiting Chase confirm |
 | resolve | `white_check_mark` | Chase confirmed |
 
-Move the lane reaction when the board lane moves. Drop `loading` when
-leaving `지금`. `eyes` while in 스테이징/백로그. `white_check_mark`
-only on resolve (Job then drops from chat/canvas).
+Move the lane reaction when the board lane moves **and** a Slack
+window is open. Drop `loading` when leaving `지금`. `eyes` while in
+스테이징/백로그. `white_check_mark` only on resolve (Job then drops
+from chat/canvas immediately; Slack check can wait for the window).
 
 ## Non-goals
 

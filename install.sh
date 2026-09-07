@@ -104,7 +104,8 @@ if [ -n "$SUME_COM" ]; then
   # Refresh pointer copies that already live in the product checkout.
   # sume-com is not SoT — these stay in sync with cstack when present.
   for f in graphite-ci-ready.mdc sume-chase-work-loop.mdc \
-           opus-background-terminal.mdc main-agent-orchestration.mdc; do
+           opus-background-terminal.mdc main-agent-orchestration.mdc \
+           slack-coding-agents.mdc; do
     if [ -f "$SUME_COM/.cursor/rules/$f" ] && [ -f "$DESK/cursor-rules/user/$f" ]; then
       cp "$DESK/cursor-rules/user/$f" "$SUME_COM/.cursor/rules/$f"
     fi

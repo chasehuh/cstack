@@ -494,9 +494,11 @@ Applies only when the **main agent is Cursor**. One board, three surfaces:
   (`~/.cursor/rules/end-of-turn-worker-brief.mdc`). Chase must
   understand the turn without Slack.
 - **Slack:** `#coding-agents` (`~/.cursor/rules/slack-coding-agents.mdc`)
-  — new Job = thread; updates = replies; reactions `loading` / `eyes` /
-  `white_check_mark`. Team mirror only — not a substitute for the chat
-  report.
+  — team mirror only. **Chase lock 2026-09-08:** Slack MCP is **not**
+  every turn. Allowed only every **4–5 user turns**, or **~30 min**
+  since the last Slack write, or when Chase **asks**. Then one burst
+  (parents / one digest reply / lane reactions). Chat + canvas stay
+  every turn.
 
 Lanes: `지금` → **`스테이징`** → **`백로그`** (≥24h). Chase confirm =
 resolve (Job drops off chat/canvas; Slack gets the check). Never

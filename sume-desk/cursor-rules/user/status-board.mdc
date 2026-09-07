@@ -11,7 +11,7 @@ One board. Three surfaces (same Jobs):
 |---------|--------|
 | Chat | **Work report** (self-contained) + end-of-turn tables (`end-of-turn-worker-brief.mdc`) |
 | Canvas | `canvases/active-workers-board.canvas.tsx` (`active-workers-canvas.mdc`) |
-| Slack | `#coding-agents` thread + reactions (`slack-coding-agents.mdc`) — team mirror, not Chase’s SoT |
+| Slack | `#coding-agents` (`slack-coding-agents.mdc`) — rare team mirror (4–5 turns / ~30m / Chase-asked), not Chase’s SoT |
 
 Do not keep a second job list. The canvas is the durable **board**;
 chat reprints it at end of turn. The **report** lives in chat prose.
