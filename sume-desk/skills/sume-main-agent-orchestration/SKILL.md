@@ -1021,6 +1021,43 @@ When the user asks to add work to Linear:
 - Create implementation-ready descriptions when the issue will seed future agents.
 - Put status and assignee exactly as requested when possible.
 
+## Browser verification — Aside wrapper only (Chase lock 2026-09-09)
+
+Every worker that ships user-visible product verifies in a real browser
+**after its own work**: locally first when not yet verified locally, then
+the same flow on dev after the dev deploy. Browser verification uses the
+**Aside wrapper only** — never bare Playwright, never `browser_*` MCP, never
+another automation harness. `aside exec` delegates a task to the Aside
+agent; deterministic verification steps use **`aside repl`** directly.
+
+Window selection (verified 2026-09-09: REPL cannot open an OS window):
+
+- Start every verification with `listBrowserTabs()` and group by `windowId`.
+- **Spare window exists (≥2 windows):** test in the window the user is not
+  actively using. Attach with `attachBrowserTab(targetId)` using a
+  `targetId` from that window. Never `attachActiveBrowserTab()` when two
+  windows exist (ambiguous which active). Never touch tabs in the user's
+  active window except closing tabs you opened yourself.
+- **Single window:** `openTab(url)` in the same window is correct, then
+  `closeTab(page)` when done. Do **not** attempt `chrome.windows.create`
+  (the REPL refuses: it can modify the user's tab/window session — use
+  `openTab`/`closeTab`). Do **not** use `page.context().newPage()` or
+  `page.close()` (they leak memory).
+- Read with `snapshot(page, { interactive: true })` first; take a fresh
+  snapshot after each action (refs invalidate). Click with the latest ref
+  only (`page.locator('<ref>').click()`). Return values via `console.log()`.
+
+Workspace / environment:
+
+- Dev (`www.dev.sume.com`) or prod (`www.sume.com`) verification runs under
+  the **sumelabs workspace only**. If the active workspace is not sumelabs,
+  **STOP** and switch before testing. Never verify dev/prod in customer
+  workspaces (e.g. mobidoo).
+- Do **not** confuse the Aside CLI account (`aside account list`, e.g. `u0`
+  `chase@sume.com`) with the Sume workspace or the browser profile.
+- Destructive verification (send / delete / pay / ops-setting changes)
+  needs Chase approval first.
+
 ## Safety Rules
 
 - Never delegate secrets. If env/log access is needed, instruct the worker to

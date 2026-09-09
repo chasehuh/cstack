@@ -1,0 +1,32 @@
+---
+description: Browser verification uses Aside wrapper only, spare window first, sumelabs workspace for dev/prod
+alwaysApply: true
+---
+
+# Browser verification — Aside only
+
+Worker ships user-visible product → verifies in a real browser **after its
+own work**: locally first when not yet verified locally, then the same flow
+on dev after the dev deploy.
+
+- Tool: **`aside repl`** only. Forbidden: bare Playwright, `browser_*` MCP,
+  other harnesses. `aside exec` is task delegation, not deterministic
+  verification.
+- Start with `listBrowserTabs()`, group by `windowId`.
+- **Spare window exists (≥2):** test in the window the user is not actively
+  using via `attachBrowserTab(targetId)`. Never `attachActiveBrowserTab()`
+  when two windows exist. Never touch the user's active-window tabs except
+  closing your own.
+- **Single window:** `openTab(url)` in the same window is correct, then
+  `closeTab(page)`. `chrome.windows.create` is refused by the REPL — do not
+  attempt it. No `page.context().newPage()` / `page.close()`.
+- Read with `snapshot(page, { interactive: true })`; fresh snapshot after
+  each action (refs invalidate); `console.log()` to return values.
+- Dev (`www.dev.sume.com`) / prod (`www.sume.com`) verification: **sumelabs
+  workspace only**. Not sumelabs → STOP and switch. Never customer
+  workspaces (e.g. mobidoo).
+- Do not confuse Aside CLI account (`aside account list`) with the Sume
+  workspace or browser profile.
+
+Policy SoT: `~/.agents/skills/sume-main-agent-orchestration/SKILL.md`
+§ "Browser verification — Aside wrapper only".

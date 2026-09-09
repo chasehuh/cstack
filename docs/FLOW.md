@@ -51,6 +51,7 @@ duplicate the full SKILL into the `.mdc`.
 | `chat-title-folder-prefix.mdc` | Rename chats `[workspace-folder] …` |
 | `origin-main-sot.mdc` | Code Q&A reads `origin/main`, not dirty local main |
 | `worker-reasoning-effort.mdc` | Code default: opus medium / fable high / grok xhigh / codex high. Named Claude `max`/`xhigh` pass through. Grok and Codex `max` → xhigh. Research: grok medium (opus+fable low) |
+| `aside-browser-verify.mdc` | Browser verification: `aside repl` only; spare window first (`attachBrowserTab`), single window = `openTab`; dev/prod under sumelabs workspace; local first, then dev |
 
 ## Layer 2 — `sume-com` repo rules (install into `<sume-com>/.cursor/rules/`)
 
@@ -65,6 +66,7 @@ duplicate the full SKILL into the `.mdc`.
 | `agents-ui-taste.mdc` | Agents chrome: sentence case, `/images` hover icons |
 | `chat-title-prefix.mdc` | `[sume-com] …` |
 | `opus-via-claude-cli.mdc` | Pointer: Opus transport = shared SoT |
+| `aside-browser-verify.mdc` | Same as user rule; also lives in the sume-com checkout |
 
 ## Layer 3 — local Claude + Codex (tokenmaxxing)
 
