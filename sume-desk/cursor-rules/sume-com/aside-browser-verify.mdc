@@ -1,32 +1,37 @@
 ---
-description: Browser verification uses Aside wrapper only, spare window first, sumelabs workspace for dev/prod
+description: Dest browser verify via ego-browser TaskSpace (preferred) or aside repl; Auto router; sumelabs only
 alwaysApply: true
 ---
 
-# Browser verification — Aside only
+# Browser verification — ego-browser (preferred) or Aside
 
 Worker ships user-visible product → verifies in a real browser **after its
 own work**: locally first when not yet verified locally, then the same flow
 on dev after the dev deploy.
 
-- Tool: **`aside repl`** only. Forbidden: bare Playwright, `browser_*` MCP,
-  other harnesses. `aside exec` is task delegation, not deterministic
-  verification.
-- Start with `listBrowserTabs()`, group by `windowId`.
-- **Spare window exists (≥2):** test in the window the user is not actively
-  using via `attachBrowserTab(targetId)`. Never `attachActiveBrowserTab()`
-  when two windows exist. Never touch the user's active-window tabs except
-  closing your own.
-- **Single window:** `openTab(url)` in the same window is correct, then
-  `closeTab(page)`. `chrome.windows.create` is refused by the REPL — do not
-  attempt it. No `page.context().newPage()` / `page.close()`.
-- Read with `snapshot(page, { interactive: true })`; fresh snapshot after
-  each action (refs invalidate); `console.log()` to return values.
-- Dev (`www.dev.sume.com`) / prod (`www.sume.com`) verification: **sumelabs
-  workspace only**. Not sumelabs → STOP and switch. Never customer
-  workspaces (e.g. mobidoo).
+- Tool: **`ego-browser` TaskSpace (preferred)** or **`aside repl`**.
+  Forbidden: bare Playwright, Cursor `browser_*` MCP, other harnesses.
+  `aside exec` is task delegation, not deterministic verification.
+- **ego-browser:** skill `~/.agents/skills/ego-browser`. Run
+  `ego-browser nodejs <<'EOF' … EOF`. One `taskSpace("<job>")` per job,
+  print `spaceId`, resume with `taskSpace(<id>)`. Work in the space’s own
+  tab (`p1`); never adopt/drive Chase’s live tab. `page.snapshot()` →
+  act (`@ref` / `loc=css:` / CSS) → fresh snapshot → `page.screenshot({ path })`.
+  `task.finish({ keep: [] })` when done. Do not import Chrome cookies.
+- **aside repl:** Chase’s window and the same tab are OK. Do not hunt a
+  spare window. Never `chrome.windows.create`. No `page.context().newPage()`
+  / `page.close()`. Optional title `[Agent]` only — never worker model
+  names. `snapshot(page, { interactive: true })` after each action.
+- **Dest compose = Auto.** Do not select GPT-6 Astra (or any pin) unless
+  Chase locked a model-pin test. The coding worker (Astra/Fable/…) is not
+  the Agents picker. Auto router is the dest AC.
+- Dev (`www.dev.sume.com`) / prod (`www.sume.com`): **sumelabs workspace
+  only**. Not sumelabs → STOP. Never customer workspaces (e.g. mobidoo).
 - Do not confuse Aside CLI account (`aside account list`) with the Sume
   workspace or browser profile.
+- After dest user-visible verify: **one** GitHub issue comment with
+  **2–4 screenshots** (proved `#6860`). Not exhaustive. Recipe:
+  `~/.agents/skills/sume-main-agent-orchestration/references/dest-verify-issue-shots.md`
 
 Policy SoT: `~/.agents/skills/sume-main-agent-orchestration/SKILL.md`
-§ "Browser verification — Aside wrapper only".
+§ "Browser verification — ego-browser TaskSpace (preferred) or Aside" + dest Auto + issue shots.

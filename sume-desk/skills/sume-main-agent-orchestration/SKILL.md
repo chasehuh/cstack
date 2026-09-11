@@ -1021,28 +1021,48 @@ When the user asks to add work to Linear:
 - Create implementation-ready descriptions when the issue will seed future agents.
 - Put status and assignee exactly as requested when possible.
 
-## Browser verification — Aside wrapper only (Chase lock 2026-09-09)
+## Browser verification — ego-browser TaskSpace (preferred) or Aside (Chase lock 2026-09-09; ego alt 2026-09-11 #7099)
 
 Every worker that ships user-visible product verifies in a real browser
 **after its own work**: locally first when not yet verified locally, then
-the same flow on dev after the dev deploy. Browser verification uses the
-**Aside wrapper only** — never bare Playwright, never `browser_*` MCP, never
-another automation harness. `aside exec` delegates a task to the Aside
-agent; deterministic verification steps use **`aside repl`** directly.
+the same flow on dev after the dev deploy. Two allowed verifiers:
 
-Window selection (verified 2026-09-09: REPL cannot open an OS window):
+1. **`ego-browser` TaskSpace (preferred).** Skill: `~/.agents/skills/ego-browser`
+   (one tree at `~/.local/share/ego/ego-skills`, symlinked into
+   `~/.cursor/skills`, `~/.claude/skills`, `~/.codex/skills`). Run
+   `ego-browser nodejs <<'EOF' … EOF` heredocs. One `taskSpace("<job>")` per
+   job, print `spaceId`, resume with `taskSpace(<id>)`. The space opens its
+   **own** tab (`p1`); never adopt or drive Chase’s live Chrome / Ego tab.
+   `page.snapshot()` → act with `@ref` / `loc=css:` / raw CSS → fresh
+   snapshot → `page.screenshot({ path })` for issue shots. `task.finish({ keep: [] })`
+   when done. Ego uses its own logged-in profile; do **not** import full
+   Chrome to pull customer cookies.
+2. **`aside repl`** (fallback when Ego is not installed / not logged in).
+   Rules in "Tabs + dest Auto" below.
 
-- Start every verification with `listBrowserTabs()` and group by `windowId`.
-- **Spare window exists (≥2 windows):** test in the window the user is not
-  actively using. Attach with `attachBrowserTab(targetId)` using a
-  `targetId` from that window. Never `attachActiveBrowserTab()` when two
-  windows exist (ambiguous which active). Never touch tabs in the user's
-  active window except closing tabs you opened yourself.
-- **Single window:** `openTab(url)` in the same window is correct, then
-  `closeTab(page)` when done. Do **not** attempt `chrome.windows.create`
-  (the REPL refuses: it can modify the user's tab/window session — use
-  `openTab`/`closeTab`). Do **not** use `page.context().newPage()` or
-  `page.close()` (they leak memory).
+**Forbidden for verification:** bare Playwright, Cursor `browser_*` MCP,
+any other automation harness, and `aside exec` (that is task delegation,
+not deterministic verification).
+
+### Tabs + dest Auto (Chase lock 2026-09-09 late)
+
+Window targeting is **not** reliable. **Chase’s window is OK.** **The
+same tab as Chase is OK.** Do not hunt a spare OS window. Tab title
+changes are **optional**. If you rename at all, use **`[Agent]`** — never
+`[Astra]` / `[Opus]` / `[Fable]` / worker model names.
+
+**Dest compose model is Auto. Always.** The worker’s coding model (Astra
+implementing, Fable dest-retest, …) is **not** the Agents picker. Do
+**not** select GPT-6 Astra (or any pinned model) on
+`www.dev.sume.com` unless Chase explicitly locked a model-pin test.
+Default dest verify = **Sume Auto** so the **auto router** is what we
+prove. Picking Astra in the UI is a mistake.
+
+- `openTab(url)` in the current window **or** reuse Chase’s tab.
+- Do **not** `chrome.windows.create`. Do **not** `page.context().newPage()`
+  or `page.close()` (they leak memory).
+- Optional title only: `document.title = "[Agent] …"` — skip if noisy.
+
 - Read with `snapshot(page, { interactive: true })` first; take a fresh
   snapshot after each action (refs invalidate). Click with the latest ref
   only (`page.locator('<ref>').click()`). Return values via `console.log()`.
@@ -1057,6 +1077,17 @@ Workspace / environment:
   `chase@sume.com`) with the Sume workspace or the browser profile.
 - Destructive verification (send / delete / pay / ops-setting changes)
   needs Chase approval first.
+
+### Dest issue screenshots (Chase lock 2026-09-09 late)
+
+User-visible dest verify also posts **one GitHub issue comment with 2–4
+screenshots** on that Job’s issue (proved
+[#6860](https://github.com/sumelabs/sume/issues/6860#issuecomment-5602167174)).
+Enough to show dest applied — not exhaustive. Chat report + board stay
+required. Full recipe:
+`references/dest-verify-issue-shots.md` in this skill dir (also shipped
+from `chasehuh/cstack` `sume-desk/skills/sume-main-agent-orchestration/`).
+Ego trial proof + local inventory: `~/.sume/ops/ego-aside-alt.md` (#7099).
 
 ## Safety Rules
 
