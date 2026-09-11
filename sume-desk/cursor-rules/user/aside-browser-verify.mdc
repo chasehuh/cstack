@@ -1,5 +1,5 @@
 ---
-description: Browser verification via ego-browser TaskSpace (preferred) or aside repl; own tab; sumelabs only
+description: Browser verification via ego-browser TaskSpace (preferred) or aside repl; own tab; sumelabs only; evidence = one issue comment w/ shots (SHOTS URL required)
 alwaysApply: true
 ---
 
@@ -27,8 +27,14 @@ on dev after the dev deploy.
   opened.
 - Dev (`www.dev.sume.com`) / prod (`www.sume.com`): **sumelabs workspace
   only**. Not sumelabs → STOP. Never customer workspaces (e.g. mobidoo).
+- **Evidence hard lock (2026-09-11, #7110):** after any dest/prod browser
+  verify, post **one** `gh issue comment` on the Job issue with **2–4
+  screenshots** + host, `sumelabs`, **Auto**, SHA, pass/fail. Final report
+  must include `SHOTS: <comment URL>`. No URL ⇒ no `DEST: pass`. Do not
+  exit after main land while the dest deploy is still building. Recipe:
+  `~/.agents/skills/sume-main-agent-orchestration/references/dest-verify-issue-shots.md`
 - Do not confuse Aside CLI account (`aside account list`) with the Sume
   workspace or browser profile.
 
 Policy SoT: `~/.agents/skills/sume-main-agent-orchestration/SKILL.md`
-§ "Browser verification — ego-browser TaskSpace (preferred) or Aside".
+§ "Browser verification" + "Dest issue screenshots — HARD LOCK".

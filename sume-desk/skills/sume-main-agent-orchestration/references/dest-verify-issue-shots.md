@@ -1,4 +1,4 @@
-# Dest verify → GitHub issue screenshots (Chase lock 2026-09-09)
+# Dest verify → GitHub issue screenshots — HARD LOCK (Chase 2026-09-11, #7110)
 
 Proved on [#6860](https://github.com/sumelabs/sume/issues/6860#issuecomment-5602167174)
 (Members / Usage, four shots, one comment).
@@ -6,12 +6,22 @@ Proved on [#6860](https://github.com/sumelabs/sume/issues/6860#issuecomment-5602
 This is **desk policy**, not a product feature. SoT also lives in
 `sume-main-agent-orchestration` SKILL.md § Browser verification.
 
-## When
+## When (hard stop)
 
-After a worker finishes **user-visible dest** verify on
-`www.dev.sume.com` (sumelabs), it posts **one** GitHub issue comment on
-the Job’s issue with **2–4 screenshots**. Not exhaustive. Enough to show
-dest applied.
+After **any** browser verify on dest (`www.dev.sume.com`, sumelabs) or
+Chase-authorized prod (`www.sume.com`, sumelabs + chase@sume.com), the
+verify is **incomplete** until **one** GitHub issue comment on the Job’s
+issue carries **all** evidence: **2–4 screenshots** + text (host,
+workspace, Auto, SHA, pass/fail, thread/URL). Chase checks work on the
+issue; chat and board are not enough.
+
+- Final report **must** include `SHOTS: <gh comment URL>`. No URL ⇒ no
+  `DEST: pass`, and do not tell Chase dest is done.
+- Do **not** exit after `origin/main` `(#N)` while the dest deploy is
+  still building; stay or resume until the comment is posted (`#7104`
+  fail pattern). `#7103` landed with no shots — also a fail.
+- RCA / no-UI Jobs: no forced tour, but if you opened dest/prod, the rule
+  applies.
 
 Does **not** replace the chat work report or the status board.
 
@@ -42,8 +52,10 @@ Does **not** replace the chat work report or the status board.
 ## Worker prompt line (copy)
 
 ```text
-After dest browser verify (ego-browser TaskSpace preferred, aside repl ok):
-Auto router only (not GPT-6 Astra). Ego = own tab; Aside = same window/tab
-as Chase OK, optional title [Agent]. One issue comment, 2–4 screenshots
-(proved #6860). sumelabs, www.dev.sume.com.
+DEST EVIDENCE (hard lock 2026-09-11, #7110): after dest/prod browser verify
+(ego-browser TaskSpace preferred, aside repl ok; Auto router, not GPT-6
+Astra; sumelabs; www.dev.sume.com), post ONE gh issue comment on the Job
+issue with 2–4 screenshots + host, sumelabs, Auto, SHA, pass/fail. Final
+report must carry `SHOTS: <comment URL>`. Forbidden: `DEST: pass` without
+SHOTS. Forbidden: exiting after main land while dest deploy still builds.
 ```

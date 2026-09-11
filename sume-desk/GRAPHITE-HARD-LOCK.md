@@ -40,4 +40,9 @@ GRAPHITE (hard lock) — Chase 2026-09-06: author owns land to origin/main:
   Enqueue is not 완료. Done report only after main-tip proof:
   clone path + Graphite URL + GitHub PR URL + SHA + `LANDED: yes`.
   `cstack-clone-rm <job-slug>` after land (keep the tree while unblocking).
+- DEST EVIDENCE (hard lock 2026-09-11, #7110): after dest/prod browser verify,
+  post ONE `gh issue comment` on the Job issue with 2–4 screenshots + host,
+  sumelabs, Auto (not Astra), SHA, pass/fail. Final report must carry
+  `SHOTS: <comment URL>`. Forbidden: `DEST: pass` without SHOTS. Forbidden:
+  exiting after main land while dest deploy is still building.
 ```

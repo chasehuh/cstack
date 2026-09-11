@@ -154,6 +154,8 @@ Final report:
 - Implementation or recommendation.
 - PR/merge/deploy status if applicable.
 - Tests/validation.
+- Dest/prod browser verify: `SHOTS: <gh issue comment URL>` (2–4 shots +
+  host/workspace/Auto/SHA/pass-fail). No URL ⇒ no `DEST: pass`.
 - Caveats/follow-ups.
 ```
 
@@ -921,6 +923,11 @@ GRAPHITE (hard lock) — Chase 2026-09-06: author owns land to origin/main:
   Enqueue is not 완료. Done report only after main-tip proof:
   clone path + Graphite URL + GitHub PR URL + SHA + `LANDED: yes`.
   `cstack-clone-rm <job-slug>` after land (keep the tree while unblocking).
+- DEST EVIDENCE (hard lock 2026-09-11, #7110): after dest/prod browser verify,
+  post ONE `gh issue comment` on the Job issue with 2–4 screenshots + host,
+  sumelabs, Auto (not Astra), SHA, pass/fail. Final report must carry
+  `SHOTS: <comment URL>`. Forbidden: `DEST: pass` without SHOTS. Forbidden:
+  exiting after main land while dest deploy is still building.
 ```
 
 When the BP has a PR train, also say:
@@ -1078,16 +1085,32 @@ Workspace / environment:
 - Destructive verification (send / delete / pay / ops-setting changes)
   needs Chase approval first.
 
-### Dest issue screenshots (Chase lock 2026-09-09 late)
+### Dest issue screenshots — HARD LOCK (Chase 2026-09-11, #7110)
 
-User-visible dest verify also posts **one GitHub issue comment with 2–4
-screenshots** on that Job’s issue (proved
+Chase checks work **on the GitHub issue**. After **any** browser verify on
+dest (`www.dev.sume.com`, sumelabs) or Chase-authorized prod
+(`www.sume.com`, sumelabs + chase@sume.com), the verify is **incomplete**
+until **one** `gh issue comment` on the Job’s issue carries **all**
+evidence: **2–4 screenshots** + host, workspace `sumelabs`, **Auto** (not
+Astra), `/api/build` or SHA, pass/fail, thread/URL (proved
 [#6860](https://github.com/sumelabs/sume/issues/6860#issuecomment-5602167174)).
-Enough to show dest applied — not exhaustive. Chat report + board stay
-required. Full recipe:
-`references/dest-verify-issue-shots.md` in this skill dir (also shipped
-from `chasehuh/cstack` `sume-desk/skills/sume-main-agent-orchestration/`).
-Ego trial proof + local inventory: `~/.sume/ops/ego-aside-alt.md` (#7099).
+
+- Final report **must** include `SHOTS: <gh comment URL>`. No URL ⇒ do
+  **not** write `DEST: pass` and do **not** tell Chase dest is done.
+- Do **not** exit after `origin/main` `(#N)` while the dest deploy is
+  still building — stay (or resume the same session) until the comment is
+  up. `#7104` (exited mid-Vercel wait) and `#7103` (landed, no shots) are
+  the failure modes.
+- One comment per Job verify burst, not one per PNG. Not an exhaustive
+  tour. No secrets.
+- RCA / research / no-UI Jobs: no forced tour. If the worker **did** open
+  dest/prod to verify, the comment + shots rule still applies.
+- Chat report + board stay required; Slack is not the evidence store.
+
+Full recipe: `references/dest-verify-issue-shots.md` in this skill dir
+(also shipped from `chasehuh/cstack`
+`sume-desk/skills/sume-main-agent-orchestration/`). Ego trial proof +
+local inventory: `~/.sume/ops/ego-aside-alt.md` (#7099).
 
 ## Safety Rules
 
@@ -1110,7 +1133,8 @@ Summaries should answer:
 - Any PR/Linear/thread links or IDs.
 
 Avoid pretending a worker completed a task when it only started, explored, or
-produced a mismatched final answer.
+produced a mismatched final answer. Never relay dest/prod verify as done
+without the worker’s `SHOTS: <gh issue comment URL>` (#7110).
 
 ## Harness Wiring
 
