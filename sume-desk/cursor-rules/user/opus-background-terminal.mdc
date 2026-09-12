@@ -92,6 +92,16 @@ backend flags after `--` (`-- --effort high`).
 
 Use the **same `cd` repo path** the original session used, or resume fails.
 
+**Mac Mini host (cstack#10):** same Shell, same title, add `--host mini`
+(or `CSTACK_WORKER_HOST=mini` in the laptop shell). The worker runs
+detached on the Mini; the local Shell is only an ssh attach that mirrors
+the log into `~/.cstack/state/opus-live/<job>.log`, so the smoke /
+completion reads are unchanged. Mini unreachable → exit 3 (no local
+fallback; `--host local` on purpose). `--resume` must use the session's
+host (wrong host → exit 4, host printed). Liveness = `sume-bg-launch
+--host mini --status <job>`, never the replica file. dest/ego shots stay
+`--host local`. Page: `~/.cstack/src/docs/MINI-WORKER-HOST.md`.
+
 3. **Required smoke (once, not a poll):** read the new terminal file.
    Alive = `📎 session_id=` (or wrapper `—— agent live ——` + grok/claude lines).
    Dead = `exit_code` in ~1s (usually 2 + `missing prompt` / `not found`).

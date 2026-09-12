@@ -134,6 +134,7 @@ def append_registry(event: str, session_id: str | None) -> None:
             "live_log": env("AGENT_HUMAN_STREAM_LIVE_LOG", "CLAUDE_HUMAN_STREAM_LIVE_LOG") or None,
             "model": env("AGENT_HUMAN_STREAM_MODEL", "CLAUDE_HUMAN_STREAM_MODEL") or None,
             "effort": env("AGENT_HUMAN_STREAM_EFFORT", "CLAUDE_HUMAN_STREAM_EFFORT") or None,
+            "host": env("AGENT_HUMAN_STREAM_HOST") or "local",
         }
         with open(path, "a", encoding="utf-8") as f:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")

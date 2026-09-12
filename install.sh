@@ -120,6 +120,9 @@ GTBIN="$HOME/.agents/skills/sume-gt-mq/bin"
 ln -sfn "$BIN/agent-human-stream.sh" "$HOME/.local/bin/agent-human-stream"
 ln -sfn "$BIN/claude-human-stream.sh" "$HOME/.local/bin/claude-human-stream"
 ln -sfn "$BIN/sume-bg-launch.sh" "$HOME/.local/bin/sume-bg-launch"
+# Mini side of --host mini; installed on every machine so laptop and Mini
+# run the same checkout (docs/MINI-WORKER-HOST.md).
+ln -sfn "$BIN/sume-bg-remote.sh" "$HOME/.local/bin/sume-bg-remote"
 ln -sfn "$GTBIN/cstack-clone.sh" "$HOME/.local/bin/cstack-clone"
 ln -sfn "$GTBIN/cstack-clone-rm.sh" "$HOME/.local/bin/cstack-clone-rm"
 ln -sfn "$GTBIN/cstack-mirror-sync.sh" "$HOME/.local/bin/cstack-mirror-sync"
@@ -127,7 +130,7 @@ ln -sfn "$GTBIN/cstack-gt-wait-merge.sh" "$HOME/.local/bin/cstack-gt-wait-merge"
 chmod +x "$BIN/agent-human-stream.sh" "$BIN/agent-human-stream.py" \
   "$BIN/agent-human-stream.test.py" \
   "$BIN/claude-human-stream.sh" "$BIN/claude-human-stream.py" \
-  "$BIN/sume-bg-launch.sh" \
+  "$BIN/sume-bg-launch.sh" "$BIN/sume-bg-remote.sh" "$BIN/sume-bg-launch.test.sh" \
   "$HOME/.agents/skills/sume-main-agent-orchestration/check-wiring.sh" \
   "$HOME/.agents/skills/sume-gt-mq/install-symlinks.sh" \
   "$GTBIN/cstack-clone.sh" "$GTBIN/cstack-clone-rm.sh" \
@@ -179,6 +182,11 @@ if [ -x "$GTBIN/cstack-gt-wait-merge.test.sh" ]; then
   "$GTBIN/cstack-gt-wait-merge.test.sh"
 fi
 
+if [ -x "$BIN/sume-bg-launch.test.sh" ] && [ "${CSTACK_SKIP_HOST_TESTS:-0}" != "1" ]; then
+  echo "== sume-bg-launch host routing (offline, no Mini) =="
+  "$BIN/sume-bg-launch.test.sh" || echo "NOTE: sume-bg-launch host tests failed (CSTACK_SKIP_HOST_TESTS=1 to skip)"
+fi
+
 if [ -x "$HOME/.agents/skills/sume-main-agent-orchestration/check-wiring.sh" ]; then
   echo "== wiring check =="
   "$HOME/.agents/skills/sume-main-agent-orchestration/check-wiring.sh" || true
@@ -209,6 +217,7 @@ echo "gt:      ~/.agents/skills/sume-gt-mq/SKILL.md"
 echo "wait:    cstack-gt-wait-merge  (label tip merge-queue now; MWR if CI pending)"
 echo "clone:   cstack-clone / cstack-clone-rm / cstack-mirror-sync"
 echo "state:   ~/.cstack/state/opus-live"
+echo "mini:    sume-bg-launch --host mini (CSTACK_WORKER_HOST / CSTACK_MINI_SSH) — docs/MINI-WORKER-HOST.md"
 echo "harness: Cursor + Claude Code + Codex + Grok Build (~/.grok/skills)"
 echo "LC:      ~/.agents/skills/mobidoo-live-commerce-update/SKILL.md"
 echo "Claude:  docs/TOKENMAXXING.md (tokenmaxxing pool, not a single login)"
