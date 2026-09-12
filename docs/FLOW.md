@@ -101,6 +101,11 @@ Auto backend: `grok*` → grok, `gpt-*|o3*|o4*|codex*` → codex, Claude names
 → claude. Every backend prints `📎 session_id=<id>  backend=<…>`, tees to
 `~/.cstack/state/opus-live/`, and appends to the same registry.
 
+Mac Mini host: `sume-bg-launch --host mini …` (or `CSTACK_WORKER_HOST=mini`)
+runs the same wrapper **detached on the Mini** and mirrors its log into the
+local `opus-live` replica. Fail closed if unreachable; `--resume` same host
+only; dest/ego shots stay `--host local`. Page: `docs/MINI-WORKER-HOST.md`.
+
 ## Transport (Cursor main agent)
 
 ```text
@@ -150,5 +155,6 @@ is the monitor.
 - Grok land / Grok author = `agent-human-stream --backend grok` (not Task)
 
 `./install.sh` links `agent-human-stream`, `claude-human-stream`,
-`sume-bg-launch`, `cstack-clone`, and `cstack-gt-wait-merge` to `~/.local/bin`.
+`sume-bg-launch`, `sume-bg-remote` (Mini side of `--host mini`),
+`cstack-clone`, and `cstack-gt-wait-merge` to `~/.local/bin`.
 Skills also land in `~/.grok/skills` for Grok Build.

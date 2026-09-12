@@ -37,7 +37,9 @@ Tokenmaxxing credentials stay in `~/.config/tokenmaxxing/` + keychain.
 - `~/.agents/skills/<name>` → **symlink** into `sume-desk/skills/<name>`
 - Same symlink for `~/.cursor|claude|codex|grok/skills`
 - Host bins on `~/.local/bin`: `cstack-clone`, `cstack-clone-rm`,
-  `cstack-mirror-sync`, **`cstack-gt-wait-merge`**, `agent-human-stream`
+  `cstack-mirror-sync`, **`cstack-gt-wait-merge`**, `agent-human-stream`,
+  `sume-bg-launch` (+ `sume-bg-remote` for the Mac Mini worker host —
+  `docs/MINI-WORKER-HOST.md`)
 - Runtime logs at `~/.cstack/state/` (not inside the git tree)
 - Pointers in `~/.codex/AGENTS.md`, `~/.claude/CLAUDE.md`, `~/.grok/AGENTS.md`
 
@@ -52,6 +54,7 @@ bootstrap.sh              # one-click → ~/.cstack/src + install
 install.sh
 docs/FLOW.md              # map of rules → when
 docs/TOKENMAXXING.md      # local Claude = tokenmaxxing supervisor
+docs/MINI-WORKER-HOST.md  # sume-bg-launch --host mini (detached Mac Mini worker)
 sume-desk/
   GRAPHITE-HARD-LOCK.md   # paste block for every author prompt
   skills/                 # SoT (orchestration, gt-mq, mega-issue, Formats LC)

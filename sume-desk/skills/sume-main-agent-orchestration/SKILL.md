@@ -362,6 +362,38 @@ cd /path/to/repo && sume-bg-launch --backend grok --name <job-slug> \
   --prompt-file /tmp/sume-grok-prompts/<job-slug>.md -- --effort xhigh
 ```
 
+### Worker host — Mac Mini (`sume-bg-launch --host mini`, cstack#10)
+
+Chase lock 2026-09-12: **only** `sume-bg-launch` (and thus
+`agent-human-stream`) may run on the Mac Mini. Main chat, board, Slack,
+Composer `Task`, and **all ego-browser / dest shots stay local**.
+Full page: `chasehuh/cstack` → `docs/MINI-WORKER-HOST.md`.
+
+- `--host local|mini`; default = `CSTACK_WORKER_HOST` (laptop sets `mini`
+  once the Mini is configured). `--host local` is the escape hatch.
+- Host SoT: `CSTACK_MINI_SSH=<user@tailscale-name>`. Mini unreachable →
+  **exit 3, nothing runs locally** (fail closed, never a silent fallback).
+- Prompt: write locally → **scp** → Mini reads. Never prompt text or tokens
+  on ssh argv. The Mini has its own `gh` / `gt` / Claude / Grok / Codex logins.
+- The Mini worker is **detached** (`nohup` + own process group +
+  `caffeinate -i`). ssh is a control plane: `--jobs`, `--status <job>`,
+  `--attach <job>`, `--kill <job>`. Laptop sleep / lid / ssh drop ends only
+  the attach; the Job continues.
+- Mini **writes** its own `~/.cstack/state/opus-live` + `opus-sessions.jsonl`.
+  The laptop attach writes a **replica** `~/.cstack/state/opus-live/<job>.log`
+  (+ `LATEST.log`) and `host: "mini"` registry rows, so the smoke
+  (`📎 session_id=`), `tail -f LATEST.log`, and the completion notification
+  (`—— final ——`) keep working. Liveness truth = `--status` (Mini pid), never
+  the replica file. No bidirectional sync of state or `cstack-clone` trees.
+- **`--resume` is same-host only.** Local resume of a Mini session (or the
+  reverse) → exit 4 and the host is printed. Steer/kill of older wrappers
+  happens on the session's host.
+- Terminal title stays the local Shell `description`
+  (`Fable : <slug> (#N)`) even though the child is an ssh attach.
+- **dest/prod shots v1 = `--host local`**, or Mini lands then a **local**
+  follow-up Shell (same issue) does ego + issue comment. Never `DEST: pass`
+  from the Mini without shots.
+
 ### Cursor-only — Opus / background-worker monitoring
 
 Applies only when the **main agent is Cursor**. Codex / Claude Code main

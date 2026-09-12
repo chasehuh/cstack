@@ -1019,6 +1019,9 @@ rec = {
     "live_log": os.environ.get("AGENT_HUMAN_STREAM_LIVE_LOG") or None,
     "model": os.environ.get("AGENT_HUMAN_STREAM_MODEL") or None,
     "effort": os.environ.get("AGENT_HUMAN_STREAM_EFFORT") or None,
+    # Which machine runs this wrapper. Mini jobs mirrored on the laptop get
+    # host=mini rows from sume-bg-launch --host mini (replica writer).
+    "host": os.environ.get("AGENT_HUMAN_STREAM_HOST") or "local",
 }
 with open(path, "a", encoding="utf-8") as f:
     f.write(json.dumps(rec, ensure_ascii=False) + "\n")
