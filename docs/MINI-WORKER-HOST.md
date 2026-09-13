@@ -156,3 +156,9 @@ Mini; fake wrapper). `install.sh` runs it. Covers: local regression, host
 env / validation, fail-closed unreachable, prompt secret guard, mini launch
 → replica + registry, same-host resume, detached survival after attach
 death, `--status` / `--jobs` / `--attach` / `--kill`.
+
+## Remaining machine setup
+
+Live leftover checklist for a Mini-side agent:
+[`docs/MINI-REMAINING.md`](MINI-REMAINING.md)
+([cstack#12](https://github.com/chasehuh/cstack/issues/12)).
