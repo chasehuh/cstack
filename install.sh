@@ -160,6 +160,11 @@ append_entry "$HOME/.codex/AGENTS.md" \
 append_entry "$HOME/.claude/CLAUDE.md" \
   "$ROOT/sume-desk/claude-import-snippet.md" \
   "codex/AGENTS.md"
+# Separate marker upgrades existing main-agent imports on laptop and Mini.
+# Workers must see the completion lock even when they skip orchestration.
+append_entry "$HOME/.claude/CLAUDE.md" \
+  "$ROOT/sume-desk/claude-author-snippet.md" \
+  "## Sume author completion (always on)"
 append_entry "$HOME/.grok/AGENTS.md" \
   "$ROOT/sume-desk/grok-agents-snippet.md" \
   "sume-main-agent-orchestration/SKILL.md"
