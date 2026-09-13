@@ -364,9 +364,9 @@ cd /path/to/repo && sume-bg-launch --backend grok --name <job-slug> \
 
 ### Worker host — Mac Mini (`sume-bg-launch --host mini`, cstack#10)
 
-Chase lock 2026-09-12: **only** `sume-bg-launch` (and thus
-`agent-human-stream`) may run on the Mac Mini. Main chat, board, Slack,
-Composer `Task`, and **all ego-browser / dest shots stay local**.
+Chase lock 2026-09-13 (cstack#14): run `sume-bg-launch` (and thus
+`agent-human-stream`) workers and **ego-browser / dest shots on the Mini**.
+Mini has ego. Keep main chat, board, Slack, and Composer `Task` local.
 Full page: `chasehuh/cstack` → `docs/MINI-WORKER-HOST.md`.
 
 - `--host local|mini`; default = `CSTACK_WORKER_HOST` (laptop sets `mini`
@@ -390,9 +390,13 @@ Full page: `chasehuh/cstack` → `docs/MINI-WORKER-HOST.md`.
   happens on the session's host.
 - Terminal title stays the local Shell `description`
   (`Fable : <slug> (#N)`) even though the child is an ssh attach.
-- **dest/prod shots v1 = `--host local`**, or Mini lands then a **local**
-  follow-up Shell (same issue) does ego + issue comment. Never `DEST: pass`
-  from the Mini without shots.
+- **Mini dest/ego is allowed.** When dest/prod browser verify is in scope,
+  stay until dest `/api/build` reports the land commit or a descendant SHA,
+  then use ego-browser (sumelabs, Auto; prod only if Chase authorized).
+  Post one Job issue comment with 2–4 shots + host/workspace/Auto/SHA/
+  pass-fail/thread URL. Final: `SHOTS: <comment URL>`; no URL ⇒ no `DEST: pass`.
+  Do not exit while dest builds or because a background dest-watch exists.
+  Recipe: [references/dest-verify-issue-shots.md](references/dest-verify-issue-shots.md).
 
 ### Cursor-only — Opus / background-worker monitoring
 
@@ -1129,10 +1133,13 @@ Astra), `/api/build` or SHA, pass/fail, thread/URL (proved
 
 - Final report **must** include `SHOTS: <gh comment URL>`. No URL ⇒ do
   **not** write `DEST: pass` and do **not** tell Chase dest is done.
-- Do **not** exit after `origin/main` `(#N)` while the dest deploy is
-  still building — stay (or resume the same session) until the comment is
-  up. `#7104` (exited mid-Vercel wait) and `#7103` (landed, no shots) are
-  the failure modes.
+- When dest/prod browser verify is in scope, stay after `origin/main`
+  `(#N)` until dest `/api/build` reports the land commit or a descendant
+  SHA, then verify and post the comment. Mini ego is allowed (Chase
+  2026-09-13). Do **not** exit while dest builds or because a background
+  dest-watch exists; `Waiting on dest deploy poll` is not a final result.
+  Resume the same session if it exited early. `#7104` (exited mid-Vercel
+  wait) and `#7103` (landed, no shots) are the failure modes.
 - One comment per Job verify burst, not one per PNG. Not an exhaustive
   tour. No secrets.
 - RCA / research / no-UI Jobs: no forced tour. If the worker **did** open

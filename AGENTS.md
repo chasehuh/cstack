@@ -69,5 +69,21 @@ and re-run `./install.sh`.
 
 ## What “done” looks like
 
-A coding train is done when `origin/main` has `(#N)`. Enqueue and a
+A coding train must reach `origin/main` with `(#N)`. Enqueue and a
 running land watch are **not** done.
+
+**Dest evidence (Chase lock 2026-09-13, cstack#14):** when dest/prod
+browser verification is in scope for a user-visible product train, main
+land alone is **not** done. Stay until dest `/api/build` reports the land
+commit or a descendant SHA, then verify with `ego-browser` (Mini allowed),
+under **sumelabs** with compose model **Auto**. Prod still requires Chase's
+explicit authorization.
+
+Post **one** `gh issue comment` on the Job issue with **2–4 screenshots**,
+host, workspace, Auto, deployed SHA, pass/fail, and thread/URL. The final
+report must include **`SHOTS: <comment URL>`**. No URL ⇒ no `DEST: pass`.
+Do not exit while dest builds or because a background dest-watch exists;
+`Waiting on dest deploy poll` is not a final result. No forced browser tour
+for research / no-UI work, but any dest/prod browser verify requires evidence.
+
+Recipe: [references/dest-verify-issue-shots.md](sume-desk/skills/sume-main-agent-orchestration/references/dest-verify-issue-shots.md).

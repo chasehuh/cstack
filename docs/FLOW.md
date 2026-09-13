@@ -104,7 +104,14 @@ Auto backend: `grok*` → grok, `gpt-*|o3*|o4*|codex*` → codex, Claude names
 Mac Mini host: `sume-bg-launch --host mini …` (or `CSTACK_WORKER_HOST=mini`)
 runs the same wrapper **detached on the Mini** and mirrors its log into the
 local `opus-live` replica. Fail closed if unreachable; `--resume` same host
-only; dest/ego shots stay `--host local`. Page: `docs/MINI-WORKER-HOST.md`.
+only. **Mini ego / dest shots are allowed** (Chase 2026-09-13).
+When dest/prod browser verification is in scope, stay until dest `/api/build`
+reports the land commit or a descendant SHA, then verify (sumelabs, Auto)
+and post one Job issue comment with 2–4 shots + host/workspace/Auto/SHA/
+pass-fail/thread URL. Final: **`SHOTS: <comment URL>`**; no URL ⇒ no
+`DEST: pass`. A background dest-watch is not completion; do not exit while
+dest builds. Prod requires Chase authorization. Page: `docs/MINI-WORKER-HOST.md`;
+recipe: [references/dest-verify-issue-shots.md](../sume-desk/skills/sume-main-agent-orchestration/references/dest-verify-issue-shots.md).
 
 ## Transport (Cursor main agent)
 
