@@ -427,8 +427,10 @@ if [[ "$HOST" == "mini" ]]; then
     exit 2
   fi
   if grep -Eq 'SHOTS:|ego-browser|ego-lite|cua_repl|browser_' "$PROMPT_FILE"; then
-    echo "note: prompt mentions dest/ego shots — the Mini has no ego-browser/CDP (v1)." >&2
-    echo "      Plan a LOCAL follow-up Shell for shots + issue comment; do not claim DEST: pass from the Mini." >&2
+    echo "note: Mini ego/dest shots are allowed (Chase 2026-09-13). Stay until dest /api/build SHA includes land, then verify (sumelabs, Auto)." >&2
+    echo "      Post one Job issue comment with 2–4 shots + host/workspace/Auto/SHA/pass-fail/thread URL; final SHOTS: <comment URL>. No URL => no DEST: pass." >&2
+    echo "      Do not exit while dest builds or because a background dest-watch exists. Prod requires Chase authorization." >&2
+    echo "      Recipe: ~/.agents/skills/sume-main-agent-orchestration/references/dest-verify-issue-shots.md" >&2
   fi
 
   if [[ -z "$CWD" ]]; then

@@ -1,10 +1,11 @@
 # Mac Mini worker host — `sume-bg-launch --host mini`
 
-One page for Chase. Locks: `chasehuh/cstack#10` (desk 2026-09-12).
+One page for Chase. Locks: `chasehuh/cstack#10` (desk 2026-09-12),
+`chasehuh/cstack#14` (Mini ego + dest evidence, 2026-09-13).
 
-Only the **subagent handoff** runs on the Mini. Cursor main chat, canvas
-board, Slack burst, Composer `Task` / explore, and **all ego-browser /
-dest shots stay on the laptop**.
+The **subagent handoff** and **ego-browser / dest shots** can run on the
+Mini. Cursor main chat, canvas board, Slack burst, and Composer `Task` /
+explore stay on the laptop.
 
 ## What runs where
 
@@ -15,7 +16,7 @@ dest shots stay on the laptop**.
 | `agent-human-stream` worker (Claude / Grok / Codex) | `--host local` | `--host mini` (detached) |
 | `~/.cstack/state/opus-live/`, `opus-sessions.jsonl` | **replica** (attach writes) | **writer** |
 | `cstack-clone` trees | own | own (never synced back; code SoT = `origin/main`) |
-| ego-browser / CDP / `cua_repl` / dest shots | yes | **forbidden (v1)** |
+| ego-browser / dest shots | yes | **allowed** (Chase 2026-09-13) |
 | `gh` / `gt` / Claude / Grok / Codex / Vercel / Railway logins | own | own (never passed over ssh) |
 
 ## One-time setup
@@ -108,17 +109,26 @@ sume-bg-launch --host mini --backend claude --name <job-slug> \
   registry). Unknown session → pass `--cwd <remote dir>`.
 - `--fork-session` passes through unchanged.
 
-## dest / ego rule (hard, v1)
+## Dest / ego evidence (hard lock, Chase 2026-09-13)
 
-The Mini has no ego-lite, no CDP, no Chase Chrome. If a Job needs dest/prod
-`SHOTS`:
+**Mini has ego; dest/ego verification is allowed on the Mini.** Proven by
+[Fable's Mini shots on #7259](https://github.com/sumelabs/sume/issues/7259#issuecomment-5651727580).
+Use the Mini's own logged-in ego-browser TaskSpace.
 
-- launch it with `--host local`, **or**
-- let the Mini land the code, then run a **local** follow-up Shell (same
-  issue, same title) that does ego + the issue comment.
+When dest/prod browser verification is in scope, stay after main land until
+dest `/api/build` reports the land commit or a descendant SHA. Then verify
+with **sumelabs**, compose model **Auto** (not Astra), and post **one**
+`gh issue comment` on the Job issue with **2–4 screenshots** + host,
+workspace, Auto, deployed SHA, pass/fail, and thread/URL. Prod verification
+still needs Chase's explicit authorization.
 
-The launcher prints a note when the prompt mentions `SHOTS:` / `ego-browser`.
-Never claim `DEST: pass` from a Mini job without shots.
+Final report must carry **`SHOTS: <comment URL>`**. No URL ⇒ no `DEST: pass`.
+Do not exit while dest builds or because a background dest-watch exists;
+`Waiting on dest deploy poll` is not a final result. Research / no-UI Jobs
+need no forced tour, but any dest/prod browser verify requires the evidence.
+The launcher reminds Mini workers of this requirement.
+
+Full recipe: [references/dest-verify-issue-shots.md](../sume-desk/skills/sume-main-agent-orchestration/references/dest-verify-issue-shots.md).
 
 ## Secrets
 
@@ -143,10 +153,10 @@ Never claim `DEST: pass` from a Mini job without shots.
 
 Do **not** iCloud / Syncthing / SSHFS any of these. One writer per file.
 
-## Non-goals (v1)
+## Non-goals
 
-Cursor IDE on the Mini, custom RPC / sockets, sharing dirty worktrees, auto
-dest verify on the Mini, changing sume-com Graphite / MQ policy.
+Cursor IDE on the Mini, custom RPC / sockets, sharing dirty worktrees,
+changing sume-com Graphite / MQ policy.
 
 ## Tests
 
