@@ -82,6 +82,11 @@ registry row `attach-lost`). The Mini job keeps running.
 
 ## Control plane
 
+Heavy local test/build commands can use the host-wide
+[`cstack-test-gate`](MINI-TEST-GATE.md). It queues command execution only;
+coding workers and this launcher retain their existing capacity. Thin
+sume-com wrappers remain a separate integration step.
+
 ```bash
 sume-bg-launch --host mini --jobs                 # every Mini job: alive=yes|no pid exit_code
 sume-bg-launch --host mini --status <job>         # liveness truth = Mini pid, not the replica file

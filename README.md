@@ -41,6 +41,9 @@ Tokenmaxxing credentials stay in `~/.config/tokenmaxxing/` + keychain.
   `sume-bg-launch` (+ `sume-bg-remote` for the Mac Mini worker host —
   `docs/MINI-WORKER-HOST.md`)
 - Runtime logs at `~/.cstack/state/` (not inside the git tree)
+- `cstack-test-gate`: [Mini heavy test/build queue](docs/MINI-TEST-GATE.md).
+  Gate-only install from an isolated clone:
+  `./install.sh --test-gate-only --test-gate-profile mini16`.
 - Pointers in `~/.codex/AGENTS.md`, `~/.claude/CLAUDE.md`, `~/.grok/AGENTS.md`
 
 Edit files **here**, then `./install.sh`. Do not edit the skill copies

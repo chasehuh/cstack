@@ -11,19 +11,49 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DESK="$ROOT/sume-desk"
 SUME_COM=""
+TEST_GATE_ONLY=0
+TEST_GATE_PROFILE=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
+    --test-gate-only)
+      TEST_GATE_ONLY=1
+      shift
+      ;;
+    --test-gate-profile)
+      TEST_GATE_PROFILE="${2:-}"
+      case "$TEST_GATE_PROFILE" in mini16|host64) ;; *) echo "invalid gate profile" >&2; exit 2 ;; esac
+      shift 2
+      ;;
     --sume-com)
       SUME_COM="${2:-}"
       shift 2
       ;;
     *)
-      echo "usage: $0 [--sume-com <path>]" >&2
+      echo "usage: $0 [--sume-com <path>] [--test-gate-only] [--test-gate-profile mini16|host64]" >&2
       exit 2
       ;;
   esac
 done
+
+install_test_gate() {
+  # Direct link to this retained checkout: a gate-only install must not
+  # retarget live skills or overwrite unrelated worker-launcher edits.
+  python3 "$DESK/bin/cstack-test-gate.test.py"
+  chmod +x "$DESK/bin/cstack-test-gate.py"
+  mkdir -p "$HOME/.local/bin"
+  if [ -n "$TEST_GATE_PROFILE" ]; then
+    python3 "$DESK/bin/cstack-test-gate.py" configure "$TEST_GATE_PROFILE"
+  fi
+  ln -sfn "$DESK/bin/cstack-test-gate.py" "$HOME/.local/bin/cstack-test-gate"
+  echo "installed: $HOME/.local/bin/cstack-test-gate → $DESK/bin/cstack-test-gate.py"
+}
+
+if [ "$TEST_GATE_ONLY" = 1 ]; then
+  [ -z "$SUME_COM" ] || { echo "gate-only does not install sume-com rules" >&2; exit 2; }
+  install_test_gate
+  exit 0
+fi
 
 if [ ! -d "$DESK/skills/sume-main-agent-orchestration" ]; then
   echo "missing pack: $DESK/skills/sume-main-agent-orchestration" >&2
@@ -114,6 +144,7 @@ if [ -n "$SUME_COM" ]; then
 fi
 
 echo "== host bins on PATH =="
+install_test_gate
 mkdir -p "$HOME/.local/bin"
 BIN="$HOME/.agents/skills/sume-main-agent-orchestration/bin"
 GTBIN="$HOME/.agents/skills/sume-gt-mq/bin"
