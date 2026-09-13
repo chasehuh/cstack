@@ -1033,9 +1033,23 @@ echo "👁 watch:    tail -f $(printf %q "$LIVE_LOG")" >&2
 echo "👁 latest:   tail -f $(printf %q "$LIVE_DIR/LATEST.log")" >&2
 
 if [[ "$BACKEND" == "codex" ]]; then
-  # codex exec appends piped stdin to the prompt and blocks on a non-tty
-  # stdin (background Shells) — always close it.
-  "${CMD[@]}" </dev/null | python3 -u "$ROOT/agent-human-stream.py"
+  # stdin: close it. `codex exec` appends a piped stdin to the prompt and
+  # blocks on a non-tty. stdout: regular file, never a pipe. Codex's Rust
+  # `println!` panics on EAGAIN when the formatter's 64KB pipe backs up
+  # on one huge `aggregated_output` line (rc=101). A file write blocks or
+  # succeeds; it does not return EAGAIN.
+  CODEX_RAW="${LIVE_LOG%.log}.codex.jsonl"
+  : >"$CODEX_RAW"
+  "${CMD[@]}" </dev/null >"$CODEX_RAW" &
+  CODEX_PID=$!
+  FORMAT_RC=0
+  python3 -u "$ROOT/agent-human-stream.py" --follow "$CODEX_RAW" --until-pid "$CODEX_PID" || FORMAT_RC=$?
+  CODEX_RC=0
+  wait "$CODEX_PID" || CODEX_RC=$?
+  if [[ "$CODEX_RC" -ne 0 ]]; then
+    exit "$CODEX_RC"
+  fi
+  exit "$FORMAT_RC"
 else
   "${CMD[@]}" | python3 -u "$ROOT/agent-human-stream.py"
 fi

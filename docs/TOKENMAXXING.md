@@ -149,6 +149,14 @@ background Shell), and humanizes the JSONL (`thread.started`, `item.*`,
 `turn.completed`) into the same `🤖 / 🔧 / 📎 / —— final ——` lines as
 Claude and Grok. Same live log dir and registry (`backend=codex`).
 
+Codex stdout goes to a regular `.codex.jsonl` file beside the live log,
+not a pipe. The formatter follows that file in chunks until Codex exits,
+then drains the remaining bytes; the wrapper waits and preserves Codex's
+exit status. This avoids Rust `println!` panics from EAGAIN (`os error 35`,
+wrapper rc=101) when a fat `item.completed.aggregated_output` fills the
+pipe. Lines over 4 MiB are skipped with only the session id scraped, so a
+large tool result does not require JSON parsing or unbounded buffering.
+
 If `~/.config/tokenmaxxing/bin/codex` exists but PATH resolves `codex`
 elsewhere, the wrapper exits 127 (PATH order bug — run `tokenmaxxing
 doctor`). `TOKENMAXXING_REQUIRE_SUPERVISOR=1` hard-fails on any machine

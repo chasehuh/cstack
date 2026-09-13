@@ -277,7 +277,57 @@ else:
                 parent_proc.wait()
 
 
+def test_codex_file_drain() -> None:
+    """A fat writer must see a regular stdout file, preserve rc, and drain EOF."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        stub = base / "codex"
+        stub.write_text(r'''#!/usr/bin/env python3
+import json, os, stat, sys, time
+assert stat.S_ISREG(os.fstat(1).st_mode), "Codex stdout is still a pipe"
+assert sys.stdin.read() == "", "Codex stdin must be closed"
+# Split a JSON event and a UTF-8 character across separate writes.
+payload = json.dumps({"type": "item.completed", "item": {
+    "type": "agent_message", "text": "Partial café."}}, ensure_ascii=False).encode()
+cut = payload.index("é".encode()) + 1
+os.write(1, payload[:cut])
+time.sleep(0.15)
+os.write(1, payload[cut:] + b"\n")
+# Put the resume id after the fat output to exercise scraping discarded chunks.
+os.write(1, b'{"type":"item.completed","item":{"type":"command_execution","aggregated_output":"')
+for _ in range(24):
+    os.write(1, b"x" * (256 * 1024))
+os.write(1, b'"},"thread_id":"66666666-6666-7666-8666-666666666666"}\n')
+# Final event deliberately has no trailing newline and follows the skipped line.
+os.write(1, json.dumps({"type": "item.completed", "item": {
+    "type": "agent_message", "text": "Drain done."}}).encode())
+sys.exit(int(os.environ["STUB_RC"]))
+''')
+        stub.chmod(0o755)
+        env = os.environ.copy()
+        for key in list(env):
+            if key.startswith(("AGENT_", "CLAUDE_", "GROK_")):
+                env.pop(key)
+        env.update(PATH=f"{tmp}:{env['PATH']}", TOKENMAXXING_REQUIRE_SUPERVISOR="0",
+                   AGENT_HUMAN_STREAM_REGISTRY=str(base / "registry.jsonl"),
+                   AGENT_HUMAN_STREAM_LIVE_DIR=str(base / "live"))
+        for rc in (0, 101):
+            env["STUB_RC"] = str(rc)
+            proc = subprocess.run(
+                ["bash", str(ROOT / "agent-human-stream.sh"), "--backend", "codex",
+                 "--name", f"drain-{rc}", "fixture", "--effort", "mid"],
+                env=env, capture_output=True, text=True, timeout=15)
+            assert proc.returncode == rc, (proc.returncode, proc.stderr)
+            require(proc.stdout, "Partial café.")
+            require(proc.stdout, "session parse only")
+            require(proc.stdout, "session_id=66666666-6666-7666-8666-666666666666")
+            require(proc.stdout, "—— final ——\nDrain done.")
+            assert len(proc.stdout) < 5000, "fat output leaked into human log"
+        assert len(list((base / "live").glob("*.codex.jsonl"))) == 2
+
+
 def main() -> None:
+    test_codex_file_drain()
     test_fork_launchers()
     claude = run_stream(CLAUDE_STREAM, "claude")
     require(claude, "📎 session_id=11111111-1111-1111-1111-111111111111")

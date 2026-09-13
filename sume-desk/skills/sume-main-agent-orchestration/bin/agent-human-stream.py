@@ -21,8 +21,10 @@ legacy CLAUDE_HUMAN_STREAM_LIVE_LOG).
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
+import re
 import sys
 import time
 
@@ -331,7 +333,83 @@ def format_event(ev: dict) -> tuple[list[str], str | None]:
     return lines, final
 
 
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def iter_ndjson_lines(follow_path: str | None, until_pid: int | None):
+    """Yield NDJSON lines from stdin, or from a file Codex writes.
+
+    Codex ``println!`` panics on EAGAIN (os error 35) when stdout is a
+    pipe the formatter has not drained. A regular file does not return
+    EAGAIN, so ``codex exec > raw.jsonl`` plus this follow loop is the
+    structural fix — not a “don’t cat huge files” prompt.
+    """
+    if not follow_path:
+        yield from sys.stdin
+        return
+    # Bound memory even when a command emits an enormous aggregated_output.
+    limit = 4 * 1024 * 1024
+    sid_pattern = re.compile(rb'"(session_id|thread_id|sessionId)"\s*:\s*"([^"\\]{1,128})"')
+    buf = bytearray()
+    tail = b""
+    sid = None
+    size = 0
+    finished = False
+    with open(follow_path, "rb") as fp:
+        while True:
+            chunk = fp.read(256 * 1024)
+            if not chunk:
+                if not finished:
+                    if until_pid and _pid_alive(until_pid):
+                        time.sleep(0.05)
+                        continue
+                    # Re-read after observing exit: the writer may have appended
+                    # between our EOF read and the liveness check.
+                    finished = True
+                    continue
+                if size:
+                    if size > limit:
+                        live_emit(f"… dropped {size}-byte NDJSON line (session parse only)")
+                        yield json.dumps({"session_id": sid})
+                    else:
+                        yield buf.decode("utf-8", errors="replace")
+                break
+            parts = chunk.split(b"\n")
+            for i, part in enumerate(parts):
+                size += len(part)
+                match = sid_pattern.search(tail + part)
+                if match and sid is None:
+                    sid = match[2].decode("utf-8", errors="replace")
+                tail = (tail + part)[-256:]
+                if size <= limit:
+                    buf.extend(part)
+                else:
+                    buf.clear()
+                if i < len(parts) - 1:
+                    if size > limit:
+                        live_emit(f"… dropped {size}-byte NDJSON line (session parse only)")
+                        yield json.dumps({"session_id": sid})
+                    else:
+                        yield buf.decode("utf-8", errors="replace")
+                    buf.clear()
+                    tail, sid, size = b"", None, 0
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--follow", default="")
+    parser.add_argument("--until-pid", type=int, default=0)
+    args = parser.parse_args()
+
     final = None
     session_id: str | None = None
     announced = False
@@ -354,9 +432,27 @@ def main() -> None:
             live_emit(f"watch: tail -f {live_path!r}")
 
     try:
-        for raw in sys.stdin:
+        for raw in iter_ndjson_lines(args.follow or None, args.until_pid or None):
             line = raw.strip()
             if not line:
+                continue
+            if len(line.encode("utf-8")) > 4 * 1024 * 1024:
+                live_emit(f"… dropped {len(line)}-byte NDJSON line (session parse only)")
+                sid_m = None
+                for key in ("session_id", "thread_id"):
+                    needle = f'"{key}":'
+                    i = line.find(needle)
+                    if i < 0:
+                        continue
+                    rest = line[i + len(needle) : i + len(needle) + 80]
+                    if rest.lstrip().startswith('"'):
+                        sid_m = rest.lstrip()[1:].split('"', 1)[0]
+                        break
+                if sid_m and not session_id:
+                    session_id = sid_m
+                    print_session_id(session_id)
+                    announced = True
+                    append_registry("session", session_id)
                 continue
             try:
                 ev = json.loads(line)
