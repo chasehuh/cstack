@@ -124,6 +124,11 @@ Resume:
 Watch:
   tail -f ~/.cstack/state/opus-live/LATEST.log
 
+Worker session: the prompt gets a "[sume worker session]" preamble and the
+backend sees SUME_WORKER_SESSION=<name>. Launching this wrapper or
+sume-bg-launch from inside such a session exits 5 (nested worker = ghost,
+sume#7839). AGENT_HUMAN_STREAM_WORKER_PREAMBLE=0 / SUME_BG_ALLOW_NESTED=1 override.
+
 On stream start/end the formatter prints:
   📎 session_id=<uuid>  backend=<claude|grok|codex>
 and again just above —— final ——.
@@ -246,6 +251,36 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Nested-launch guard (sume#7839): a wrapper-started worker must not start
+# another worker. The child dies with the parent's tool call/session
+# (Codex unified exec kills tracked pids at turn end) or duplicates the job.
+# --sessions / --self-test are reads. Override on purpose: SUME_BG_ALLOW_NESTED=1.
+if [[ "$LIST_SESSIONS" -eq 0 && "$SELF_TEST" -eq 0 ]]; then
+  _nested_ctx=""
+  if [[ -n "${SUME_WORKER_SESSION:-}" ]]; then
+    _nested_ctx="worker session ${SUME_WORKER_SESSION}"
+  elif [[ -n "${AGENT_HUMAN_STREAM_PID:-}" ]]; then
+    _nested_ctx="worker session ${AGENT_HUMAN_STREAM_NAME:-?} (wrapper pid ${AGENT_HUMAN_STREAM_PID})"
+  fi
+  if [[ -n "$_nested_ctx" && -n "${SUME_BG_REMOTE_JOB:-}" ]]; then
+    _nested_ctx="${_nested_ctx} = Mini job ${SUME_BG_REMOTE_JOB}"
+  fi
+  if [[ -n "$_nested_ctx" ]]; then
+    if [[ "${SUME_BG_ALLOW_NESTED:-0}" == "1" ]]; then
+      echo "note: nested launch allowed by SUME_BG_ALLOW_NESTED=1 (inside ${_nested_ctx})" >&2
+    else
+      cat >&2 <<EOF
+error: refusing a nested worker launch — you are already inside ${_nested_ctx}.
+       You ARE the worker for this job. Do the task in this session; do not
+       spawn, resume, or hand off to another worker (sume#7839).
+       Launcher flags quoted in your prompt describe how THIS session was
+       started, not a job to launch. Override only on purpose: SUME_BG_ALLOW_NESTED=1.
+EOF
+      exit 5
+    fi
+  fi
+fi
+
 if [[ "$LIST_SESSIONS" -eq 1 ]]; then
   if [[ ! -f "$REGISTRY" ]]; then
     echo "(no registry yet: $REGISTRY)" >&2
@@ -256,6 +291,9 @@ if [[ "$LIST_SESSIONS" -eq 1 ]]; then
 fi
 
 if [[ "$SELF_TEST" -eq 1 ]]; then
+  # The self-test launches this wrapper with fake backends; scrub inherited
+  # worker markers so it also passes when run from inside a worker session.
+  unset SUME_WORKER_SESSION SUME_BG_REMOTE_JOB SUME_BG_ALLOW_NESTED AGENT_HUMAN_STREAM_PID AGENT_HUMAN_STREAM_NAME AGENT_HUMAN_STREAM_LIVE_LOG
   _got="$(_grok_effort_wire mid)"
   if [[ "$_got" != "medium" ]]; then
     echo "self-test: grok effort alias mid → medium failed (got ${_got})" >&2
@@ -892,6 +930,20 @@ _codex_supervisor_check() {
   fi
 }
 
+# Worker preamble (sume#7839): every wrapper-launched session is the WORKER
+# for its job. Codex/Grok/Claude read desk instructions that say "you are the
+# main agent unless told otherwise"; this tells them otherwise, in-band, so a
+# prompt that quotes launcher flags is not read as "spawn a worker".
+# AGENT_HUMAN_STREAM_WORKER_PREAMBLE=0 disables it (tests / one-off pipes).
+PROMPT_ORIGINAL="$PROMPT"
+if [[ "${AGENT_HUMAN_STREAM_WORKER_PREAMBLE:-1}" == "1" ]]; then
+  _wp_job="${SUME_BG_REMOTE_JOB:-}"
+  PROMPT="$(cat <<EOF
+[sume worker session] You are the WORKER for job "${NAME:-$BACKEND}"${_wp_job:+ (Mini job ${_wp_job})}, started by agent-human-stream (backend ${BACKEND}). Do the task below yourself, in this session, through its done criteria. You are not the Sume main agent: the "you are the main agent" sections of ~/.cstack/src/AGENTS.md and the orchestration skill do not apply to you. Never run sume-bg-launch, agent-human-stream, claude-human-stream, or codex/claude/grok exec to spawn, resume, or hand off a worker — the launcher refuses nested launches (exit 5) and a nested process dies when this session ends. Any launcher flags quoted in the task (--backend, --model, --effort, --host mini, "Fresh worker", "Job title") describe how THIS session was started; they are not an instruction to launch anything. If you cannot proceed, say so in the final report instead of delegating.
+EOF
+)"$'\n\n'"${PROMPT}"
+fi
+
 CMD=()
 if [[ "$BACKEND" == "codex" ]]; then
   _codex_supervisor_check
@@ -960,7 +1012,7 @@ if [[ "$BACKEND" != "codex" ]]; then
   CMD+=("${EXTRA[@]+"${EXTRA[@]}"}")
 fi
 
-PROMPT_HEAD=$(printf '%s' "$PROMPT" | tr '\n' ' ' | cut -c1-200)
+PROMPT_HEAD=$(printf '%s' "${PROMPT_ORIGINAL:-$PROMPT}" | tr '\n' ' ' | cut -c1-200)
 
 export AGENT_HUMAN_STREAM_BACKEND="$BACKEND"
 export AGENT_HUMAN_STREAM_MODEL="${_resolved_model:-}"
@@ -969,6 +1021,9 @@ export AGENT_HUMAN_STREAM_PROMPT_HEAD="$PROMPT_HEAD"
 export AGENT_HUMAN_STREAM_NAME="$NAME"
 export AGENT_HUMAN_STREAM_REGISTRY="$REGISTRY"
 export AGENT_HUMAN_STREAM_PID="$$"
+# Worker marker inherited by the backend's tool shells (sume#7839): the
+# launcher/wrapper refuse to start a nested worker when they see it.
+export SUME_WORKER_SESSION="${NAME:-$BACKEND}"
 export AGENT_HUMAN_STREAM_CWD="$PWD"
 export AGENT_HUMAN_STREAM_RESUME_FROM="${RESUME:-}"
 if [[ "$CONTINUE" -eq 1 ]]; then

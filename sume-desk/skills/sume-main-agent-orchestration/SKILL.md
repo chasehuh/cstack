@@ -42,9 +42,13 @@ When the main agent is **Codex or Claude Code**:
 - Use that harness's native background / subagent completion model instead
   of Cursor notification semantics.
 
-When Claude Code **is** the Opus worker (not the main agent): ignore all
-main-agent monitoring rules; just do the delegated task and emit the final
-report.
+When this harness **is** the worker (Claude Code, Codex, or Grok Build
+started by `agent-human-stream` / `sume-bg-launch`; env `SUME_WORKER_SESSION`
+or a `[sume worker session]` prompt preamble): ignore all main-agent rules;
+do the delegated task in this session and emit the final report. Never
+launch, resume, or hand off another worker from a worker — the launcher
+refuses nested launches (exit 5) and a nested process is killed when the
+session ends, which is the "Astra disconnect" ghost pattern (sume#7839).
 
 ## Core Role Split
 
@@ -965,6 +969,16 @@ GRAPHITE (hard lock) — Chase 2026-09-06: author owns land to origin/main:
   `SHOTS: <comment URL>`. Forbidden: `DEST: pass` without SHOTS. Forbidden:
   exiting after main land while dest deploy is still building.
 ```
+
+Prompt hygiene (sume#7839 — nested-worker ghosts): the prompt body is the
+**task**, not the launch command. Open it with the worker role
+(`You are the worker for <job-slug> (#N). Do the work in this session.`) and
+keep launcher flags on the `sume-bg-launch` command line only — never write
+`--backend … --model … --effort … --host mini`, "Fresh worker", or
+"Job title: …" inside the prompt. Astra/Codex reads such a header as "spawn
+this worker", launches a nested session, and exits; the nested session dies
+with it. The wrapper now prepends a `[sume worker session]` preamble and the
+launcher refuses nested launches, but the prompt must not fight them.
 
 When the BP has a PR train, also say:
 
