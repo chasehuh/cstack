@@ -130,6 +130,36 @@ The launcher reminds Mini workers of this requirement.
 
 Full recipe: [references/dest-verify-issue-shots.md](../sume-desk/skills/sume-main-agent-orchestration/references/dest-verify-issue-shots.md).
 
+## Nested launches are refused (sume#7839)
+
+The "Astra disconnect" pattern: a Mini worker read the launcher flags quoted
+in its prompt (`--backend codex --model gpt-6-astra --host mini`, "Fresh
+worker", "Job title") plus the desk's "you are the main agent unless told
+otherwise" and decided it was the main agent. It ran `sume-bg-launch` itself:
+
+- `--host local` from inside the worker → Codex's unified exec returned the
+  tool call early (`status: failed`, banner in stdout), the model reported
+  "Started …", the outer job exited rc=0 and Codex killed the tracked child
+  at turn end. The nested session has no `remote-jobs/` dir (its opus-live
+  stamp is not a job id → `--status` says unknown job).
+- `--host mini` from the Mini (ssh to itself) → a second, detached job on the
+  same clone; the outer job still exits rc=0 and the main agent relaunches.
+
+Guards now in place:
+
+- `agent-human-stream` exports `SUME_WORKER_SESSION=<name>` (plus the
+  existing `AGENT_HUMAN_STREAM_PID`); `sume-bg-remote run` exports
+  `SUME_BG_REMOTE_JOB=<job>`. Tool shells inherit them.
+- `sume-bg-launch` (launch only) and `agent-human-stream` exit **5** inside
+  such a session and tell the model it *is* the worker. `--status` /
+  `--jobs` / `--attach` / `--kill` still work. Override on purpose only:
+  `SUME_BG_ALLOW_NESTED=1`.
+- Every wrapper-launched prompt gets a `[sume worker session]` preamble;
+  `install.sh` appends "Sume worker mode (always on)" to `~/.codex/AGENTS.md`
+  and `~/.grok/AGENTS.md` (Claude Code inherits via the import).
+- Main-agent prompts: task only, no launcher flags in the body (SKILL.md
+  delegation checklist).
+
 ## Secrets
 
 - The Mini keeps its own logins. Nothing is forwarded (no agent forwarding,
@@ -165,4 +195,6 @@ runs offline (fake `ssh` / `scp` against a temp HOME standing in for the
 Mini; fake wrapper). `install.sh` runs it. Covers: local regression, host
 env / validation, fail-closed unreachable, prompt secret guard, mini launch
 → replica + registry, same-host resume, detached survival after attach
-death, `--status` / `--jobs` / `--attach` / `--kill`.
+death, `--status` / `--jobs` / `--attach` / `--kill`. Plus the nested-launch guard
+(exit 5 inside a worker session, control plane still allowed,
+`SUME_BG_ALLOW_NESTED=1` override) and the `SUME_BG_REMOTE_JOB` export.

@@ -5,6 +5,10 @@
 # wrapper is a fake that prints the same 📎 / —— final —— lines.
 set -euo pipefail
 
+# install.sh may run this from inside a worker session; the nested-launch
+# guard (test 10) is exercised explicitly, so scrub inherited markers here.
+unset SUME_WORKER_SESSION SUME_BG_REMOTE_JOB SUME_BG_ALLOW_NESTED AGENT_HUMAN_STREAM_PID AGENT_HUMAN_STREAM_NAME AGENT_HUMAN_STREAM_LIVE_LOG
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LAUNCH="$ROOT/sume-bg-launch.sh"
 REMOTE="$ROOT/sume-bg-remote.sh"
@@ -259,5 +263,36 @@ rc=$?
 set -e
 [[ $rc -eq 2 ]] || fail "--status without --host mini should exit 2"
 pass "control plane needs --host mini"
+
+# 10) nested-launch guard (sume#7839): inside a worker session a new launch is
+#     refused (exit 5) for both hosts; control-plane reads still work; the
+#     override env allows it on purpose; the Mini job id is named.
+set +e
+SUME_WORKER_SESSION=outer-job FAKE_WRAPPER_ARGV="$T/nested-local.txt" \
+  "$LAUNCH" --host local --backend grok --name nested --prompt-file "$PROMPT" >/dev/null 2>"$T/err10a.txt"
+rc=$?
+set -e
+[[ $rc -eq 5 ]] || fail "nested --host local launch should exit 5 (got $rc): $(cat "$T/err10a.txt")"
+grep -q 'refusing a nested worker launch' "$T/err10a.txt" || fail "nested guard message missing"
+grep -q 'worker session outer-job' "$T/err10a.txt" || fail "nested guard must name the worker session"
+[[ ! -f "$T/nested-local.txt" ]] || fail "nested --host local must not run the wrapper"
+set +e
+AGENT_HUMAN_STREAM_PID=4242 AGENT_HUMAN_STREAM_NAME=old-wrapper SUME_BG_REMOTE_JOB=20260101T000000Z-outer \
+  "$LAUNCH" --host mini --backend grok --name nested --prompt-file "$PROMPT" >/dev/null 2>"$T/err10b.txt"
+rc=$?
+set -e
+[[ $rc -eq 5 ]] || fail "nested --host mini launch should exit 5 (got $rc): $(cat "$T/err10b.txt")"
+grep -q 'Mini job 20260101T000000Z-outer' "$T/err10b.txt" || fail "nested guard must name the Mini job"
+! grep -q "sume-bg-remote prep --job .*nested" "$FAKE_SSH_LOG" || fail "nested --host mini must not reach ssh"
+SUME_WORKER_SESSION=outer-job "$LAUNCH" --host mini --status "$JOB3" | grep -q "job=$JOB3" || fail "control-plane --status must work inside a worker"
+SUME_WORKER_SESSION=outer-job SUME_BG_ALLOW_NESTED=1 FAKE_WRAPPER_ARGV="$T/nested-ok.txt" \
+  "$LAUNCH" --host local --backend grok --name nested-ok --prompt-file "$PROMPT" >/dev/null 2>"$T/err10c.txt"
+grep -q 'nested launch allowed' "$T/err10c.txt" || fail "override note missing"
+[[ -f "$T/nested-ok.txt" ]] || fail "SUME_BG_ALLOW_NESTED=1 must launch"
+pass "nested-launch guard"
+
+# 11) the Mini run path exports the job marker so the worker's shells see it.
+grep -q 'SUME_BG_REMOTE_JOB="\$JOB"' "$REMOTE" || fail "sume-bg-remote run must export SUME_BG_REMOTE_JOB"
+pass "remote run exports SUME_BG_REMOTE_JOB"
 
 echo "sume-bg-launch host tests: all ok"

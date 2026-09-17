@@ -163,6 +163,11 @@ case "$CMD" in
     PATH="$(desk_path)"
     export PATH
     export CSTACK_WORKER_HOST=local
+    # Mini: Claude Code keychain is locked over ssh (exit 36). File store.
+    export CLAUDE_SECURESTORAGE_CONFIG_DIR="${CLAUDE_SECURESTORAGE_CONFIG_DIR:-$HOME/.claude}"
+    # Job marker for the worker's tool shells: the launcher/wrapper refuse a
+    # nested launch inside this job and name it in the error (sume#7839).
+    export SUME_BG_REMOTE_JOB="$JOB"
     LAUNCH=$(launcher_bin)
     printf 'sume-bg-remote: job=%s host=%s pid=%s cwd=%s\n' "$JOB" "$HOSTNAME_SHORT" "$$" "$CWD"
     ARGS=(--host local --backend "$BACKEND" --name "$NAME" --prompt-file "$DIR/prompt.md")

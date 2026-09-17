@@ -168,6 +168,15 @@ append_entry "$HOME/.claude/CLAUDE.md" \
 append_entry "$HOME/.grok/AGENTS.md" \
   "$ROOT/sume-desk/grok-agents-snippet.md" \
   "sume-main-agent-orchestration/SKILL.md"
+# Worker-mode lock (sume#7839): a wrapper-started session is the worker and
+# must never spawn a nested worker. Codex + Grok entry points; Claude Code
+# inherits it through the ~/.codex/AGENTS.md import.
+append_entry "$HOME/.codex/AGENTS.md" \
+  "$ROOT/sume-desk/worker-mode-snippet.md" \
+  "## Sume worker mode (always on)"
+append_entry "$HOME/.grok/AGENTS.md" \
+  "$ROOT/sume-desk/worker-mode-snippet.md" \
+  "## Sume worker mode (always on)"
 
 # Existing snippets keep the old marker, so append the wait cook if missing.
 ensure_wait_hint() {

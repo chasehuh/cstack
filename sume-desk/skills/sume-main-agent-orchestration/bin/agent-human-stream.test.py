@@ -196,7 +196,7 @@ def test_fork_launchers() -> None:
         base = Path(tmp)
         env = os.environ.copy()
         for key in list(env):
-            if key.startswith(("AGENT_", "CLAUDE_", "GROK_")):
+            if key.startswith(("AGENT_", "CLAUDE_", "GROK_", "SUME_")):
                 env.pop(key)
         env.update(PATH=f"{tmp}:{env['PATH']}", TOKENMAXXING_REQUIRE_SUPERVISOR="0",
                    AGENT_HUMAN_STREAM_REGISTRY=str(base / "registry.jsonl"),
@@ -228,7 +228,10 @@ else:
             proc = subprocess.run(args, env=env, text=True, capture_output=True)
             assert proc.returncode == 0, proc.stderr
             argv = json.loads((base / "argv.json").read_text())
-            assert parent in argv and "Fork fixture prompt" in argv, argv
+            assert parent in argv, argv
+            # The wrapper prepends the worker preamble (sume#7839); the task text stays last.
+            assert any(a.startswith("[sume worker session]") and a.endswith("\n\nFork fixture prompt")
+                       for a in argv), argv
             if backend == "codex":
                 assert argv[:2] == ["exec", "fork"], argv
                 assert "resume" not in argv and "--resume" not in argv, argv
@@ -306,7 +309,7 @@ sys.exit(int(os.environ["STUB_RC"]))
         stub.chmod(0o755)
         env = os.environ.copy()
         for key in list(env):
-            if key.startswith(("AGENT_", "CLAUDE_", "GROK_")):
+            if key.startswith(("AGENT_", "CLAUDE_", "GROK_", "SUME_")):
                 env.pop(key)
         env.update(PATH=f"{tmp}:{env['PATH']}", TOKENMAXXING_REQUIRE_SUPERVISOR="0",
                    AGENT_HUMAN_STREAM_REGISTRY=str(base / "registry.jsonl"),
@@ -326,9 +329,77 @@ sys.exit(int(os.environ["STUB_RC"]))
         assert len(list((base / "live").glob("*.codex.jsonl"))) == 2
 
 
+def test_worker_preamble_and_nested_guard() -> None:
+    """Every launch gets the worker preamble; a launch from inside a worker exits 5 (sume#7839)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        env = os.environ.copy()
+        for key in list(env):
+            if key.startswith(("AGENT_", "CLAUDE_", "GROK_", "SUME_")):
+                env.pop(key)
+        env.update(PATH=f"{tmp}:{env['PATH']}", TOKENMAXXING_REQUIRE_SUPERVISOR="0",
+                   AGENT_HUMAN_STREAM_REGISTRY=str(base / "registry.jsonl"),
+                   AGENT_HUMAN_STREAM_LIVE_DIR=str(base / "live"),
+                   ARGV_FILE=str(base / "argv.json"))
+        stub = base / "codex"
+        stub.write_text("""#!/usr/bin/env python3
+import json, os, sys
+from pathlib import Path
+Path(os.environ['ARGV_FILE']).write_text(json.dumps(sys.argv[1:]))
+Path(os.environ['ENV_FILE']).write_text(json.dumps({k: v for k, v in os.environ.items() if k.startswith(('SUME_', 'AGENT_HUMAN_STREAM_PID'))}))
+print(json.dumps({'type': 'thread.started', 'thread_id': 'cccccccc-cccc-7ccc-8ccc-cccccccccccc'}))
+""")
+        stub.chmod(0o755)
+        env["ENV_FILE"] = str(base / "env.json")
+        wrapper = str(ROOT / "agent-human-stream.sh")
+        prompt = base / "prompt.md"
+        prompt.write_text("# Astra : preamble-test (#7839)\nWork in English. `--host mini`. Fresh worker.")
+        args = [wrapper, "--backend", "codex", "--name", "preamble-test", "--prompt-file", str(prompt), "--effort", "low"]
+
+        proc = subprocess.run(args, env=env, text=True, capture_output=True)
+        assert proc.returncode == 0, proc.stderr
+        argv = json.loads((base / "argv.json").read_text())
+        body = argv[-1]
+        assert body.startswith('[sume worker session] You are the WORKER for job "preamble-test"'), body
+        assert "Never run sume-bg-launch" in body, body
+        assert body.endswith("\n\n" + prompt.read_text()), body
+        seen = json.loads((base / "env.json").read_text())
+        assert seen.get("SUME_WORKER_SESSION") == "preamble-test", seen
+        assert seen.get("AGENT_HUMAN_STREAM_PID"), seen
+        rows = [json.loads(l) for l in (base / "registry.jsonl").read_text().splitlines() if l.strip()]
+        assert rows and rows[0]["prompt_head"].startswith("# Astra : preamble-test (#7839)"), rows[0]
+
+        # Opt-out keeps the prompt byte-identical.
+        proc = subprocess.run(args, env={**env, "AGENT_HUMAN_STREAM_WORKER_PREAMBLE": "0"},
+                              text=True, capture_output=True)
+        assert proc.returncode == 0, proc.stderr
+        assert json.loads((base / "argv.json").read_text())[-1] == prompt.read_text()
+
+        # Inside a worker session (marker inherited by its tool shells) the launch is refused.
+        (base / "argv.json").unlink()
+        for marker in ({"SUME_WORKER_SESSION": "outer-job"}, {"AGENT_HUMAN_STREAM_PID": "4242"}):
+            proc = subprocess.run(args, env={**env, **marker}, text=True, capture_output=True)
+            assert proc.returncode == 5, (proc.returncode, proc.stderr)
+            assert "refusing a nested worker launch" in proc.stderr, proc.stderr
+            assert not (base / "argv.json").exists(), "nested launch must not start the backend"
+        proc = subprocess.run(args, env={**env, "SUME_WORKER_SESSION": "outer-job",
+                                         "SUME_BG_REMOTE_JOB": "20260101T000000Z-outer"},
+                              text=True, capture_output=True)
+        assert proc.returncode == 5 and "Mini job 20260101T000000Z-outer" in proc.stderr, proc.stderr
+        # --sessions is a read; the override launches on purpose.
+        proc = subprocess.run([wrapper, "--sessions"], env={**env, "SUME_WORKER_SESSION": "outer-job"},
+                              text=True, capture_output=True)
+        assert proc.returncode == 0, proc.stderr
+        proc = subprocess.run(args, env={**env, "SUME_WORKER_SESSION": "outer-job", "SUME_BG_ALLOW_NESTED": "1"},
+                              text=True, capture_output=True)
+        assert proc.returncode == 0 and "nested launch allowed" in proc.stderr, proc.stderr
+        assert (base / "argv.json").exists()
+
+
 def main() -> None:
     test_codex_file_drain()
     test_fork_launchers()
+    test_worker_preamble_and_nested_guard()
     claude = run_stream(CLAUDE_STREAM, "claude")
     require(claude, "📎 session_id=11111111-1111-1111-1111-111111111111")
     require(claude, "backend=claude")

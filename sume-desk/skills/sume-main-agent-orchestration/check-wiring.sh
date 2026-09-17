@@ -107,6 +107,10 @@ grep -q "Cursor-only" "$HOME/.codex/AGENTS.md" \
   && ok "codex entry notes Cursor-only ignore" \
   || bad "codex entry missing Cursor-only ignore note"
 
+grep -q "Sume worker mode (always on)" "$HOME/.codex/AGENTS.md" \
+  && ok "codex entry has the worker-mode lock (sume#7839)" \
+  || bad "codex entry missing worker-mode lock: re-run install.sh"
+
 grep -q "codex/AGENTS.md" "$HOME/.claude/CLAUDE.md" \
   && ok "claude imports codex entry point" \
   || bad "claude entry point does not import ~/.codex/AGENTS.md"
