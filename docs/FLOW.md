@@ -70,8 +70,8 @@ duplicate the full SKILL into the `.mdc`.
 
 ## Layer 3 — local Claude + Codex (tokenmaxxing)
 
-`claude` and `codex` on this desk are **[tokenmaxxing](https://github.com/anaclumos/tokenmaxxing)**
-supervisors: shims in front of Claude Code / Codex CLI that pool
+`claude` and `codex` on this desk are **[tokenmaxxing](https://github.com/chasehuh/tokenmaxxing)**
+(our fork, run from `~/.local/src/tokenmaxxing`) supervisors: shims in front of Claude Code / Codex CLI that pool
 subscription accounts and swap near quota limits. `claude-human-stream` /
 `agent-human-stream --backend claude` uses that `claude`;
 `agent-human-stream --backend codex` uses that `codex`.
@@ -81,11 +81,14 @@ SoT: **`docs/TOKENMAXXING.md`**. Short version:
 
 - PATH: `~/.config/tokenmaxxing/bin` **before** the real CLIs
 - Claude pool (Chase machine): `chase@sume.com` + `dev@sume.com`, Max 20x
-- Codex pool (separate): active `dev@dooilabs.com` (Pro); swaps apply on
-  the **next** `codex` start, not mid-turn
+- Codex pool (separate): the shim picks the seat before each `codex exec`
+  launch and auto-resumes the same thread on a fresh account after a quota
+  refusal; exit 75 = parked (every account at its limit)
 - `tokenmaxxing doctor` / `status` before blaming the wrapper
 - Do not commit tokens or paste `accounts.json`
-- `./install.sh` does **not** install tokenmaxxing; it only checks if present
+- `./install.sh` does **not** install tokenmaxxing; it only checks that the
+  supervisor is present and comes from `chasehuh/tokenmaxxing` (never the
+  upstream npm package)
 
 ### Agent stream — one wrapper, three backends
 

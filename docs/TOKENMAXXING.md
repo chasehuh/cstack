@@ -12,8 +12,16 @@ The **Claude pool and the Codex pool are separate** (different accounts,
 different quotas, different `tokenmaxxing … --codex` commands). See
 § "Codex pool" below.
 
-Upstream: [anaclumos/tokenmaxxing](https://github.com/anaclumos/tokenmaxxing)
-(Bun global, `tokenmaxxing` on PATH). Subscription accounts only — not API keys.
+Repo (SoT for this desk): **[chasehuh/tokenmaxxing](https://github.com/chasehuh/tokenmaxxing)**,
+run as a **source checkout** at `~/.local/src/tokenmaxxing` (the shim in
+`~/.config/tokenmaxxing/bin` execs bun on that checkout's `src/main.ts`).
+It is a fork of [anaclumos/tokenmaxxing](https://github.com/anaclumos/tokenmaxxing)
+that carries the Grok Build pool and the managed-headless auto-swap
+(`docs/auto-swap-long-sessions.md` in that repo). Upstream has since moved
+to a per-session-store architecture (1.50.0: `switch`/`ls` removed, no grok
+supervisor); **never `bun add -g tokenmaxxing`** on this desk — the npm
+package is upstream and would shadow the fork with different semantics.
+Subscription accounts only — not API keys.
 
 If this file and `tokenmaxxing doctor` disagree, **doctor + live `status` win**.
 Fix this doc after.
@@ -85,10 +93,16 @@ issues, or chat.
   (or `agent-human-stream --backend claude …`).
 - Grok Build headless: `cd <repo> && agent-human-stream --backend grok …`.
   Do not set `ANTHROPIC_API_KEY` to bypass the pool.
-- If a worker dies with quota / 429 / “usage limit”: run `tokenmaxxing status`.
-  If the active account is exhausted and the other is fresh, `tokenmaxxing switch`.
-  If both parked tokens are expired, **stop** and tell Chase to `/login`
-  via `tokenmaxxing auth` — do not invent a second Claude install.
+- Headless workers (`claude -p`, `codex exec`, `grok -p`) are **managed jobs**
+  since the fork's managed-headless change: the shim gates the seat before
+  launch and, on a quota refusal, swaps and resumes the **same** session by
+  itself. A worker that still exits **75** is *parked* (every account at its
+  limit): its record under `~/.config/tokenmaxxing/jobs/` names the session
+  to resume once a reset passes. Only if the shim did **not** recover: run
+  `tokenmaxxing status`; if the active account is exhausted and another is
+  fresh, `tokenmaxxing switch`. If both parked tokens are expired, **stop**
+  and tell Chase to `/login` via `tokenmaxxing auth` — do not invent a second
+  Claude install.
 - `status --force` pings every account (tiny haiku). Use only when Chase
   asked; it spends quota.
 - Codex has its **own** tokenmaxxing pool (§ "Codex pool"). This desk’s
@@ -119,10 +133,11 @@ tokenmaxxing switch --codex dev@dooilabs.com
 
 Differences from the Claude pool:
 
-- A Codex swap applies on the **next `codex` start**. A running
-  `codex exec` keeps the credential it started with; it is not swapped
-  mid-turn the way Claude is. Finish or stop the worker, then relaunch
-  (`agent-human-stream --backend codex --resume <thread_id> "…"`).
+- A running `codex exec` keeps the credential it started with (codex
+  cannot hot-adopt). The fork's `codex` shim covers this: it picks the seat
+  **before** every `codex exec` launch, and when the server refuses a turn
+  on a quota limit it swaps and relaunches `codex exec resume <thread_id> ""`
+  on the fresh account — no manual relaunch. Exit 75 = parked (see above).
 - Codex has no `--effort` flag. The wrapper turns `--effort` into
   `-c model_reasoning_effort="…"` (`none|minimal|low|medium|high|xhigh`;
   `mid` → `medium`, `max`/`maximum` → `xhigh`). Omitted → `high`.
@@ -165,13 +180,18 @@ without the shim; `=0` bypasses on purpose.
 ## Install / repair (human)
 
 ```bash
-bun add -g tokenmaxxing
-tokenmaxxing init          # first account + supervisor + hooks
+git clone git@github.com:chasehuh/tokenmaxxing.git ~/.local/src/tokenmaxxing
+cd ~/.local/src/tokenmaxxing && bun install
+bun run src/main.ts init   # first account + supervisor + hooks; the shim runs THIS checkout
 # restart shell
 tokenmaxxing add           # second Max login, isolated
 tokenmaxxing doctor
 tokenmaxxing status
 ```
+
+Update = `git -C ~/.local/src/tokenmaxxing pull` (the shim runs the working
+tree; nothing to reinstall). Do **not** `bun add -g tokenmaxxing`: that is
+upstream's npm package, not this fork.
 
 LaunchAgent `com.tokenmaxxing.check` (≈180s) runs `tokenmaxxing check`
 and swaps when over threshold. Idle + last exit 0 is healthy.

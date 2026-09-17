@@ -26,7 +26,9 @@ explore stay on the laptop.
 ```bash
 # same pack as the laptop; the launcher + sume-bg-remote come from this checkout
 git clone git@github.com:chasehuh/cstack.git ~/.cstack/src && ~/.cstack/src/install.sh
-# log in once, on the Mini itself: gh auth login, gt auth, tokenmaxxing init (claude/codex), grok
+# tokenmaxxing = OUR fork as a source checkout (never `bun add -g tokenmaxxing`):
+git clone git@github.com:chasehuh/tokenmaxxing.git ~/.local/src/tokenmaxxing && (cd ~/.local/src/tokenmaxxing && bun install && bun run src/main.ts init)
+# log in once, on the Mini itself: gh auth login, gt auth, tokenmaxxing init --codex, grok
 # Remote Login on (System Settings → General → Sharing) — key auth, no password
 ```
 

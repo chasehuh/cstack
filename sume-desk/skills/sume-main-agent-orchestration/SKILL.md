@@ -234,8 +234,11 @@ When the main agent needs an **Opus** worker/subagent:
 
 1. Run **Claude Code CLI** on the local machine (`claude` on PATH). On the
    Sume desk that binary is the **tokenmaxxing supervisor**
-   (`~/.config/tokenmaxxing/bin/claude`), which wraps npm
+   (`~/.config/tokenmaxxing/bin/claude`, our fork `chasehuh/tokenmaxxing`
+   run from `~/.local/src/tokenmaxxing`), which wraps npm
    `@anthropic-ai/claude-code` and swaps Chase/dev Max accounts near quota.
+   Headless workers are managed jobs: seat picked at launch, auto-swap +
+   resume on a quota refusal, exit 75 = parked.
    Desk write-up: `chasehuh/cstack` → `docs/TOKENMAXXING.md`.
    `tokenmaxxing doctor` must keep the supervisor ahead of the real CLI.
    Do not set `ANTHROPIC_API_KEY` to bypass the pool.

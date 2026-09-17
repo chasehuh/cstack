@@ -199,13 +199,39 @@ fi
 
 echo ""
 echo "== tokenmaxxing (local Claude supervisor) =="
+TM_REPO="chasehuh/tokenmaxxing"
 if command -v tokenmaxxing >/dev/null 2>&1; then
   tokenmaxxing doctor || true
   echo "Claude workers use tokenmaxxing — see docs/TOKENMAXXING.md"
+  # The desk runs OUR fork as a source checkout: the shim execs bun on
+  # <checkout>/src/main.ts. An npm-global install (upstream anaclumos, a
+  # different architecture since 1.50.0) must never shadow it.
+  TM_SHIM="$HOME/.config/tokenmaxxing/bin/tokenmaxxing"
+  TM_ENTRY=""
+  if [ -f "$TM_SHIM" ]; then
+    TM_ENTRY="$(sed -n 's/.*"\([^"]*src\/main\.ts\)".*/\1/p' "$TM_SHIM" | head -n 1)"
+  fi
+  if [ -n "$TM_ENTRY" ] && [ -f "$TM_ENTRY" ]; then
+    TM_DIR="$(cd "$(dirname "$TM_ENTRY")/.." && pwd)"
+    TM_ORIGIN="$(git -C "$TM_DIR" remote get-url origin 2>/dev/null || true)"
+    case "$TM_ORIGIN" in
+      *"$TM_REPO"*) echo "tokenmaxxing source: $TM_DIR ($TM_REPO)" ;;
+      *)
+        echo "WARNING: tokenmaxxing runs from $TM_DIR (origin: ${TM_ORIGIN:-none}),"
+        echo "         not $TM_REPO. Repoint: git -C $TM_DIR remote set-url origin git@github.com:$TM_REPO.git"
+        ;;
+    esac
+  else
+    echo "WARNING: tokenmaxxing shim does not run a source checkout (npm global?)."
+    echo "         Expected our fork: git clone git@github.com:$TM_REPO.git ~/.local/src/tokenmaxxing"
+    echo "         then: cd ~/.local/src/tokenmaxxing && bun install && bun run src/main.ts init"
+  fi
 else
   echo "NOTE: tokenmaxxing not on PATH. Opus/Fable expect the supervisor"
   echo "      (~/.config/tokenmaxxing/bin ahead of real claude)."
-  echo "      Install: bun add -g tokenmaxxing && tokenmaxxing init"
+  echo "      Install (OUR fork, never 'bun add -g tokenmaxxing'):"
+  echo "        git clone git@github.com:$TM_REPO.git ~/.local/src/tokenmaxxing"
+  echo "        cd ~/.local/src/tokenmaxxing && bun install && bun run src/main.ts init"
   echo "      Docs: $ROOT/docs/TOKENMAXXING.md"
 fi
 
