@@ -23,7 +23,9 @@ git clone git@github.com:chasehuh/cstack.git ~/.cstack/src
 ```
 
 Requires: `git`, `gh`, Graphite `gt`, and **tokenmaxxing-wrapped**
-`claude` on PATH for Opus/Fable workers (see `docs/TOKENMAXXING.md`).
+`claude` on PATH for Opus/Fable workers — our fork
+[chasehuh/tokenmaxxing](https://github.com/chasehuh/tokenmaxxing) as a source
+checkout, never the upstream npm package (see `docs/TOKENMAXXING.md`).
 Codex workers (`agent-human-stream --backend codex`) use the
 tokenmaxxing-wrapped `codex` (separate Codex pool, same doc).
 Grok Build (`grok` on PATH) uses the same skills via `~/.grok/skills`.

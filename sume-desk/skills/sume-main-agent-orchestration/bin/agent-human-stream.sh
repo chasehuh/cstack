@@ -114,7 +114,9 @@ Codex (tokenmaxxing `codex` on this desk; Codex pool, not the Claude pool):
   Default --effort when omitted: high (AGENT_HUMAN_STREAM_EFFORT_CODEX).
   --model/-m pass through. Claude-only --verbose / --permission-mode /
   --output-format / --always-approve are dropped with a note.
-  Session swap (tokenmaxxing switch --codex) applies on the NEXT codex start.
+  The tokenmaxxing codex shim (chasehuh/tokenmaxxing fork) picks the seat before
+  each launch and auto-resumes the thread on a fresh account after a quota
+  refusal; exit 75 = parked (every account at its limit, resume later).
 
 Resume:
   --resume <uuid>   | AGENT_RESUME_SESSION / CLAUDE_RESUME_SESSION / GROK_RESUME_SESSION
