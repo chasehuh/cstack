@@ -42,9 +42,13 @@ When the main agent is **Codex or Claude Code**:
 - Use that harness's native background / subagent completion model instead
   of Cursor notification semantics.
 
-When Claude Code **is** the Opus worker (not the main agent): ignore all
-main-agent monitoring rules; just do the delegated task and emit the final
-report.
+When this harness **is** the worker (Claude Code, Codex, or Grok Build
+started by `agent-human-stream` / `sume-bg-launch`; env `SUME_WORKER_SESSION`
+or a `[sume worker session]` prompt preamble): ignore all main-agent rules;
+do the delegated task in this session and emit the final report. Never
+launch, resume, or hand off another worker from a worker — the launcher
+refuses nested launches (exit 5) and a nested process is killed when the
+session ends, which is the "Astra disconnect" ghost pattern (sume#7839).
 
 ## Core Role Split
 
@@ -184,6 +188,8 @@ asks). Composer remains explore-only.
 |------|-------|--------------------------------------|
 | Opus (default author: design / RCA / mega-issue / **code → MQ enqueue**) | Claude Opus via Claude Code subscription | **`claude-human-stream`**. Do **not** use Cursor `Task` with `claude-opus-*`. |
 | Fable (author only if Chase named Fable) | Claude Fable via same wrapper | **`claude-human-stream --model fable`**. Same Graphite enqueue path as Opus. |
+| Opus 5.5 (author when Chase names Opus 5.5) | Claude Opus 5.5 (`claude-opus-5-5`, sume#8221) via same wrapper | **`agent-human-stream --model claude-opus-5-5`** (desk alias `--model opus-5.5`). Same Graphite enqueue path as Opus. |
+| GPT-6 Sol (author only if Chase named GPT-6 Sol / Codex) | OpenAI GPT-6 Sol (`gpt-6-sol`, sume#8221) via Codex | **`agent-human-stream --model gpt-6-sol`** (auto → codex). |
 | Grok (**MQ land babysit / deploy / ops**; author only if Chase said Grok) | Grok Build CLI (`grok` on PATH) | **`agent-human-stream --backend grok`**. Do **not** use Cursor `Task` with `cursor-grok-*`. |
 | Composer (explore only) | Composer | Cursor `Task` with `composer-*` / `explore` |
 
@@ -292,6 +298,8 @@ and **Codex** (`codex exec --json`):
 agent-human-stream --name <job-slug> "…" --model opus          # auto → claude
 agent-human-stream --backend grok --name <job-slug> "…"        # Grok Build
 agent-human-stream --backend codex --name <job-slug> "…"       # Codex (only if Chase named Codex)
+agent-human-stream --name <job-slug> "…" --model claude-opus-5-5   # Opus 5.5 (alias --model opus-5.5)
+agent-human-stream --name <job-slug> "…" --model gpt-6-sol         # GPT-6 Sol (auto → codex)
 agent-human-stream --resume <uuid> "Follow-up …"               # backend from registry
 ```
 
@@ -965,6 +973,16 @@ GRAPHITE (hard lock) — Chase 2026-09-06: author owns land to origin/main:
   `SHOTS: <comment URL>`. Forbidden: `DEST: pass` without SHOTS. Forbidden:
   exiting after main land while dest deploy is still building.
 ```
+
+Prompt hygiene (sume#7839 — nested-worker ghosts): the prompt body is the
+**task**, not the launch command. Open it with the worker role
+(`You are the worker for <job-slug> (#N). Do the work in this session.`) and
+keep launcher flags on the `sume-bg-launch` command line only — never write
+`--backend … --model … --effort … --host mini`, "Fresh worker", or
+"Job title: …" inside the prompt. Astra/Codex reads such a header as "spawn
+this worker", launches a nested session, and exits; the nested session dies
+with it. The wrapper now prepends a `[sume worker session]` preamble and the
+launcher refuses nested launches, but the prompt must not fight them.
 
 When the BP has a PR train, also say:
 

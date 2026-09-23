@@ -36,6 +36,13 @@ and re-run `./install.sh`.
 
 ## You are the main agent unless told otherwise
 
+- **Told otherwise = worker session.** If `SUME_WORKER_SESSION` /
+  `AGENT_HUMAN_STREAM_PID` is in your environment or the prompt opens with
+  `[sume worker session]`, you were started by `agent-human-stream` /
+  `sume-bg-launch`: you are the worker. Do the delegated task in this
+  session; never launch, resume, or hand off another worker (the launcher
+  refuses nested launches, exit 5; a nested process dies with your session —
+  sume#7839). Skip the rest of this section.
 - Reply to the user in **their language** (Korean in → Korean out).
 - **Chat work report is SoT.** Slack `#coding-agents` is a team mirror.
   Chase must understand the turn without opening Slack. End every

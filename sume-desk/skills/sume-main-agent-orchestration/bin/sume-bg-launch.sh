@@ -18,6 +18,14 @@
 #   Control plane: --attach <job> | --status <job> | --kill <job> | --jobs
 #   Docs: docs/MINI-WORKER-HOST.md
 #
+# Nested launches are refused (sume#7839): when this runs inside a worker
+# session that agent-human-stream started (env SUME_WORKER_SESSION or
+# AGENT_HUMAN_STREAM_PID), a new launch exits 5. A worker that spawns another
+# worker is the ghost pattern — the child is killed when the parent's tool
+# call/session ends (--host local) or duplicates the job on the Mini
+# (--host mini from the Mini). Control-plane reads still work.
+# Override on purpose only: SUME_BG_ALLOW_NESTED=1.
+#
 # Shell: description = "Grok : <job-slug> (#N)" (or "Codex : …"), block_until_ms = 0.
 # After spawn: read the terminal once for 📎 session_id= or exit_code.
 set -euo pipefail
@@ -299,6 +307,52 @@ mini_attach() {
   echo "host: mini job $JOB exited rc=$rc (replica: $LIVE_LOG)" >&2
   exit "$rc"
 }
+
+
+# ---------------------------------------------------------------------------
+# Nested-launch guard (sume#7839)
+# ---------------------------------------------------------------------------
+
+# Non-empty when this process runs inside a wrapper-started worker session.
+# Only the wrapper's session markers count: `sume-bg-remote run` exports
+# SUME_BG_REMOTE_JOB before it starts the wrapper, so that alone is not nested.
+nested_worker_context() {
+  local ctx=""
+  if [[ -n "${SUME_WORKER_SESSION:-}" ]]; then
+    ctx="worker session ${SUME_WORKER_SESSION}"
+  elif [[ -n "${AGENT_HUMAN_STREAM_PID:-}" ]]; then
+    ctx="worker session ${AGENT_HUMAN_STREAM_NAME:-?} (wrapper pid ${AGENT_HUMAN_STREAM_PID})"
+  fi
+  if [[ -n "$ctx" && -n "${SUME_BG_REMOTE_JOB:-}" ]]; then
+    ctx="${ctx} = Mini job ${SUME_BG_REMOTE_JOB}"
+  fi
+  printf '%s' "$ctx"
+}
+
+refuse_nested_launch() {
+  local ctx
+  ctx=$(nested_worker_context)
+  [[ -n "$ctx" ]] || return 0
+  if [[ "${SUME_BG_ALLOW_NESTED:-0}" == "1" ]]; then
+    echo "note: nested launch allowed by SUME_BG_ALLOW_NESTED=1 (inside $ctx)" >&2
+    return 0
+  fi
+  cat >&2 <<EOF
+error: refusing a nested worker launch — you are already inside $ctx.
+       You ARE the worker for this job. Do the task in this session; do not
+       spawn, resume, or hand off to another worker. A nested --host local
+       worker is killed when your tool call/session ends, and a nested
+       --host mini launch duplicates the job on the Mini (sume#7839).
+       Launcher flags quoted in your prompt (--backend/--model/--host mini,
+       "Fresh worker", "Job title") describe how THIS session was started.
+       Override only on purpose: SUME_BG_ALLOW_NESTED=1.
+EOF
+  exit 5
+}
+
+if [[ "$ACTION" == "launch" ]]; then
+  refuse_nested_launch
+fi
 
 if [[ "$ACTION" != "launch" ]]; then
   if [[ "$HOST" != "mini" ]]; then
