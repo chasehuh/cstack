@@ -87,6 +87,8 @@ Auto backend (default):
   --model grok*  → grok
   --model gpt-*|o3*|o4*|codex* → codex
   --model opus|fable|sonnet|haiku|claude* → claude
+  First-party ids (sume#8221): --model claude-opus-5-5 (alias opus-5.5) → claude,
+  --model gpt-6-sol → codex. Both pass through to the CLI verbatim.
   --resume <uuid> uses the last backend recorded for that session
   otherwise → claude (Opus/Fable path unchanged)
 
@@ -495,6 +497,47 @@ EOF
     rm -rf "$_tmp"
     exit 1
   fi
+  # First-party ids (sume#8221): claude-opus-5-5 reaches claude verbatim, the
+  # desk alias opus-5.5 is rewritten to it, and gpt-6-sol auto-routes to codex.
+  CLAUDE_ARGV_FILE="$_tmp/claude-argv-opus55.txt" \
+    AGENT_HUMAN_STREAM_BACKEND=auto \
+    AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg.jsonl" \
+    AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live" \
+    PATH="$_tmp:$PATH" \
+    "$SOURCE" --name self-test-opus55 "self-test opus 5.5" --model claude-opus-5-5 --effort low >/dev/null
+  if ! grep -qxF -- 'claude-opus-5-5' "$_tmp/claude-argv-opus55.txt"; then
+    echo "self-test: claude argv missing --model claude-opus-5-5:" >&2
+    cat "$_tmp/claude-argv-opus55.txt" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  CLAUDE_ARGV_FILE="$_tmp/claude-argv-opus55-alias.txt" \
+    AGENT_HUMAN_STREAM_BACKEND=auto \
+    AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg.jsonl" \
+    AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live" \
+    PATH="$_tmp:$PATH" \
+    "$SOURCE" --name self-test-opus55-alias "self-test opus 5.5 alias" --model opus-5.5 --effort low >/dev/null
+  if ! grep -qxF -- 'claude-opus-5-5' "$_tmp/claude-argv-opus55-alias.txt" || grep -qxF -- 'opus-5.5' "$_tmp/claude-argv-opus55-alias.txt"; then
+    echo "self-test: --model opus-5.5 was not rewritten to claude-opus-5-5:" >&2
+    cat "$_tmp/claude-argv-opus55-alias.txt" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  CODEX_ARGV_FILE="$_tmp/codex-argv-gpt6sol.txt" \
+    AGENT_HUMAN_STREAM_BACKEND=auto \
+    AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg.jsonl" \
+    AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live" \
+    TOKENMAXXING_REQUIRE_SUPERVISOR=0 \
+    PATH="$_tmp:$PATH" \
+    "$SOURCE" --name self-test-gpt6sol "self-test gpt-6 sol" --model gpt-6-sol --effort high >/dev/null
+  for _want in exec -m gpt-6-sol 'model_reasoning_effort="high"'; do
+    if ! grep -qxF -- "$_want" "$_tmp/codex-argv-gpt6sol.txt"; then
+      echo "self-test: codex argv for gpt-6-sol missing ${_want}:" >&2
+      cat "$_tmp/codex-argv-gpt6sol.txt" >&2
+      rm -rf "$_tmp"
+      exit 1
+    fi
+  done
   # Codex auto-detect from --model gpt-* + resume → `codex exec resume <id> "…"`.
   CODEX_ARGV_FILE="$_tmp/codex-argv-resume.txt" \
     AGENT_HUMAN_STREAM_BACKEND=auto \
@@ -743,6 +786,16 @@ elif [[ "$BACKEND" == "codex" && "$_has_effort" -eq 0 ]]; then
   echo "effort: ${_effort} (default for codex code lane; research → --effort medium)" >&2
 fi
 
+# Claude desk model aliases (sume#8221): `opus-5.5` / `opus5.5` / `opus-5-5`
+# name Claude Opus 5.5, whose Claude Code id is `claude-opus-5-5`. Every
+# other spelling passes through untouched (`opus`, `fable`, `claude-*`).
+_claude_model_wire() {
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+    opus-5.5|opus5.5|opus-5-5|claude-opus-5.5) echo "claude-opus-5-5" ;;
+    *) echo "$1" ;;
+  esac
+}
+
 # Claude: rewrite desk aliases so --effort max/xhigh reach the CLI as-is.
 if [[ "$BACKEND" == "claude" && ${#EXTRA[@]} -gt 0 ]]; then
   _filtered=()
@@ -750,6 +803,29 @@ if [[ "$BACKEND" == "claude" && ${#EXTRA[@]} -gt 0 ]]; then
   while [[ $_i -lt ${#EXTRA[@]} ]]; do
     _a="${EXTRA[$_i]}"
     case "$_a" in
+      --model|-m)
+        _val="${EXTRA[$((_i + 1))]:-}"
+        _wire="$(_claude_model_wire "$_val")"
+        if [[ "$_wire" != "$_val" ]]; then
+          echo "note: mapping claude --model ${_val} → ${_wire}" >&2
+        fi
+        _filtered+=("$_a" "$_wire")
+        _resolved_model="$_wire"
+        _i=$((_i + 2))
+        continue
+        ;;
+      --model=*|-m=*)
+        _flag="${_a%%=*}"
+        _val="${_a#*=}"
+        _wire="$(_claude_model_wire "$_val")"
+        if [[ "$_wire" != "$_val" ]]; then
+          echo "note: mapping claude --model ${_val} → ${_wire}" >&2
+        fi
+        _filtered+=("${_flag}=${_wire}")
+        _resolved_model="$_wire"
+        _i=$((_i + 1))
+        continue
+        ;;
       --effort|--reasoning-effort)
         _val="${EXTRA[$((_i + 1))]:-}"
         _wire="$(_claude_effort_wire "$_val")"
