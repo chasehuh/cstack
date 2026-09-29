@@ -183,6 +183,11 @@ Guards now in place:
 
 Do **not** iCloud / Syncthing / SSHFS any of these. One writer per file.
 
+## Cron (no laptop)
+
+One named job on a schedule: `sume-cron-job --name <slug>` from the Mini's
+crontab calls `sume-bg-remote start` locally. See [MINI-CRON.md](MINI-CRON.md).
+
 ## Non-goals
 
 Cursor IDE on the Mini, custom RPC / sockets, sharing dirty worktrees,

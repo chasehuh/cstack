@@ -123,6 +123,8 @@ ln -sfn "$BIN/sume-bg-launch.sh" "$HOME/.local/bin/sume-bg-launch"
 # Mini side of --host mini; installed on every machine so laptop and Mini
 # run the same checkout (docs/MINI-WORKER-HOST.md).
 ln -sfn "$BIN/sume-bg-remote.sh" "$HOME/.local/bin/sume-bg-remote"
+# Mini crontab entry point (docs/MINI-CRON.md).
+ln -sfn "$BIN/sume-cron-job.sh" "$HOME/.local/bin/sume-cron-job"
 ln -sfn "$GTBIN/cstack-clone.sh" "$HOME/.local/bin/cstack-clone"
 ln -sfn "$GTBIN/cstack-clone-rm.sh" "$HOME/.local/bin/cstack-clone-rm"
 ln -sfn "$GTBIN/cstack-mirror-sync.sh" "$HOME/.local/bin/cstack-mirror-sync"
@@ -131,6 +133,7 @@ chmod +x "$BIN/agent-human-stream.sh" "$BIN/agent-human-stream.py" \
   "$BIN/agent-human-stream.test.py" \
   "$BIN/claude-human-stream.sh" "$BIN/claude-human-stream.py" \
   "$BIN/sume-bg-launch.sh" "$BIN/sume-bg-remote.sh" "$BIN/sume-bg-launch.test.sh" \
+  "$BIN/sume-cron-job.sh" "$BIN/sume-cron-job.test.sh" \
   "$HOME/.agents/skills/sume-main-agent-orchestration/check-wiring.sh" \
   "$HOME/.agents/skills/sume-gt-mq/install-symlinks.sh" \
   "$GTBIN/cstack-clone.sh" "$GTBIN/cstack-clone-rm.sh" \
@@ -199,6 +202,8 @@ fi
 if [ -x "$BIN/sume-bg-launch.test.sh" ] && [ "${CSTACK_SKIP_HOST_TESTS:-0}" != "1" ]; then
   echo "== sume-bg-launch host routing (offline, no Mini) =="
   "$BIN/sume-bg-launch.test.sh" || echo "NOTE: sume-bg-launch host tests failed (CSTACK_SKIP_HOST_TESTS=1 to skip)"
+  echo "== sume-cron-job (offline) =="
+  "$BIN/sume-cron-job.test.sh" || echo "NOTE: sume-cron-job tests failed (CSTACK_SKIP_HOST_TESTS=1 to skip)"
 fi
 
 if [ -x "$HOME/.agents/skills/sume-main-agent-orchestration/check-wiring.sh" ]; then
