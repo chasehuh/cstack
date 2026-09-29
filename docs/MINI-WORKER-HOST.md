@@ -57,6 +57,10 @@ sume-bg-launch --host mini --backend claude --name <job-slug> \
   --prompt-file /tmp/sume-opus-prompts/<job-slug>.md -- --model fable --effort high
 ```
 
+Other Claude picks go after `--` the same way: `--model claude-opus-5-5`
+(alias `opus-5.5`) or `--model claude-sonnet-5-5` (alias `sonnet-5.5`).
+With no `--model`, a Claude launch stays on the desk default (Opus).
+
 What happens:
 
 1. `ssh mini sume-bg-remote prep` — reachability probe + job dir. Unreachable
