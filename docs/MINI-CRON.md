@@ -28,6 +28,9 @@ on the Mini. There is no second agent runner, no ssh-to-self, no attach.
 - Other backend / flags: `… --name <slug> --backend grok -- --effort high`.
   With no flags after `--` and `--backend claude` (default) it passes
   `--model claude-opus-5-5 --effort medium`.
+  To run a slug on Claude Sonnet 5.5 instead, name it after `--`:
+  `… --name <slug> -- --model claude-sonnet-5-5 --effort medium`
+  (desk alias `sonnet-5.5`). The default stays Opus 5.5.
 - `--cwd <dir>` sets where the job starts (default `$HOME`).
 - cron runs `/bin/sh`; `sume-cron-job` sets `SHELL` to the user's login shell
   so the worker gets the same zsh login PATH as an ssh launch.

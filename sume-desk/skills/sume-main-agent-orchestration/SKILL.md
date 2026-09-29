@@ -189,6 +189,7 @@ asks). Composer remains explore-only.
 | Opus (default author: design / RCA / mega-issue / **code → MQ enqueue**) | Claude Opus via Claude Code subscription | **`claude-human-stream`**. Do **not** use Cursor `Task` with `claude-opus-*`. |
 | Fable (author only if Chase named Fable) | Claude Fable via same wrapper | **`claude-human-stream --model fable`**. Same Graphite enqueue path as Opus. |
 | Opus 5.5 (author when Chase names Opus 5.5) | Claude Opus 5.5 (`claude-opus-5-5`, sume#8221) via same wrapper | **`agent-human-stream --model claude-opus-5-5`** (desk alias `--model opus-5.5`). Same Graphite enqueue path as Opus. |
+| Sonnet 5.5 (author only if Chase named Sonnet 5.5) | Claude Sonnet 5.5 (`claude-sonnet-5-5`) via same wrapper | **`agent-human-stream --model claude-sonnet-5-5`** (desk alias `--model sonnet-5.5`; bare `sonnet` is the Claude CLI's own alias, not rewritten). Same Graphite enqueue path as Opus. |
 | GPT-6 Sol (author only if Chase named GPT-6 Sol / Codex) | OpenAI GPT-6 Sol (`gpt-6-sol`, sume#8221) via Codex | **`agent-human-stream --model gpt-6-sol`** (auto → codex). |
 | Grok (**MQ land babysit / deploy / ops**; author only if Chase said Grok) | Grok Build CLI (`grok` on PATH) | **`agent-human-stream --backend grok`**. Do **not** use Cursor `Task` with `cursor-grok-*`. |
 | Composer (explore only) | Composer | Cursor `Task` with `composer-*` / `explore` |
@@ -299,6 +300,7 @@ agent-human-stream --name <job-slug> "…" --model opus          # auto → clau
 agent-human-stream --backend grok --name <job-slug> "…"        # Grok Build
 agent-human-stream --backend codex --name <job-slug> "…"       # Codex (only if Chase named Codex)
 agent-human-stream --name <job-slug> "…" --model claude-opus-5-5   # Opus 5.5 (alias --model opus-5.5)
+agent-human-stream --name <job-slug> "…" --model claude-sonnet-5-5 # Sonnet 5.5 (alias --model sonnet-5.5)
 agent-human-stream --name <job-slug> "…" --model gpt-6-sol         # GPT-6 Sol (auto → codex)
 agent-human-stream --resume <uuid> "Follow-up …"               # backend from registry
 ```

@@ -6,6 +6,10 @@
 #     --prompt-file /tmp/sume-grok-prompts/job.md -- --effort high
 #   sume-bg-launch --backend codex --name job-slug \
 #     --prompt-file /tmp/sume-codex-prompts/job.md -- --model gpt-5.5
+#   sume-bg-launch --backend claude --name job-slug \
+#     --prompt-file /tmp/sume-opus-prompts/job.md -- --model claude-sonnet-5-5
+#   (Claude picks: claude-opus-5-5 / opus-5.5, claude-sonnet-5-5 / sonnet-5.5;
+#    no --model keeps the desk default.)
 #
 # Worker host (cstack#10):
 #   --host local   run the wrapper here (default when CSTACK_WORKER_HOST unset)

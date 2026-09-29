@@ -88,7 +88,9 @@ Auto backend (default):
   --model gpt-*|o3*|o4*|codex* → codex
   --model opus|fable|sonnet|haiku|claude* → claude
   First-party ids (sume#8221): --model claude-opus-5-5 (alias opus-5.5) → claude,
-  --model gpt-6-sol → codex. Both pass through to the CLI verbatim.
+  --model claude-sonnet-5-5 (alias sonnet-5.5) → claude,
+  --model gpt-6-sol → codex. All pass through to the CLI verbatim.
+  Bare `sonnet` / `opus` stay the Claude CLI's own aliases (not rewritten).
   --resume <uuid> uses the last backend recorded for that session
   otherwise → claude (Opus/Fable path unchanged)
 
@@ -523,6 +525,44 @@ EOF
     rm -rf "$_tmp"
     exit 1
   fi
+  # Sonnet 5.5 (same shape as Opus 5.5): claude-sonnet-5-5 verbatim, the desk
+  # alias sonnet-5.5 rewritten to it, and bare `sonnet` left to the Claude CLI.
+  CLAUDE_ARGV_FILE="$_tmp/claude-argv-sonnet55.txt" \
+    AGENT_HUMAN_STREAM_BACKEND=auto \
+    AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg.jsonl" \
+    AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live" \
+    PATH="$_tmp:$PATH" \
+    "$SOURCE" --name self-test-sonnet55 "self-test sonnet 5.5" --model claude-sonnet-5-5 --effort low >/dev/null
+  if ! grep -qxF -- 'claude-sonnet-5-5' "$_tmp/claude-argv-sonnet55.txt"; then
+    echo "self-test: claude argv missing --model claude-sonnet-5-5:" >&2
+    cat "$_tmp/claude-argv-sonnet55.txt" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  CLAUDE_ARGV_FILE="$_tmp/claude-argv-sonnet55-alias.txt" \
+    AGENT_HUMAN_STREAM_BACKEND=auto \
+    AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg.jsonl" \
+    AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live" \
+    PATH="$_tmp:$PATH" \
+    "$SOURCE" --name self-test-sonnet55-alias "self-test sonnet 5.5 alias" --model sonnet-5.5 --effort low >/dev/null
+  if ! grep -qxF -- 'claude-sonnet-5-5' "$_tmp/claude-argv-sonnet55-alias.txt" || grep -qxF -- 'sonnet-5.5' "$_tmp/claude-argv-sonnet55-alias.txt"; then
+    echo "self-test: --model sonnet-5.5 was not rewritten to claude-sonnet-5-5:" >&2
+    cat "$_tmp/claude-argv-sonnet55-alias.txt" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  CLAUDE_ARGV_FILE="$_tmp/claude-argv-sonnet.txt" \
+    AGENT_HUMAN_STREAM_BACKEND=auto \
+    AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg.jsonl" \
+    AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live" \
+    PATH="$_tmp:$PATH" \
+    "$SOURCE" --name self-test-sonnet "self-test sonnet bare" --model sonnet --effort low >/dev/null
+  if ! grep -qxF -- 'sonnet' "$_tmp/claude-argv-sonnet.txt" || grep -qxF -- 'claude-sonnet-5-5' "$_tmp/claude-argv-sonnet.txt"; then
+    echo "self-test: bare --model sonnet must pass through unchanged:" >&2
+    cat "$_tmp/claude-argv-sonnet.txt" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
   CODEX_ARGV_FILE="$_tmp/codex-argv-gpt6sol.txt" \
     AGENT_HUMAN_STREAM_BACKEND=auto \
     AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg.jsonl" \
@@ -787,11 +827,13 @@ elif [[ "$BACKEND" == "codex" && "$_has_effort" -eq 0 ]]; then
 fi
 
 # Claude desk model aliases (sume#8221): `opus-5.5` / `opus5.5` / `opus-5-5`
-# name Claude Opus 5.5, whose Claude Code id is `claude-opus-5-5`. Every
-# other spelling passes through untouched (`opus`, `fable`, `claude-*`).
+# name Claude Opus 5.5 (`claude-opus-5-5`); `sonnet-5.5` / `sonnet5.5` /
+# `sonnet-5-5` name Claude Sonnet 5.5 (`claude-sonnet-5-5`). Every other
+# spelling passes through untouched (`opus`, `sonnet`, `fable`, `claude-*`).
 _claude_model_wire() {
   case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
     opus-5.5|opus5.5|opus-5-5|claude-opus-5.5) echo "claude-opus-5-5" ;;
+    sonnet-5.5|sonnet5.5|sonnet-5-5|claude-sonnet-5.5) echo "claude-sonnet-5-5" ;;
     *) echo "$1" ;;
   esac
 }
