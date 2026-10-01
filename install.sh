@@ -214,12 +214,15 @@ fi
 echo ""
 echo "== tokenmaxxing (local Claude supervisor) =="
 if command -v tokenmaxxing >/dev/null 2>&1; then
+  # Desk build: pinned 1.10.0 + cstack patch (no-op unless 1.10.0 is installed).
+  "$DESK/tokenmaxxing/install-tokenmaxxing-desk.sh" --if-pinned \
+    || echo "WARN: tokenmaxxing desk patch not applied - see docs/TOKENMAXXING.md"
   tokenmaxxing doctor || true
   echo "Claude workers use tokenmaxxing — see docs/TOKENMAXXING.md"
 else
   echo "NOTE: tokenmaxxing not on PATH. Opus/Fable expect the supervisor"
   echo "      (~/.config/tokenmaxxing/bin ahead of real claude)."
-  echo "      Install: bun add -g tokenmaxxing && tokenmaxxing init"
+  echo "      Install: bun add -g tokenmaxxing@1.10.0 && tokenmaxxing init"
   echo "      Docs: $ROOT/docs/TOKENMAXXING.md"
 fi
 

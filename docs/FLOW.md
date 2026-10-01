@@ -80,12 +80,16 @@ Local Grok Build (`grok` CLI, no pool) uses `agent-human-stream --backend grok`.
 SoT: **`docs/TOKENMAXXING.md`**. Short version:
 
 - PATH: `~/.config/tokenmaxxing/bin` **before** the real CLIs
-- Claude pool (Chase machine): `chase@sume.com` + `dev@sume.com`, Max 20x
+- Claude pool: several Max 20x accounts (`tokenmaxxing ls`); desk build =
+  upstream 1.10.0 pinned + `sume-desk/tokenmaxxing/` patch
 - Codex pool (separate): active `dev@dooilabs.com` (Pro); swaps apply on
   the **next** `codex` start, not mid-turn
 - `tokenmaxxing doctor` / `status` before blaming the wrapper
 - Do not commit tokens or paste `accounts.json`
-- `./install.sh` does **not** install tokenmaxxing; it only checks if present
+- `./install.sh` does **not** install tokenmaxxing; it re-applies the desk
+  patch when 1.10.0 is present and runs `doctor`
+- Mac Mini SSH workers read `~/.claude/.credentials.json` (keychain locked
+  over SSH); the live file mirror keeps it in step (`--mirror`)
 
 ### Agent stream — one wrapper, three backends
 
