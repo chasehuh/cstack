@@ -1,0 +1,1509 @@
+diff --git a/src/cli/auth.ts b/src/cli/auth.ts
+index 3af808b..c8a2e87 100644
+--- a/src/cli/auth.ts
++++ b/src/cli/auth.ts
+@@ -100,6 +100,7 @@ async function reauthOne(target: Account): Promise<boolean> {
+     account.subscriptionType = blob.claudeAiOauth.subscriptionType;
+     account.rateLimitTier = blob.claudeAiOauth.rateLimitTier;
+     account.needsReauth = false;
++    delete account.lastRefreshRejected;
+     if (sampled) {
+       account.lastUsage = { fiveHour: sampled.session, sevenDay: sampled.weekAll };
+       account.lastUsageAt = Date.now();
+diff --git a/src/cli/check.ts b/src/cli/check.ts
+index 16281d5..feb92bf 100644
+--- a/src/cli/check.ts
++++ b/src/cli/check.ts
+@@ -2,11 +2,13 @@ import { CHECK_DELAY_FLOOR_MS, checkDelayMs, evaluateAndMaybeSwap } from "../lib
+ import { readOAuthAccount } from "../lib/claudejson.ts";
+ import { log } from "../lib/log.ts";
+ import { loadConfig, loadNextCheckDueAt, saveNextCheckDueAt } from "../lib/state.ts";
++import { syncLiveMirror } from "../lib/livemirror.ts";
+ import { c, fmtReset } from "./render.ts";
+ 
+ const TICK_SLACK_MS = CHECK_DELAY_FLOOR_MS / 2;
+ 
+ export async function cmdCheck(args: string[] = []): Promise<number> {
++  await syncLiveMirror();
+   const now = Date.now();
+   const dueAt = args.includes("--if-due") ? loadNextCheckDueAt(now) : null;
+   if (dueAt != null && now + TICK_SLACK_MS < dueAt) {
+diff --git a/src/cli/doctor.ts b/src/cli/doctor.ts
+index 41505c3..0ac6726 100644
+--- a/src/cli/doctor.ts
++++ b/src/cli/doctor.ts
+@@ -1,18 +1,32 @@
+-import { existsSync, readFileSync } from "node:fs";
++import { existsSync, readFileSync, statSync } from "node:fs";
++import { join } from "node:path";
+ import { verifyRealClaude } from "../lib/claudebin.ts";
+ import { checkSettings, installedBin } from "../lib/settings.ts";
+ import { checkTimerHealthy, findClaudeShadowers, isBinDirAhead, shellRcPath, timerActivationHint } from "../lib/install.ts";
+ import { paths } from "../lib/paths.ts";
+ import { loadAccounts, loadConfig } from "../lib/state.ts";
+-import { readItem, liveTarget, parkedTarget } from "../lib/credstore.ts";
+-import { isAccessTokenExpiring, fetchTokenOrg } from "../lib/oauth.ts";
+-import { CredentialBlobSchema, type RolesResponse } from "../lib/types.ts";
+-import { c } from "./render.ts";
++import { readItem, readMirror, liveTarget, parkedTarget, parkedTargetsInKeychain } from "../lib/credstore.ts";
++import { keychainStatus } from "../lib/keychain.ts";
++import { isAccessTokenExpiring, isDeadCredential, isRevokedAccessToken, fetchTokenOrg } from "../lib/oauth.ts";
++import { installMinRemainingMs } from "../lib/swap.ts";
++import { CredentialBlobSchema, type Account, type OAuthCreds } from "../lib/types.ts";
++import { describeSide } from "./syncfile.ts";
++import { c, fmtExpiry } from "./render.ts";
+ 
+-async function blobOrg(raw: string): Promise<RolesResponse | null> {
+-  const creds = CredentialBlobSchema.parse(JSON.parse(raw)).claudeAiOauth;
+-  if (isAccessTokenExpiring(creds)) return null;
+-  return fetchTokenOrg(creds.accessToken);
++function parseCreds(raw: string): OAuthCreds | null {
++  const parsed = CredentialBlobSchema.safeParse((() => { try { return JSON.parse(raw); } catch { return null; } })());
++  return parsed.success ? parsed.data.claudeAiOauth : null;
++}
++
++function rejectedNote(a: Account): string {
++  const r = a.lastRefreshRejected;
++  return r ? `refresh_rejected (HTTP ${r.status}${r.code ? ` ${r.code}` : ""}) ${new Date(r.at).toISOString().slice(0, 16)}Z` : "";
++}
++
++function deskPatchLine(): string | null {
++  const stamp = join(import.meta.dir, "..", "..", ".cstack-desk-patch");
++  if (!existsSync(stamp)) return null;
++  return readFileSync(stamp, "utf8").split("\n")[0]?.trim() || null;
+ }
+ 
+ export async function cmdDoctor(): Promise<number> {
+@@ -38,34 +52,88 @@ export async function cmdDoctor(): Promise<number> {
+   check(idx.accounts.length > 0, "at least one account in the pool", "run `tokenmaxxing init`");
+   check(!!idx.activeAccountUuid, "an active account is set");
+ 
+-  const live = await readItem(liveTarget());
++  const desk = deskPatchLine();
++  if (desk) console.log(c.dim(`  - ${desk}`));
++  const warn = (label: string) => console.log(`${c.yellow("⚠")} ${label}`);
++  const now = Date.now();
++
++  const target = liveTarget();
++  const kcState = parkedTargetsInKeychain() ? keychainStatus() : { ok: true, exitCode: 0 };
++  const parkedReadable = !parkedTargetsInKeychain() || kcState.ok;
++  if (parkedTargetsInKeychain() && !kcState.ok) {
++    warn(`login keychain not readable from this session (security exit ${kcState.exitCode ?? "?"}: SSH or detached) - parked credentials and switching need the console session or the GUI check timer`);
++  }
++  if (target.kind === "mirror") {
++    const m = await readMirror(target);
++    let mode: number | null = null;
++    try { mode = statSync(target.path).mode & 0o777; } catch { }
++    check(mode != null, `${target.path} present (the live store for SSH workers)`, "run `tokenmaxxing sync-file` from the console session");
++    if (mode != null) check(mode === 0o600, `${target.path} is mode 0600`, `chmod 600 ${target.path}`);
++    if (m.file.state === "dead-cleared") check(false, `${target.path} holds a usable credential`, "claude cleared it after a failed refresh - run `tokenmaxxing switch` from the console session");
++    else if (m.file.raw != null) console.log(c.dim(`  - ${target.path}: ${describeSide(m.file, now)}`));
++    if (m.keychain.state !== "unavailable") {
++      const same = m.keychain.hash != null && m.keychain.hash === m.file.hash;
++      check(same, "live keychain item and the credentials file hold the same credential", `keychain: ${describeSide(m.keychain, now)}, file: ${describeSide(m.file, now)} - run \`tokenmaxxing sync-file\``);
++    }
++  }
++
++  const live = await readItem(target);
+   check(!!live, "live credential readable");
+ 
+   const active = idx.accounts.find((a) => a.accountUuid === idx.activeAccountUuid);
+-  if (live && active) {
+-    try {
+-      const org = await blobOrg(live);
+-      if (org) check(org.organization_uuid === active.organizationUuid, `live credential identity matches active (${active.email})`, `token belongs to ${org.organization_name} - run \`tokenmaxxing switch\``);
+-      else console.log(c.dim(`  - live credential identity unverifiable (access token expired)`));
+-    } catch (e) {
+-      check(false, `live credential identity matches active (${active.email})`, (e instanceof Error ? e.message : String(e)).slice(0, 100));
++  const liveCreds = live ? parseCreds(live) : null;
++  if (live && active && liveCreds) {
++    if (isDeadCredential(liveCreds)) {
++      check(false, `live credential usable (${active.email})`, "claude cleared it after a failed refresh - run `tokenmaxxing switch`");
++    } else if (!liveCreds.expiresAt) {
++      warn(`live credential has no expiresAt - its owner is unverifiable and it must not be parked back; \`tokenmaxxing switch\` replaces it`);
++    } else if (isAccessTokenExpiring(liveCreds)) {
++      console.log(c.dim(`  - live access token expired - identity unverifiable until claude refreshes it`));
++    } else {
++      try {
++        const org = await fetchTokenOrg(liveCreds.accessToken);
++        check(org.organization_uuid === active.organizationUuid, `live access token verifies as active (${active.email})`, `token belongs to ${org.organization_name} - run \`tokenmaxxing switch\``);
++      } catch (e) {
++        check(false, `live access token verifies as active (${active.email})`, isRevokedAccessToken(e) ? "rejected (HTTP 401): revoked - run `tokenmaxxing switch`" : (e instanceof Error ? e.message : String(e)).slice(0, 100));
++      }
+     }
+   }
+ 
++  const switchable: string[] = [];
+   for (const a of idx.accounts) {
++    if (!parkedReadable) {
++      if (a.lastRefreshRejected) warn(`${a.email}: last ${rejectedNote(a)}`);
++      if (a.needsReauth) check(false, `${a.email} needs re-auth`, `run \`tokenmaxxing auth ${a.label}\` to re-login`);
++      continue;
++    }
+     const parked = await readItem(parkedTarget(a.keychainItem));
+     check(!!parked, `parked credential present for ${a.email}`, `run \`tokenmaxxing auth ${a.label}\``);
+-    if (parked) {
+-      try {
+-        const org = await blobOrg(parked);
+-        if (org) check(org.organization_uuid === a.organizationUuid, `parked credential identity matches ${a.email}`, `token belongs to ${org.organization_name} - run \`tokenmaxxing auth ${a.label}\``);
+-        else console.log(c.dim(`  - ${a.email} identity unverifiable (access token expired)`));
+-      } catch (e) {
+-        check(false, `parked credential identity matches ${a.email}`, (e instanceof Error ? e.message : String(e)).slice(0, 100));
++    const creds = parked ? parseCreds(parked) : null;
++    if (parked && !creds) check(false, `parked credential parses for ${a.email}`, `run \`tokenmaxxing auth ${a.label}\``);
++    if (creds) {
++      if (isDeadCredential(creds)) {
++        check(false, `${a.email}: parked credential usable`, `cleared after a failed refresh - run \`tokenmaxxing auth ${a.label}\``);
++      } else if (!isAccessTokenExpiring(creds, installMinRemainingMs(a))) {
++        try {
++          const org = await fetchTokenOrg(creds.accessToken);
++          const ok = org.organization_uuid === a.organizationUuid;
++          check(ok, `${a.email}: parked access token verifies (switchable without refresh, expires ${fmtExpiry(creds.expiresAt, now)})`, `token belongs to ${org.organization_name} - run \`tokenmaxxing auth ${a.label}\``);
++          if (ok && !a.needsReauth && a.accountUuid !== idx.activeAccountUuid) switchable.push(a.label);
++        } catch (e) {
++          check(false, `${a.email}: parked access token verifies`, isRevokedAccessToken(e) ? "rejected (HTTP 401) - a switch to it must refresh first" : (e instanceof Error ? e.message : String(e)).slice(0, 100));
++        }
++        if (a.lastRefreshRejected) warn(`${a.email}: last ${rejectedNote(a)} - fine until the access token expires, then \`tokenmaxxing auth ${a.label}\``);
++      } else if (a.lastRefreshRejected) {
++        check(false, `${a.email}: parked access expired and last ${rejectedNote(a)}`, `run \`tokenmaxxing auth ${a.label}\``);
++      } else {
++        console.log(c.dim(`  - ${a.email}: parked access expired, refresh not verified - a switch to it must refresh first`));
+       }
+     }
+     if (a.needsReauth) check(false, `${a.email} needs re-auth`, `run \`tokenmaxxing auth ${a.label}\` to re-login`);
+   }
++  if (parkedReadable && idx.accounts.length > 1) {
++    console.log(switchable.length > 0 ? c.dim(`  - switchable now without a refresh: ${switchable.join(", ")}`) : c.yellow("⚠ no parked account is switchable without a refresh - a switch depends on the token endpoint"));
++  }
+ 
+   const cfg = loadConfig();
+   check(!!cfg.claudeBin && existsSync(cfg.claudeBin), "real claude binary resolved", "set claudeBin in config.json");
+diff --git a/src/cli/render.ts b/src/cli/render.ts
+index 2950e28..80f5b76 100644
+--- a/src/cli/render.ts
++++ b/src/cli/render.ts
+@@ -53,6 +53,12 @@ export function bar(pct: number, width = 16): string {
+   return `${paint(body)} ${label}`;
+ }
+ 
++export function fmtExpiry(epochMs: number, now = Date.now()): string {
++  const dmin = Math.round((epochMs - now) / 60_000);
++  if (dmin <= 0) return "expired";
++  return dmin >= 60 ? `in ${Math.floor(dmin / 60)}h${dmin % 60}m` : `in ${dmin}m`;
++}
++
+ export function fmtReset(epochMs: number | null | undefined, now = Date.now()): string {
+   if (epochMs == null) return "";
+   const dsec = Math.round((epochMs - now) / 1000);
+diff --git a/src/cli/status.ts b/src/cli/status.ts
+index 7474b75..31178d8 100644
+--- a/src/cli/status.ts
++++ b/src/cli/status.ts
+@@ -3,6 +3,7 @@ import { loadAccounts, loadConfig, loadUsage, loadModelUsage, saveAccounts } fro
+ import { readOAuthAccount } from "../lib/claudejson.ts";
+ import { ensureLiveTokenFresh, probeActiveUsage, probeParkedUsage, type SampleOutcome } from "../lib/sample.ts";
+ import { withLock } from "../lib/lock.ts";
++import { syncLiveMirror } from "../lib/livemirror.ts";
+ import { codexPaths, paths } from "../lib/paths.ts";
+ import { earliestReset, effectiveBars, isExhausted, nextWeeklyReset, terminalBars } from "../lib/picker.ts";
+ import { loadCodexAccounts, saveCodexAccounts } from "../lib/codexstate.ts";
+@@ -14,6 +15,7 @@ import { gatedFamilies, type FullUsage } from "../lib/usage.ts";
+ import type { Account, Config, CodexWindow, UsageWindow } from "../lib/types.ts";
+ 
+ export async function cmdStatus(force = false, preRender?: () => void): Promise<number> {
++  await syncLiveMirror();
+   let idx = loadAccounts();
+   const cfg = loadConfig();
+   const now = Date.now();
+diff --git a/src/cli/switch.ts b/src/cli/switch.ts
+index b57ee38..6e4cf4e 100644
+--- a/src/cli/switch.ts
++++ b/src/cli/switch.ts
+@@ -2,14 +2,28 @@ import { withLock } from "../lib/lock.ts";
+ import { paths } from "../lib/paths.ts";
+ import { loadAccounts, loadConfig, loadUsage } from "../lib/state.ts";
+ import { readOAuthAccount } from "../lib/claudejson.ts";
+-import { performSwap } from "../lib/swap.ts";
++import { isSkippableSwapError, performSwap, SwapCandidateError, type SwapOutcome } from "../lib/swap.ts";
++import { KeychainUnavailableError } from "../lib/keychain.ts";
++import { liveCredentialDead } from "../lib/credstore.ts";
+ import { currentWins, effectiveBars, pickBest, pickEarliestReset, weeklyExpiry, type PickCtx } from "../lib/picker.ts";
+-import { InvalidGrantError } from "../lib/oauth.ts";
++import { InvalidGrantError, RefreshRejectedError } from "../lib/oauth.ts";
+ import { gatedFamilies } from "../lib/usage.ts";
+ import { findAccount } from "./rename.ts";
+-import { c, fmtReset } from "./render.ts";
++import { c, fmtExpiry, fmtReset } from "./render.ts";
+ import type { Account } from "../lib/types.ts";
+ 
++function swapFailure(target: Account, e: unknown): string | null {
++  if (e instanceof InvalidGrantError) return `${target.label}'s refresh token is dead - run \`tokenmaxxing auth ${target.label}\``;
++  if (e instanceof RefreshRejectedError) return `${target.label}: access token expired and refresh_rejected (HTTP ${e.status}${e.code ? ` ${e.code}` : ""}) - run \`tokenmaxxing auth ${target.label}\``;
++  if (e instanceof SwapCandidateError) return e.message;
++  return null;
++}
++
++function swapNote(out: SwapOutcome, now = Date.now()): string {
++  if (out.refreshed || out.expiresAt == null) return "";
++  return c.dim(` (unexpired access token installed, refresh skipped; expires ${fmtExpiry(out.expiresAt, now)})`);
++}
++
+ export async function cmdSwitch(selector?: string): Promise<number> {
+   const idx0 = loadAccounts();
+   if (idx0.accounts.length < 2) {
+@@ -26,21 +40,28 @@ export async function cmdSwitch(selector?: string): Promise<number> {
+     const claimedOrg = liveClaim?.organizationUuid ?? null;
+     const drifted = claimed != null && claimed !== idx.activeAccountUuid;
+ 
++    const liveDead = await liveCredentialDead().catch(() => false);
++    if (liveDead) console.error(c.yellow("the live credential was cleared after a failed refresh - moving off it"));
+     const swapTo = async (target: Account): Promise<number> => {
++      let out: SwapOutcome;
+       try {
+-        await performSwap(target);
++        out = await performSwap(target, { retryRejected: true });
+       } catch (e) {
+-        if (e instanceof InvalidGrantError) { console.error(c.red(`${target.label}'s refresh token is dead - run \`tokenmaxxing auth ${target.label}\``)); return 1; }
++        if (e instanceof KeychainUnavailableError) { console.error(c.red(e.message)); return 1; }
++        const why = swapFailure(target, e);
++        if (why != null) { console.error(c.red(why)); return 1; }
+         throw e;
+       }
+-      console.log(`${c.green("↻")} switched to ${c.bold(target.label)}`);
++      console.log(`${c.green("↻")} switched to ${c.bold(target.label)}${swapNote(out)}`);
+       return 0;
+     };
++    const rejected = new Set<string>();
++    const usable = (accounts: Account[]): Account[] => accounts.filter((a) => !rejected.has(a.accountUuid));
+ 
+     if (selector) {
+       const target = findAccount(idx.accounts, selector);
+       if (!target) { console.error(c.red(`no account matches "${selector}"`)); return 1; }
+-      if (target.accountUuid === idx.activeAccountUuid && !drifted) { console.log(`already on ${c.bold(target.label)}`); return 0; }
++      if (target.accountUuid === idx.activeAccountUuid && !drifted && !liveDead) { console.log(`already on ${c.bold(target.label)}`); return 0; }
+       if (target.needsReauth) { console.error(c.red(`${target.label} needs re-auth - run \`tokenmaxxing auth ${target.label}\``)); return 1; }
+       return swapTo(target);
+     }
+@@ -59,39 +80,40 @@ export async function cmdSwitch(selector?: string): Promise<number> {
+         (claimedOrg != null ? cur.accounts.find((a) => a.organizationUuid === claimedOrg) : null) ??
+         cur.accounts.find((a) => a.accountUuid === cur.activeAccountUuid) ??
+         null;
+-      if (active != null && currentWins(active, cur.accounts, everyone)) {
++      if (active != null && !liveDead && currentWins(active, usable(cur.accounts), everyone)) {
+         if (drifted) return swapTo(active);
+         const expiry = weeklyExpiry(active, now);
+         const why = Number.isFinite(expiry) ? ` (weekly ${fmtReset(expiry, now)})` : "";
+         console.log(`already on the best account: ${c.bold(active.label)}${why}`);
+         return 0;
+       }
+-      const best = pickBest(cur.accounts, { ...everyone, currentAccountUuid: active?.accountUuid ?? null });
++      const best = pickBest(usable(cur.accounts), { ...everyone, currentAccountUuid: liveDead ? null : (active?.accountUuid ?? null) });
+       if (!best) break;
++      let out: SwapOutcome;
+       try {
+-        await performSwap(best);
++        out = await performSwap(best);
+       } catch (e) {
+-        if (e instanceof InvalidGrantError) {
+-          console.error(c.red(`${best.label}'s refresh token is dead - run \`tokenmaxxing auth ${best.label}\``));
+-          continue;
+-        }
+-        throw e;
++        if (e instanceof KeychainUnavailableError) { console.error(c.red(e.message)); return 1; }
++        if (!isSkippableSwapError(e)) throw e;
++        rejected.add(best.accountUuid);
++        console.error(c.yellow(`skipping ${swapFailure(best, e) ?? best.label}`));
++        continue;
+       }
+-      console.log(`${c.green("↻")} switched to ${c.bold(best.label)}`);
++      console.log(`${c.green("↻")} switched to ${c.bold(best.label)}${swapNote(out)}`);
+       return 0;
+     }
+ 
+     const fresh = loadAccounts();
+-    const earliest = pickEarliestReset(fresh.accounts, everyoneIn(fresh.accounts));
++    const earliest = pickEarliestReset(usable(fresh.accounts), everyoneIn(fresh.accounts));
+     if (!earliest) {
+-      const reauth = fresh.accounts.filter((a) => a.needsReauth).map((a) => a.label);
+-      if (reauth.length > 0) { console.error(c.yellow(`no switchable account - reauth needed (run \`tokenmaxxing auth --all\`): ${reauth.join(", ")}`)); return 1; }
++      const reauth = fresh.accounts.filter((a) => a.needsReauth || rejected.has(a.accountUuid)).map((a) => a.label);
++      if (reauth.length > 0) { console.error(c.yellow(`no switchable account - reauth needed (run \`tokenmaxxing auth <account>\`): ${reauth.join(", ")}`)); return 1; }
+       const freshActive = fresh.accounts.find((a) => a.accountUuid === fresh.activeAccountUuid) ?? null;
+       if (drifted && freshActive) return swapTo(freshActive);
+       console.log(c.yellow("all accounts at their limit with unknown reset times (unparsed reset clocks? see tokenmaxxing.log) - staying put"));
+       return 0;
+     }
+-    const reauth = fresh.accounts.filter((a) => a.needsReauth).map((a) => a.label);
++    const reauth = fresh.accounts.filter((a) => a.needsReauth || rejected.has(a.accountUuid)).map((a) => a.label);
+     const reauthNote = reauth.length ? ` - re-auth needed: ${reauth.join(", ")}` : "";
+     if (earliest.account.accountUuid === fresh.activeAccountUuid && !drifted) {
+       const msg = earliest.availableAt <= now
+diff --git a/src/cli/syncfile.ts b/src/cli/syncfile.ts
+new file mode 100644
+index 0000000..0863645
+--- /dev/null
++++ b/src/cli/syncfile.ts
+@@ -0,0 +1,48 @@
++import { liveFileMirrorEnabled, liveMirrorFile } from "../lib/paths.ts";
++import { syncLiveMirror } from "../lib/livemirror.ts";
++import type { MirrorSide } from "../lib/credstore.ts";
++import { c, fmtExpiry } from "./render.ts";
++
++export function describeSide(side: MirrorSide, now = Date.now()): string {
++  if (side.state === "valid" && side.expiresAt != null) return `access valid, expires ${fmtExpiry(side.expiresAt, now)}`;
++  if (side.state === "expired") return side.expiresAt == null ? "expiresAt missing (treated as expired)" : "access expired";
++  return side.state;
++}
++
++export async function cmdSyncFile(): Promise<number> {
++  if (process.platform !== "darwin" || !liveFileMirrorEnabled()) {
++    console.error(c.yellow("the live file mirror is off - it applies on macOS when ~/.config/tokenmaxxing/live-file-mirror exists or TOKENMAXXING_LIVE_FILE_MIRROR=1"));
++    return 1;
++  }
++  const out = await syncLiveMirror();
++  if (out == null || out.read == null) {
++    console.error(c.red("could not take claude's credential-refresh lock (a refresh is mid-flight) - retry shortly"));
++    return 1;
++  }
++  const file = liveMirrorFile();
++  const { keychain, file: f, current } = out.read;
++  switch (out.action) {
++    case "keychain-unavailable":
++      console.log(c.yellow(`login keychain not readable from this session (SSH): ${file} is the live store here (${describeSide(f)}); the GUI check timer copies it to the keychain`));
++      return f.raw == null ? 1 : 0;
++    case "no-credential":
++      console.error(c.red(`no live credential in the keychain or ${file}`));
++      return 1;
++    case "keychain->file":
++      console.log(`${c.green("↻")} copied the live credential keychain -> ${file} (${describeSide(current ?? f)})`);
++      return 0;
++    case "file->keychain":
++      console.log(`${c.green("↻")} copied the live credential ${file} -> keychain (${describeSide(current ?? keychain)})`);
++      return 0;
++    case "owner-unverified":
++      console.log(c.yellow(`keychain (${describeSide(keychain)}) and ${file} (${describeSide(f)}) differ and the newer one did not verify as the active account - not copied; run \`tokenmaxxing doctor\``));
++      return 1;
++    case "none":
++      if (keychain.hash != null && keychain.hash === f.hash) {
++        console.log(`${c.green("✓")} keychain and ${file} hold the same live credential (${describeSide(keychain)})`);
++        return 0;
++      }
++      console.log(c.yellow(`keychain (${describeSide(keychain)}) and ${file} (${describeSide(f)}) differ and neither is usable - run \`tokenmaxxing switch\``));
++      return 1;
++  }
++}
+diff --git a/src/lib/credstore.ts b/src/lib/credstore.ts
+index 29947e1..5aba4b3 100644
+--- a/src/lib/credstore.ts
++++ b/src/lib/credstore.ts
+@@ -1,14 +1,19 @@
+-import { mkdirSync, readFileSync, unlinkSync } from "node:fs";
++import { existsSync, mkdirSync, readFileSync, unlinkSync } from "node:fs";
+ import { dirname, join } from "node:path";
+ import { z } from "zod";
+ import { writeFileAtomic } from "./atomic.ts";
+ import * as kc from "./keychain.ts";
+-import { credDir, keychain as kcNames, namespacedCredService, paths } from "./paths.ts";
+-import { CredentialBlobSchema } from "./types.ts";
++import { credDir, keychain as kcNames, liveFileMirrorEnabled, liveMirrorFile, namespacedCredService, paths } from "./paths.ts";
++import { CredentialBlobSchema, type OAuthCreds } from "./types.ts";
++import { fetchTokenOrg } from "./oauth.ts";
++import { readOAuthAccount } from "./claudejson.ts";
++
++const KeychainTargetSchema = z.object({ service: z.string(), account: z.string() });
+ 
+ const CredTargetSchema = z.discriminatedUnion("kind", [
+   z.object({ kind: z.literal("keychain"), service: z.string(), account: z.string() }),
+   z.object({ kind: z.literal("file"), path: z.string() }),
++  z.object({ kind: z.literal("mirror"), keychain: KeychainTargetSchema, path: z.string() }),
+ ]);
+ export type CredTarget = z.infer<typeof CredTargetSchema>;
+ 
+@@ -20,24 +25,38 @@ function isEnoent(e: unknown): boolean {
+   return e instanceof Error && "code" in e && e.code === "ENOENT";
+ }
+ 
+-export async function readItem(t: CredTarget): Promise<string | null> {
+-  if (t.kind === "keychain") return kc.readItem(t);
++function readFileItem(path: string): string | null {
+   try {
+-    return readFileSync(t.path, "utf8");
++    return readFileSync(path, "utf8");
+   } catch (e) {
+     if (isEnoent(e)) return null;
+     throw e;
+   }
+ }
+ 
++function writeFileItem(path: string, secret: string): void {
++  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
++  writeFileAtomic(path, secret, 0o600);
++}
++
++export async function readItem(t: CredTarget): Promise<string | null> {
++  if (t.kind === "keychain") return kc.readItem(t);
++  if (t.kind === "mirror") return (await readMirror(t)).current?.raw ?? null;
++  return readFileItem(t.path);
++}
++
+ export async function writeItem(t: CredTarget, secret: string): Promise<void> {
+   if (t.kind === "keychain") return kc.writeItem(t, secret);
+-  mkdirSync(dirname(t.path), { recursive: true, mode: 0o700 });
+-  writeFileAtomic(t.path, secret, 0o600);
++  if (t.kind === "mirror") return writeMirror(t, secret);
++  writeFileItem(t.path, secret);
+ }
+ 
+ export async function deleteItem(t: CredTarget): Promise<boolean> {
+   if (t.kind === "keychain") return kc.deleteItem(t);
++  if (t.kind === "mirror") {
++    const k = kc.keychainStatus().ok ? await kc.deleteItem(t.keychain) : false;
++    return (await deleteItem({ kind: "file", path: t.path })) || k;
++  }
+   try {
+     unlinkSync(t.path);
+     return true;
+@@ -48,9 +67,155 @@ export async function deleteItem(t: CredTarget): Promise<boolean> {
+ }
+ 
+ export function liveTarget(): CredTarget {
+-  return darwin
+-    ? { kind: "keychain", service: kcNames.service, account: kcNames.account }
+-    : { kind: "file", path: join(credDir(), ".credentials.json") };
++  if (!darwin) return { kind: "file", path: join(credDir(), ".credentials.json") };
++  const keychain = { service: kcNames.service, account: kcNames.account };
++  return liveFileMirrorEnabled() ? { kind: "mirror", keychain, path: liveMirrorFile() } : { kind: "keychain", ...keychain };
++}
++
++export function parkedTargetsInKeychain(): boolean {
++  return darwin;
++}
++
++type MirrorTarget = Extract<CredTarget, { kind: "mirror" }>;
++
++const MirrorSideStateSchema = z.enum(["unavailable", "absent", "unparsable", "dead-cleared", "expired", "valid"]);
++export type MirrorSideState = z.infer<typeof MirrorSideStateSchema>;
++
++export type MirrorSide = { raw: string | null; oauth: OAuthCreds | null; rawOauth: unknown; hash: string | null; state: MirrorSideState; expiresAt: number | null };
++
++export type MirrorRead = { keychain: MirrorSide; file: MirrorSide; synced: string | null; current: MirrorSide | null; currentSide: "keychain" | "file" | null };
++
++const BlobRecordJsonSchema = z.record(z.string(), z.unknown());
++
++const LiveMirrorStampSchema = z.object({ synced: z.string().nullable(), ts: z.number() });
++
++function tokenHash(oauth: OAuthCreds | null): string | null {
++  if (!oauth || oauth.accessToken === "") return null;
++  const h = new Bun.CryptoHasher("sha256");
++  h.update(oauth.accessToken);
++  return h.digest("hex").slice(0, 16);
++}
++
++function sideOf(raw: string | null, unavailable = false, now = Date.now()): MirrorSide {
++  if (unavailable) return { raw: null, oauth: null, rawOauth: null, hash: null, state: "unavailable", expiresAt: null };
++  if (raw == null) return { raw: null, oauth: null, rawOauth: null, hash: null, state: "absent", expiresAt: null };
++  let oauth: OAuthCreds;
++  let rawOauth: unknown;
++  try {
++    const json: unknown = JSON.parse(raw);
++    oauth = CredentialBlobSchema.parse(json).claudeAiOauth;
++    rawOauth = BlobRecordJsonSchema.parse(json)["claudeAiOauth"];
++  } catch {
++    return { raw, oauth: null, rawOauth: null, hash: null, state: "unparsable", expiresAt: null };
++  }
++  const dead = oauth.accessToken === "" || oauth.refreshToken === "";
++  const state: MirrorSideState = dead ? "dead-cleared" : !oauth.expiresAt || oauth.expiresAt <= now ? "expired" : "valid";
++  return { raw, oauth, rawOauth, hash: tokenHash(oauth), state, expiresAt: oauth.expiresAt || null };
++}
++
++function usable(side: MirrorSide): boolean {
++  return side.oauth != null && side.state !== "dead-cleared";
++}
++
++function loadSynced(): string | null {
++  if (!existsSync(paths.liveMirrorJson)) return null;
++  const parsed = LiveMirrorStampSchema.safeParse((() => { try { return JSON.parse(readFileSync(paths.liveMirrorJson, "utf8")); } catch { return null; } })());
++  return parsed.success ? parsed.data.synced : null;
++}
++
++function saveSynced(hash: string | null): void {
++  writeFileAtomic(paths.liveMirrorJson, JSON.stringify({ synced: hash, ts: Date.now() }) + "\n", 0o600);
++}
++
++export function pickMirrorSide(k: MirrorSide, f: MirrorSide, synced: string | null): "keychain" | "file" | null {
++  if (k.state === "unavailable") return f.raw != null ? "file" : null;
++  if (k.raw == null && f.raw == null) return null;
++  if (f.raw == null) return "keychain";
++  if (k.raw == null) return "file";
++  if (k.hash != null && k.hash === f.hash) return "keychain";
++  if (usable(k) !== usable(f)) return usable(k) ? "keychain" : "file";
++  if (synced != null && f.hash === synced) return "keychain";
++  if (synced != null && k.hash === synced) return "file";
++  return (f.expiresAt ?? 0) > (k.expiresAt ?? 0) ? "file" : "keychain";
++}
++
++export async function readMirror(t: MirrorTarget): Promise<MirrorRead> {
++  const now = Date.now();
++  const status = kc.keychainStatus();
++  const keychain = status.ok ? sideOf(await kc.readItem(t.keychain), false, now) : sideOf(null, true);
++  const file = sideOf(readFileItem(t.path), false, now);
++  const synced = loadSynced();
++  const currentSide = pickMirrorSide(keychain, file, synced);
++  const current = currentSide === "keychain" ? keychain : currentSide === "file" ? file : null;
++  return { keychain, file, synced, current, currentSide };
++}
++
++function mergeOauthInto(sideRaw: string | null, oauth: unknown): string {
++  let base: Record<string, unknown> = {};
++  if (sideRaw != null) {
++    const parsed = BlobRecordJsonSchema.safeParse((() => { try { return JSON.parse(sideRaw); } catch { return null; } })());
++    if (parsed.success) base = parsed.data;
++  }
++  base["claudeAiOauth"] = oauth;
++  return JSON.stringify(base);
++}
++
++async function writeMirror(t: MirrorTarget, secret: string): Promise<void> {
++  const json: unknown = JSON.parse(secret);
++  const hash = tokenHash(CredentialBlobSchema.parse(json).claudeAiOauth);
++  const oauth = BlobRecordJsonSchema.parse(json)["claudeAiOauth"];
++  const keychainOk = kc.keychainStatus().ok;
++  if (keychainOk) await kc.writeItem(t.keychain, mergeOauthInto(await kc.readItem(t.keychain), oauth));
++  writeFileItem(t.path, mergeOauthInto(readFileItem(t.path), oauth));
++  if (keychainOk) saveSynced(hash);
++}
++
++export async function liveCredentialDead(): Promise<boolean> {
++  const t = liveTarget();
++  if (t.kind === "mirror") {
++    const m = await readMirror(t);
++    const present = [m.keychain, m.file].filter((side) => side.state !== "unavailable" && side.state !== "absent");
++    return present.length > 0 && !present.some((side) => side.state === "valid") && present.some((side) => side.state === "dead-cleared");
++  }
++  let raw: string | null;
++  try {
++    raw = await readItem(t);
++  } catch {
++    return false;
++  }
++  const side = sideOf(raw);
++  return side.state === "dead-cleared";
++}
++
++export type MirrorReconcile = { enabled: boolean; action: "none" | "keychain->file" | "file->keychain" | "keychain-unavailable" | "no-credential" | "owner-unverified"; read: MirrorRead | null };
++
++export async function reconcileLiveMirror(lock?: { compromised: () => boolean }): Promise<MirrorReconcile> {
++  const t = liveTarget();
++  if (t.kind !== "mirror") return { enabled: false, action: "none", read: null };
++  const read = await readMirror(t);
++  const { keychain, file, currentSide, current } = read;
++  if (keychain.state === "unavailable") return { enabled: true, action: "keychain-unavailable", read };
++  if (current == null || currentSide == null) return { enabled: true, action: "no-credential", read };
++  if (keychain.hash != null && keychain.hash === file.hash) {
++    if (read.synced !== keychain.hash) saveSynced(keychain.hash);
++    return { enabled: true, action: "none", read };
++  }
++  if (!usable(current)) return { enabled: true, action: "none", read };
++  const other = currentSide === "keychain" ? file : keychain;
++  if (current.state !== "valid" && (other.state === "dead-cleared" || other.state === "expired")) return { enabled: true, action: "none", read };
++  if (current.state === "valid" && current.oauth != null) {
++    const claimed = readOAuthAccount()?.organizationUuid ?? null;
++    const owner = await fetchTokenOrg(current.oauth.accessToken).then((r) => r.organization_uuid).catch(() => null);
++    if (owner == null || (claimed != null && owner !== claimed)) return { enabled: true, action: "owner-unverified", read };
++  }
++  if (lock?.compromised()) throw new Error("refresh lock compromised - not touching the live mirror");
++  if (currentSide === "keychain") {
++    writeFileItem(t.path, mergeOauthInto(file.raw, current.rawOauth));
++  } else {
++    await kc.writeItem(t.keychain, mergeOauthInto(keychain.raw, current.rawOauth));
++  }
++  saveSynced(current.hash);
++  return { enabled: true, action: currentSide === "keychain" ? "keychain->file" : "file->keychain", read: await readMirror(t) };
+ }
+ 
+ export function parkedTarget(itemName: string): CredTarget {
+diff --git a/src/lib/decide.ts b/src/lib/decide.ts
+index 8925b7c..4fd0183 100644
+--- a/src/lib/decide.ts
++++ b/src/lib/decide.ts
+@@ -4,9 +4,10 @@ import { withLock } from "./lock.ts";
+ import { paths } from "./paths.ts";
+ import { MAX_CHECK_DELAY_MS, loadAccounts, loadConfig, loadDepletedWait, loadLastSwapAt, loadUsage, loadModelUsage, saveAccounts, saveDepletedWait, saveModelUsage, usageTeeAt, writeUsage } from "./state.ts";
+ import { readOAuthAccount } from "./claudejson.ts";
+-import { chooseAndSwap, performSwap } from "./swap.ts";
++import { chooseAndSwap, isSkippableSwapError, performSwap } from "./swap.ts";
+ import { currentWins, effectiveBars, hardBars, isExhausted, nextWeeklyReset, pickBest, pickEarliestReset, sessionLadder, usableAt } from "./picker.ts";
+-import { InvalidGrantError } from "./oauth.ts";
++import { KeychainUnavailableError } from "./keychain.ts";
++import { liveCredentialDead } from "./credstore.ts";
+ import { familyTokens, gatedFamilies, probeUsage, type EnforcedClass } from "./usage.ts";
+ import { log } from "./log.ts";
+ import { AccountSchema, ModelUsageStateSchema, UsageStateSchema, type Account, type Config, type EnforcedLimit, type ModelUsageState, type Thresholds, type UsageState, type UsageWindow } from "./types.ts";
+@@ -118,7 +119,10 @@ export const POST_SWAP_COOLDOWN_MS = 45_000;
+ 
+ export async function evaluateAndMaybeSwap(now = Date.now(), anticipatory = false, enforced: EnforcedLimit | null = null): Promise<SwapDecision> {
+   const activeOrg = readOAuthAccount()?.organizationUuid ?? null;
+-  const enforced0 = enforced && enforced.org === activeOrg ? enforced : null;
++  const liveDead = enforced == null && activeOrg != null && (await liveCredentialDead().catch(() => false));
++  if (liveDead) log("decide.live_dead", { org: activeOrg?.slice(0, 8) });
++  const enforcedIn: EnforcedLimit | null = liveDead && activeOrg != null ? { org: activeOrg, family: null, resetsAt: null, windowMs: FIVE_HOURS_MS } : enforced;
++  const enforced0 = enforcedIn && enforcedIn.org === activeOrg ? enforcedIn : null;
+ 
+   const lastSwapAt = loadLastSwapAt();
+   if (!enforced0 && lastSwapAt != null && now - lastSwapAt < POST_SWAP_COOLDOWN_MS) {
+@@ -143,6 +147,17 @@ export async function evaluateAndMaybeSwap(now = Date.now(), anticipatory = fals
+     return { swapped: false, account: null, reason: "under-threshold-or-stale" };
+   }
+ 
++  try {
++    return await decideUnderLock({ cfg, usage, mu, enforced0, now, anticipatory });
++  } catch (e) {
++    if (!(e instanceof KeychainUnavailableError)) throw e;
++    log("decide.keychain_unavailable", { exit: e.exitCode ?? undefined });
++    return { swapped: false, account: null, reason: "keychain-unavailable" };
++  }
++}
++
++async function decideUnderLock(input: { cfg: Config; usage: UsageState | null; mu: ModelUsageState | null; enforced0: EnforcedLimit | null; now: number; anticipatory: boolean }): Promise<SwapDecision> {
++  const { cfg, usage, mu, enforced0, now, anticipatory } = input;
+   return withLock(paths.lockFile, async () => {
+     const idx = loadAccounts();
+     const org2 = readOAuthAccount()?.organizationUuid ?? null;
+@@ -184,21 +199,30 @@ export async function evaluateAndMaybeSwap(now = Date.now(), anticipatory = fals
+       idx2.accounts.find((a) => a.accountUuid === idx2.activeAccountUuid) ??
+       null;
+ 
++    const rejected = new Set<string>();
++    const usable = (accounts: Account[]): Account[] => accounts.filter((a) => !rejected.has(a.accountUuid));
++    const skipOrThrow = (e: unknown, candidate: Account): void => {
++      if (!isSkippableSwapError(e)) throw e;
++      rejected.add(candidate.accountUuid);
++      log("decide.candidate_rejected", { account: candidate.accountUuid.slice(0, 8), error: e instanceof Error ? e.message : String(e) });
++    };
++
+     const greedy = async (): Promise<SwapDecision> => {
+       while (true) {
+         const cur = loadAccounts();
+         const active = seatOf(cur);
++        const pool = usable(cur.accounts);
+         const ctxAll = { now, thresholds: barsOf(cur.accounts), currentAccountUuid: null, switchFamilies };
+-        if (currentWins(active, cur.accounts, ctxAll)) {
++        if (currentWins(active, pool, ctxAll)) {
+           return { swapped: false, account: null, reason: "current-best" };
+         }
+-        const best = pickBest(cur.accounts, { ...ctxAll, currentAccountUuid: active?.accountUuid ?? null });
++        const best = pickBest(pool, { ...ctxAll, currentAccountUuid: active?.accountUuid ?? null });
+         if (!best) return { swapped: false, account: null, reason: "no-usable-target" };
+         try {
+           await performSwap(best);
+         } catch (e) {
+-          if (e instanceof InvalidGrantError) continue;
+-          throw e;
++          skipOrThrow(e, best);
++          continue;
+         }
+         log("decide.greedy_swap", { account: best.accountUuid.slice(0, 8) });
+         return { swapped: true, account: best, reason: "swapped" };
+@@ -211,13 +235,13 @@ export async function evaluateAndMaybeSwap(now = Date.now(), anticipatory = fals
+       const seat = seatOf(cur);
+       const thresholds = barsOf(cur.accounts);
+       if (!enforced2 && seat && !seat.needsReauth && !isExhausted(seat, { now, thresholds, currentAccountUuid: null, switchFamilies })) return greedy();
+-      const best = pickBest(cur.accounts, { now, thresholds, currentAccountUuid: seat?.accountUuid ?? null, switchFamilies });
++      const best = pickBest(usable(cur.accounts), { now, thresholds, currentAccountUuid: seat?.accountUuid ?? null, switchFamilies });
+       if (!best) break;
+       try {
+         await performSwap(best);
+       } catch (e) {
+-        if (e instanceof InvalidGrantError) continue;
+-        throw e;
++        skipOrThrow(e, best);
++        continue;
+       }
+       return { swapped: true, account: best, reason: "swapped" };
+     }
+@@ -228,7 +252,7 @@ export async function evaluateAndMaybeSwap(now = Date.now(), anticipatory = fals
+       log("decide.last_drop_hold", { account: seat.accountUuid.slice(0, 8) });
+       return { swapped: false, account: null, reason: "last-drop-hold" };
+     }
+-    const squeezed = await chooseAndSwap({ ...hardCtx, currentAccountUuid: seat?.accountUuid ?? null });
++    const squeezed = await chooseAndSwap({ ...hardCtx, currentAccountUuid: seat?.accountUuid ?? null }, rejected);
+     if (squeezed) {
+       log("decide.last_drop_swap", { account: squeezed.accountUuid.slice(0, 8) });
+       return { swapped: true, account: squeezed, reason: "last-drop-swap" };
+@@ -240,7 +264,7 @@ export async function evaluateAndMaybeSwap(now = Date.now(), anticipatory = fals
+       const ctx = { now, thresholds: hardBars(cfg), currentAccountUuid: current?.accountUuid ?? null, switchFamilies };
+       const enforcedUntil = enforced2 && current && current.organizationUuid === enforced2.org ? (enforced2.resetsAt ?? now + enforced2.windowMs) : 0;
+       const currentAt = current ? Math.max(usableAt(current, ctx), enforcedUntil) : Number.POSITIVE_INFINITY;
+-      const other = pickEarliestReset(fresh.accounts, ctx);
++      const other = pickEarliestReset(usable(fresh.accounts), ctx);
+ 
+       let target: Account | null = null;
+       let waitUntil = Number.POSITIVE_INFINITY;
+@@ -262,8 +286,8 @@ export async function evaluateAndMaybeSwap(now = Date.now(), anticipatory = fals
+         try {
+           await performSwap(target);
+         } catch (e) {
+-          if (e instanceof InvalidGrantError) continue;
+-          throw e;
++          skipOrThrow(e, target);
++          continue;
+         }
+       }
+       saveDepletedWait({ waitUntil, accountUuid: target.accountUuid, ts: now });
+diff --git a/src/lib/http.ts b/src/lib/http.ts
+index 12bb5af..397cbc0 100644
+--- a/src/lib/http.ts
++++ b/src/lib/http.ts
+@@ -1,25 +1,52 @@
+ import ky from "ky";
+ import { z } from "zod";
+ 
+-const ErrorBodySchema = z.looseObject({
+-  error: z.string().optional(),
++const OAuthErrorBodySchema = z.looseObject({
++  error: z.string(),
+   error_description: z.string().optional(),
++});
++
++const NestedErrorBodySchema = z.looseObject({
++  error: z.looseObject({ type: z.string().optional(), message: z.string().optional() }),
++  request_id: z.string().nullish(),
++});
++
++const PlainErrorBodySchema = z.looseObject({
+   detail: z.string().optional(),
+   message: z.string().optional(),
+ });
+ 
++const ErrorDetailSchema = z.object({ code: z.string().nullable(), fields: z.array(z.string()) });
++type ErrorDetail = z.infer<typeof ErrorDetailSchema>;
++
++function parseErrorBody(text: string): ErrorDetail | null {
++  let json: unknown;
++  try {
++    json = JSON.parse(text);
++  } catch {
++    return null;
++  }
++  const oauth = OAuthErrorBodySchema.safeParse(json);
++  if (oauth.success) return { code: oauth.data.error, fields: [oauth.data.error, oauth.data.error_description ?? ""] };
++  const nested = NestedErrorBodySchema.safeParse(json);
++  if (nested.success) {
++    const requestId = nested.data.request_id ? ` (${nested.data.request_id})` : "";
++    return { code: nested.data.error.type ?? null, fields: [nested.data.error.type ?? "", (nested.data.error.message ?? "") + requestId] };
++  }
++  const plain = PlainErrorBodySchema.safeParse(json);
++  if (plain.success) return { code: null, fields: [plain.data.detail ?? "", plain.data.message ?? ""] };
++  return null;
++}
++
++export function oauthErrorCode(input: { text: string }): string | null {
++  return parseErrorBody(input.text)?.code ?? null;
++}
++
+ export function safeErrorDetail(input: { text: string }): string {
+-  const parsed = ErrorBodySchema.safeParse((() => {
+-    try {
+-      return JSON.parse(input.text);
+-    } catch {
+-      return null;
+-    }
+-  })());
+-  if (!parsed.success) return "(unparsable error body withheld)";
+-  const fields = [parsed.data.error, parsed.data.error_description, parsed.data.detail, parsed.data.message];
+-  const detail = fields.filter((field): field is string => field != null && field.length > 0).join(": ");
+-  return detail.length > 0 ? detail.slice(0, 200) : "(no error detail)";
++  const body = parseErrorBody(input.text);
++  if (!body) return `(unrecognized error body, ${input.text.length} bytes, content withheld)`;
++  const detail = body.fields.filter((field) => field.length > 0).join(": ");
++  return detail.length > 0 ? detail.slice(0, 240) : "(no error detail)";
+ }
+ 
+ export const http = ky.create({
+diff --git a/src/lib/keychain.ts b/src/lib/keychain.ts
+index 82856be..2c3bb05 100644
+--- a/src/lib/keychain.ts
++++ b/src/lib/keychain.ts
+@@ -1,4 +1,8 @@
++import { existsSync, mkdirSync, readFileSync, unlinkSync } from "node:fs";
++import { join } from "node:path";
+ import { z } from "zod";
++import { writeFileAtomic } from "./atomic.ts";
++import { FlagEnvSchema, HOME, fakeKeychainDir } from "./paths.ts";
+ 
+ const KeychainTargetSchema = z.object({ service: z.string(), account: z.string() });
+ export type KeychainTarget = z.infer<typeof KeychainTargetSchema>;
+@@ -14,7 +18,44 @@ function quoteValue(s: string): string {
+   return s.includes("'") ? quoteDouble(s) : `'${s}'`;
+ }
+ 
++const LOGIN_KEYCHAIN = join(HOME, "Library", "Keychains", "login.keychain-db");
++
++export class KeychainUnavailableError extends Error {
++  constructor(public readonly exitCode: number | null) {
++    super(`the login keychain is not readable from this session (security exit ${exitCode ?? "?"}: an SSH or detached session cannot use it) - parked credentials live there; run this from the console session or let the GUI check timer act`);
++    this.name = "KeychainUnavailableError";
++  }
++}
++
++function fakePath(t: KeychainTarget): string | null {
++  const dir = fakeKeychainDir();
++  return dir == null ? null : join(dir, `${encodeURIComponent(t.service)}.${encodeURIComponent(t.account)}.json`);
++}
++
++let usable: { ok: boolean; exitCode: number | null } | null = null;
++
++export function keychainStatus(): { ok: boolean; exitCode: number | null } {
++  const forced = FlagEnvSchema.parse(process.env.TOKENMAXXING_KEYCHAIN_USABLE);
++  if (forced != null) return { ok: forced === "1", exitCode: forced === "1" ? 0 : 36 };
++  const dir = fakeKeychainDir();
++  if (dir != null) return { ok: !existsSync(join(dir, "LOCKED")), exitCode: existsSync(join(dir, "LOCKED")) ? 36 : 0 };
++  if (usable) return usable;
++  const p = Bun.spawnSync([SECURITY, "show-keychain-info", LOGIN_KEYCHAIN], { stdout: "ignore", stderr: "ignore" });
++  usable = { ok: p.exitCode === 0, exitCode: p.exitCode };
++  return usable;
++}
++
++export function assertKeychainUsable(): void {
++  const s = keychainStatus();
++  if (!s.ok) throw new KeychainUnavailableError(s.exitCode);
++}
++
+ export async function readItem(t: KeychainTarget): Promise<string | null> {
++  const fake = fakePath(t);
++  if (fake != null) {
++    assertKeychainUsable();
++    return existsSync(fake) ? readFileSync(fake, "utf8") : null;
++  }
+   const p = Bun.spawn([SECURITY, "find-generic-password", "-s", t.service, "-a", t.account, "-w"], {
+     stdout: "pipe",
+     stderr: "pipe",
+@@ -22,6 +63,7 @@ export async function readItem(t: KeychainTarget): Promise<string | null> {
+   const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
+   await p.exited;
+   if (p.exitCode === 44) return null;
++  if (p.exitCode === 36) throw new KeychainUnavailableError(36);
+   if (p.exitCode !== 0) {
+     throw new Error(`keychain read failed (exit ${p.exitCode}): ${err.trim().slice(0, 200)} - a locked keychain or denied ACL must fail loudly, never read as absent`);
+   }
+@@ -57,12 +99,25 @@ async function writeViaArgv(t: KeychainTarget, secret: string): Promise<void> {
+ }
+ 
+ export async function writeItem(t: KeychainTarget, secret: string): Promise<void> {
++  const fake = fakePath(t);
++  if (fake != null) {
++    assertKeychainUsable();
++    mkdirSync(fakeKeychainDir() ?? "", { recursive: true, mode: 0o700 });
++    writeFileAtomic(fake, secret, 0o600);
++    return;
++  }
+   const encoded = new TextEncoder().encode(interactiveLine(t, secret));
+   if (encoded.length <= INTERACTIVE_MAX_LINE) return writeViaInteractive(encoded);
+   return writeViaArgv(t, secret);
+ }
+ 
+ export async function deleteItem(t: KeychainTarget): Promise<boolean> {
++  const fake = fakePath(t);
++  if (fake != null) {
++    if (!existsSync(fake)) return false;
++    unlinkSync(fake);
++    return true;
++  }
+   const p = Bun.spawn([SECURITY, "delete-generic-password", "-s", t.service, "-a", t.account], {
+     stdout: "ignore",
+     stderr: "ignore",
+diff --git a/src/lib/livemirror.ts b/src/lib/livemirror.ts
+new file mode 100644
+index 0000000..07ff13b
+--- /dev/null
++++ b/src/lib/livemirror.ts
+@@ -0,0 +1,15 @@
++import { liveTarget, reconcileLiveMirror, type MirrorReconcile } from "./credstore.ts";
++import { withClaudeRefreshLock } from "./claudelock.ts";
++import { log } from "./log.ts";
++
++export async function syncLiveMirror(): Promise<MirrorReconcile | null> {
++  if (liveTarget().kind !== "mirror") return null;
++  try {
++    const out = await withClaudeRefreshLock((lock) => reconcileLiveMirror(lock));
++    if (out.action === "keychain->file" || out.action === "file->keychain" || out.action === "owner-unverified") log("live_mirror.sync", { action: out.action });
++    return out;
++  } catch (e) {
++    log("live_mirror.sync_error", { err: e instanceof Error ? e.message : String(e) });
++    return null;
++  }
++}
+diff --git a/src/lib/log.ts b/src/lib/log.ts
+index 0046ef9..48c7e95 100644
+--- a/src/lib/log.ts
++++ b/src/lib/log.ts
+@@ -21,6 +21,7 @@ export function log(event: string, fields: Record<string, unknown> = {}): void {
+   let line = "";
+   try {
+     line = Object.entries(fields)
++      .filter(([, v]) => v !== undefined)
+       .map(([k, v]) => {
+         const str = z.string().safeParse(v);
+         return `${k}=${redact(str.success ? str.data : JSON.stringify(v))}`;
+diff --git a/src/lib/oauth.ts b/src/lib/oauth.ts
+index c329ff0..b1b7ac3 100644
+--- a/src/lib/oauth.ts
++++ b/src/lib/oauth.ts
+@@ -1,5 +1,5 @@
+ import { z } from "zod";
+-import { http, safeErrorDetail } from "./http.ts";
++import { http, oauthErrorCode, safeErrorDetail } from "./http.ts";
+ import { RefreshResponseSchema, RolesResponseSchema, type OAuthCreds, type RolesResponse } from "./types.ts";
+ 
+ const EnvOverrideSchema = z.string().min(1).optional().catch(undefined);
+@@ -22,7 +22,30 @@ export class InvalidGrantError extends Error {
+   }
+ }
+ 
++export class RefreshRejectedError extends Error {
++  constructor(public readonly status: number, public readonly code: string | null, public readonly detail: string) {
++    super(`token refresh rejected (HTTP ${status}${code ? ` ${code}` : ""})`);
++    this.name = "RefreshRejectedError";
++  }
++}
++
++export class RolesCheckError extends Error {
++  constructor(public readonly status: number | null, public readonly detail: string) {
++    super(status == null ? `roles endpoint unreachable: ${detail}` : `roles check failed (HTTP ${status}): ${detail}`);
++    this.name = "RolesCheckError";
++  }
++}
++
++export function isDeadCredential(creds: OAuthCreds): boolean {
++  return creds.refreshToken === "" || creds.accessToken === "";
++}
++
++export function isRevokedAccessToken(e: unknown): boolean {
++  return e instanceof RolesCheckError && e.status === 401;
++}
++
+ export async function refreshCredential(creds: OAuthCreds, now = Date.now()): Promise<OAuthCreds> {
++  if (isDeadCredential(creds)) throw new InvalidGrantError("credential was cleared after a failed refresh");
+   const scope = (creds.scopes?.length ? creds.scopes : DEFAULT_SCOPES).join(" ");
+   const body = {
+     grant_type: "refresh_token",
+@@ -43,10 +66,12 @@ export async function refreshCredential(creds: OAuthCreds, now = Date.now()): Pr
+ 
+   const text = await res.text();
+   if (!res.ok) {
+-    if (res.status === 400 && /invalid_grant/.test(text)) {
+-      throw new InvalidGrantError(safeErrorDetail({ text }));
+-    }
+-    throw new Error(`token refresh failed (HTTP ${res.status}): ${safeErrorDetail({ text })}`);
++    const detail = safeErrorDetail({ text });
++    const code = oauthErrorCode({ text });
++    const oauthRejection = (res.status === 400 || res.status === 401) && code != null;
++    if (oauthRejection && code === "invalid_grant") throw new InvalidGrantError(detail);
++    if (oauthRejection) throw new RefreshRejectedError(res.status, code, detail);
++    throw new Error(`token refresh failed (HTTP ${res.status}${code ? ` ${code}` : ""})`);
+   }
+ 
+   const parsed = RefreshResponseSchema.safeParse((() => {
+@@ -82,10 +107,10 @@ export async function fetchTokenOrg(accessToken: string): Promise<RolesResponse>
+       headers: { Authorization: `Bearer ${accessToken}`, "anthropic-beta": "oauth-2025-04-20" },
+     });
+   } catch (e) {
+-    throw new Error(`roles endpoint unreachable: ${e instanceof Error ? e.message : String(e)}`);
++    throw new RolesCheckError(null, e instanceof Error ? e.message : String(e));
+   }
+   const text = await res.text();
+-  if (!res.ok) throw new Error(`roles check failed (HTTP ${res.status}): ${safeErrorDetail({ text })}`);
++  if (!res.ok) throw new RolesCheckError(res.status, safeErrorDetail({ text }));
+   const parsed = RolesResponseSchema.safeParse((() => {
+     try { return JSON.parse(text); } catch { return null; }
+   })());
+diff --git a/src/lib/paths.ts b/src/lib/paths.ts
+index 61bd11e..eec378b 100644
+--- a/src/lib/paths.ts
++++ b/src/lib/paths.ts
+@@ -1,3 +1,4 @@
++import { existsSync } from "node:fs";
+ import { homedir } from "node:os";
+ import { join } from "node:path";
+ import { z } from "zod";
+@@ -29,6 +30,8 @@ export const paths = {
+   onboardDir: join(TM_HOME, "onboard"),
+   sampleDir: join(TM_HOME, "sample"),
+   credsDir: join(TM_HOME, "creds"),
++  liveMirrorJson: join(TM_HOME, "live-mirror.json"),
++  liveFileMirrorFlag: join(TM_HOME, "live-file-mirror"),
+ 
+   claudeJson: env("TOKENMAXXING_CLAUDE_JSON", join(HOME, ".claude.json")),
+   claudeSettings: env(
+@@ -66,6 +69,21 @@ export const keychain = {
+   account: env("TOKENMAXXING_KEYCHAIN_ACCOUNT", process.env.USER ?? "unknown"),
+ } as const;
+ 
++export const FlagEnvSchema = z.enum(["0", "1"]).optional().catch(undefined);
++
++export function liveFileMirrorEnabled(): boolean {
++  const flag = FlagEnvSchema.parse(process.env.TOKENMAXXING_LIVE_FILE_MIRROR);
++  return flag != null ? flag === "1" : existsSync(paths.liveFileMirrorFlag);
++}
++
++export function liveMirrorFile(): string {
++  return join(credDir(), ".credentials.json");
++}
++
++export function fakeKeychainDir(): string | undefined {
++  return EnvOverrideSchema.parse(process.env.TOKENMAXXING_FAKE_KEYCHAIN_DIR);
++}
++
+ export function credItemFor(accountUuid: string): string {
+   return `tokenmaxxing-cred-${accountUuid.slice(0, 8)}`;
+ }
+diff --git a/src/lib/sample.ts b/src/lib/sample.ts
+index 0cb70bf..a7cbd82 100644
+--- a/src/lib/sample.ts
++++ b/src/lib/sample.ts
+@@ -4,8 +4,10 @@ import { z } from "zod";
+ import { readItem, writeItem, deleteItem, liveTarget, parkedTarget, isolatedTarget, claudeAiOauthOnly, mergeIntoLive } from "./credstore.ts";
+ import { credItemFor, paths } from "./paths.ts";
+ import { withClaudeRefreshLock } from "./claudelock.ts";
+-import { refreshCredential, isAccessTokenExpiring, fetchTokenOrg, InvalidGrantError } from "./oauth.ts";
+-import { FullUsageSchema, pingSession, probeUsage } from "./usage.ts";
++import { refreshCredential, isAccessTokenExpiring, fetchTokenOrg, InvalidGrantError, RefreshRejectedError } from "./oauth.ts";
++import { KeychainUnavailableError } from "./keychain.ts";
++import { FullUsageSchema, pingSession, probeEnv, probeUsage } from "./usage.ts";
++import { resolveRealClaude } from "./claudebin.ts";
+ import { CredentialBlobSchema, type Account, type OAuthCreds, type RolesResponse } from "./types.ts";
+ 
+ const SampleOutcomeSchema = z.discriminatedUnion("ok", [
+@@ -39,7 +41,13 @@ function refreshPlanFields(account: Account, creds: OAuthCreds): void {
+ 
+ export async function probeParkedUsage(account: Account, opts: { ping?: boolean } = {}): Promise<SampleOutcome> {
+   const backup = parkedTarget(account.keychainItem);
+-  const parkedRaw = await readItem(backup);
++  let parkedRaw: string | null;
++  try {
++    parkedRaw = await readItem(backup);
++  } catch (e) {
++    if (e instanceof KeychainUnavailableError) return { ok: false, reason: "parked credential is in the login keychain, which this session cannot read (SSH) - cached figures only" };
++    throw e;
++  }
+   if (!parkedRaw) return { ok: false, reason: "no parked credential - run `tokenmaxxing auth`" };
+ 
+   let creds: OAuthCreds;
+@@ -67,11 +75,16 @@ export async function probeParkedUsage(account: Account, opts: { ping?: boolean
+     try {
+       creds = await refreshCredential(creds);
+       await writeItem(backup, JSON.stringify({ claudeAiOauth: creds }));
++      delete account.lastRefreshRejected;
+     } catch (e) {
+       if (e instanceof InvalidGrantError) {
+         account.needsReauth = true;
+         return { ok: false, reason: "refresh token dead - re-auth with `tokenmaxxing auth`" };
+       }
++      if (e instanceof RefreshRejectedError) {
++        account.lastRefreshRejected = { at: Date.now(), status: e.status, code: e.code };
++        return { ok: false, reason: `access token expired and refresh_rejected (HTTP ${e.status}${e.code ? ` ${e.code}` : ""}) - re-auth with \`tokenmaxxing auth\`` };
++      }
+       return { ok: false, reason: `token refresh failed: ${e instanceof Error ? e.message : String(e)}` };
+     }
+   }
+@@ -136,6 +149,7 @@ export async function probeActiveUsage(account: Account, opts: { ping?: boolean
+     await ensureLiveTokenFresh();
+   } catch (e) {
+     if (e instanceof InvalidGrantError) return { ok: false, reason: "live refresh token dead - run `claude` and `/login`" };
++    if (e instanceof RefreshRejectedError) return { ok: false, reason: `live access token expired and refresh_rejected (HTTP ${e.status}${e.code ? ` ${e.code}` : ""}) - run \`tokenmaxxing switch\`` };
+     return { ok: false, reason: `token refresh failed: ${e instanceof Error ? e.message : String(e)}` };
+   }
+   const liveRaw = await readItem(liveTarget());
+@@ -158,3 +172,33 @@ export async function probeActiveUsage(account: Account, opts: { ping?: boolean
+   if (pingError != null) outcome.pingError = pingError;
+   return outcome;
+ }
++
++const CLAUDE_REFRESH_KILL_MS = 45_000;
++
++export async function refreshViaClaude(account: Account, creds: OAuthCreds): Promise<OAuthCreds | null> {
++  const dir = join(paths.sampleDir, `${credItemFor(account.accountUuid)}-refresh`);
++  rmSync(dir, { recursive: true, force: true });
++  mkdirSync(dir, { recursive: true });
++  const iso = isolatedTarget(dir);
++  const installed = JSON.stringify({ claudeAiOauth: creds });
++  try {
++    await writeItem(iso, installed);
++    writeFileSync(join(dir, ".claude.json"), JSON.stringify({ oauthAccount: account.oauthAccount, hasCompletedOnboarding: true }));
++    const p = Bun.spawn([resolveRealClaude(), "-p", "/usage", "--no-session-persistence", "--safe-mode"], {
++      env: probeEnv(dir),
++      cwd: dir,
++      stdin: "ignore",
++      stdout: "ignore",
++      stderr: "ignore",
++      timeout: CLAUDE_REFRESH_KILL_MS,
++      killSignal: "SIGKILL",
++    });
++    await p.exited;
++    const after = await readItem(iso);
++    if (after == null || after === installed) return null;
++    return CredentialBlobSchema.parse(JSON.parse(after)).claudeAiOauth;
++  } finally {
++    await deleteItem(iso);
++    rmSync(dir, { recursive: true, force: true });
++  }
++}
+diff --git a/src/lib/swap.ts b/src/lib/swap.ts
+index 8602fc7..119b956 100644
+--- a/src/lib/swap.ts
++++ b/src/lib/swap.ts
+@@ -1,17 +1,53 @@
+ import { clearDepletedWait, clearNextCheck, clearUsageSnapshots, loadAccounts, saveAccounts, saveLastSwapAt } from "./state.ts";
+-import { readItem, writeItem, liveTarget, parkedTarget, claudeAiOauthOnly, mergeIntoLive } from "./credstore.ts";
+-import { refreshCredential, isAccessTokenExpiring, fetchTokenOrg, InvalidGrantError } from "./oauth.ts";
++import { readItem, writeItem, liveTarget, parkedTarget, parkedTargetsInKeychain, claudeAiOauthOnly, mergeIntoLive } from "./credstore.ts";
++import { assertKeychainUsable } from "./keychain.ts";
++import { refreshCredential, isAccessTokenExpiring, isDeadCredential, isRevokedAccessToken, fetchTokenOrg, InvalidGrantError, RefreshRejectedError } from "./oauth.ts";
+ import { swapOAuthAccount } from "./claudejson.ts";
+ import { withClaudeRefreshLock } from "./claudelock.ts";
+ import { log } from "./log.ts";
+ import { pickBest, type PickCtx } from "./picker.ts";
+-import { CredentialBlobSchema, type Account, type OAuthCreds } from "./types.ts";
++import { refreshViaClaude } from "./sample.ts";
++import { CredentialBlobSchema, type Account, type OAuthCreds, type RolesResponse } from "./types.ts";
++
++export const PARKED_INSTALL_MIN_REMAINING_MS = 10 * 60_000;
++export const REJECTED_INSTALL_MIN_REMAINING_MS = 60 * 60_000;
++export const REFRESH_REJECT_BACKOFF_MS = 30 * 60_000;
++
++export function installMinRemainingMs(a: Account): number {
++  return a.lastRefreshRejected ? REJECTED_INSTALL_MIN_REMAINING_MS : PARKED_INSTALL_MIN_REMAINING_MS;
++}
++
++export type SwapOptions = { retryRejected?: boolean };
++
++export class SwapCandidateError extends Error {
++  constructor(public readonly reason: string, message: string) {
++    super(message);
++    this.name = "SwapCandidateError";
++  }
++}
++
++export type SwapOutcome = { refreshed: boolean; expiresAt: number | null; harvested: boolean };
+ 
+ function parseBlob(raw: string) {
+   return CredentialBlobSchema.parse(JSON.parse(raw));
+ }
+ 
+-export async function performSwap(target: Account): Promise<void> {
++function errText(e: unknown): string {
++  return e instanceof Error ? e.message : String(e);
++}
++
++function stampRefresh(accountUuid: string, rejected: RefreshRejectedError | null): void {
++  const idx = loadAccounts();
++  const a = idx.accounts.find((x) => x.accountUuid === accountUuid);
++  if (!a) return;
++  if (rejected) a.lastRefreshRejected = { at: Date.now(), status: rejected.status, code: rejected.code };
++  else if (a.lastRefreshRejected == null) return;
++  else delete a.lastRefreshRejected;
++  saveAccounts(idx);
++}
++
++export async function performSwap(target: Account, opts: SwapOptions = {}): Promise<SwapOutcome> {
++  if (parkedTargetsInKeychain()) assertKeychainUsable();
+   const idx = loadAccounts();
+ 
+   const preLive = await readItem(liveTarget());
+@@ -21,7 +57,10 @@ export async function performSwap(target: Account): Promise<void> {
+   if (preLive) {
+     liveCreds = parseBlob(preLive).claudeAiOauth;
+     expectedLiveToken = liveCreds.accessToken;
+-    if (isAccessTokenExpiring(liveCreds, 60_000)) {
++    if (isDeadCredential(liveCreds)) {
++      liveCreds = null;
++      log("swap.live_dead", {});
++    } else if (isAccessTokenExpiring(liveCreds, 60_000)) {
+       try {
+         await withClaudeRefreshLock(async (lock) => {
+           const raw2 = await readItem(liveTarget());
+@@ -35,46 +74,121 @@ export async function performSwap(target: Account): Promise<void> {
+           await writeItem(liveTarget(), mergeIntoLive(raw2, next));
+         });
+       } catch (e) {
+-        if (!(e instanceof InvalidGrantError)) throw e;
+-        liveCreds = null;
+-        log("swap.harvest_skipped_dead_live", {});
++        if (e instanceof RefreshRejectedError) {
++          log("swap.live_refresh_rejected", { status: e.status, code: e.code ?? undefined, detail: e.detail });
++        } else if (e instanceof InvalidGrantError) {
++          liveCreds = null;
++          log("swap.harvest_skipped_dead_live", {});
++        } else {
++          throw e;
++        }
+       }
+     }
+     if (liveCreds != null) {
+-      const org = await fetchTokenOrg(liveCreds.accessToken);
+-      liveOwner = idx.accounts.find((a) => a.organizationUuid === org.organization_uuid) ?? null;
+-      if (!liveOwner) {
+-        throw new Error(
+-          `live credential belongs to ${org.organization_name} (org ${org.organization_uuid.slice(0, 8)}), which is not in the pool - refusing to swap over it; import it first with \`tokenmaxxing add\``,
+-        );
++      let org: RolesResponse | null = null;
++      try {
++        org = await fetchTokenOrg(liveCreds.accessToken);
++      } catch (e) {
++        if (!isRevokedAccessToken(e)) throw e;
++        log("swap.harvest_skipped_revoked_live", {});
+       }
+-      if (liveOwner.accountUuid !== idx.activeAccountUuid) {
+-        log("swap.harvest_drift", {
+-          labeled: idx.activeAccountUuid?.slice(0, 8) ?? null,
+-          actual: liveOwner.accountUuid.slice(0, 8),
+-        });
++      if (org == null) {
++        liveCreds = null;
++      } else {
++        const liveOrg = org;
++        liveOwner = idx.accounts.find((a) => a.organizationUuid === liveOrg.organization_uuid) ?? null;
++        if (!liveOwner) {
++          throw new Error(
++            `live credential belongs to ${liveOrg.organization_name} (org ${liveOrg.organization_uuid.slice(0, 8)}), which is not in the pool - refusing to swap over it; import it first with \`tokenmaxxing add\``,
++          );
++        }
++        if (liveOwner.accountUuid !== idx.activeAccountUuid) {
++          log("swap.harvest_drift", {
++            labeled: idx.activeAccountUuid?.slice(0, 8) ?? null,
++            actual: liveOwner.accountUuid.slice(0, 8),
++          });
++        }
+       }
+     }
+   }
+ 
+   const selfSwap = liveOwner != null && liveOwner.accountUuid === target.accountUuid;
+   let fresh: OAuthCreds | null = null;
++  let refreshed = false;
+   if (!selfSwap) {
++    const account = target.accountUuid.slice(0, 8);
+     const parkedRaw = await readItem(parkedTarget(target.keychainItem));
+-    if (!parkedRaw) throw new Error(`no parked credential for ${target.email}`);
++    if (!parkedRaw) throw new SwapCandidateError("no-parked-credential", `no parked credential for ${target.email} - run \`tokenmaxxing auth ${target.label}\``);
++    let parked: OAuthCreds;
+     try {
+-      fresh = await refreshCredential(parseBlob(parkedRaw).claudeAiOauth);
+-    } catch (e) {
+-      if (e instanceof InvalidGrantError) {
+-        const t = idx.accounts.find((a) => a.accountUuid === target.accountUuid);
+-        if (t) { t.needsReauth = true; saveAccounts(idx); }
+-        log("swap.invalid_grant", { account: target.accountUuid.slice(0, 8) });
++      parked = parseBlob(parkedRaw).claudeAiOauth;
++    } catch {
++      throw new SwapCandidateError("parked-unparsable", `${target.label}: parked credential does not parse - run \`tokenmaxxing auth ${target.label}\``);
++    }
++    const markDead = (detail: string): InvalidGrantError => {
++      const cur = loadAccounts();
++      const t = cur.accounts.find((a) => a.accountUuid === target.accountUuid);
++      if (t) { t.needsReauth = true; saveAccounts(cur); }
++      log("swap.invalid_grant", { account, detail });
++      return new InvalidGrantError(detail);
++    };
++    if (isDeadCredential(parked)) throw markDead("parked credential was cleared after a failed refresh");
++    if (!isAccessTokenExpiring(parked, installMinRemainingMs(target))) {
++      let org: RolesResponse | null = null;
++      try {
++        org = await fetchTokenOrg(parked.accessToken);
++      } catch (e) {
++        if (!isRevokedAccessToken(e)) throw new SwapCandidateError("owner-unverifiable", `${target.label}: cannot verify the parked credential's owner (${errText(e).slice(0, 120)})`);
++        log("swap.parked_access_revoked", { account });
++      }
++      if (org != null) {
++        if (org.organization_uuid !== target.organizationUuid) {
++          throw markDead(`parked credential belongs to ${org.organization_name} (org ${org.organization_uuid.slice(0, 8)}) - re-auth with \`tokenmaxxing auth ${target.label}\``);
++        }
++        fresh = parked;
++        log("swap.install_unexpired", { account, expiresInMin: Math.round((parked.expiresAt - Date.now()) / 60_000) });
++      }
++    }
++    if (fresh == null) {
++      const rejectedAt = target.lastRefreshRejected?.at;
++      if (!opts.retryRejected && rejectedAt != null && Date.now() - rejectedAt < REFRESH_REJECT_BACKOFF_MS) {
++        throw new SwapCandidateError("refresh-rejected-recently", `${target.label}: refresh_rejected ${Math.round((Date.now() - rejectedAt) / 60_000)}m ago, not retried for ${REFRESH_REJECT_BACKOFF_MS / 60_000}m - run \`tokenmaxxing auth ${target.label}\``);
++      }
++      try {
++        fresh = await refreshCredential(parked);
++      } catch (e) {
++        if (e instanceof InvalidGrantError) throw markDead(e.detail);
++        if (!(e instanceof RefreshRejectedError)) throw new SwapCandidateError("refresh-failed", `${target.label}: ${errText(e).slice(0, 160)}`);
++        log("swap.refresh_rejected", { account, status: e.status, code: e.code ?? undefined, detail: e.detail });
++        const viaClaude = await refreshViaClaude(target, parked).catch((err) => {
++          log("swap.claude_refresh_error", { account, err: errText(err).slice(0, 160) });
++          return null;
++        });
++        if (viaClaude != null && isDeadCredential(viaClaude)) throw markDead("claude code cleared the parked credential after its own refresh failed");
++        if (viaClaude == null || isAccessTokenExpiring(viaClaude, 60_000)) {
++          if (viaClaude != null) await writeItem(parkedTarget(target.keychainItem), JSON.stringify({ claudeAiOauth: viaClaude }));
++          stampRefresh(target.accountUuid, e);
++          throw e;
++        }
++        log("swap.refreshed_via_claude", { account });
++        fresh = viaClaude;
++      }
++      refreshed = true;
++      await writeItem(parkedTarget(target.keychainItem), JSON.stringify({ claudeAiOauth: fresh }));
++      stampRefresh(target.accountUuid, null);
++      let org: RolesResponse;
++      try {
++        org = await fetchTokenOrg(fresh.accessToken);
++      } catch (e) {
++        throw new SwapCandidateError("owner-unverifiable", `${target.label}: refreshed, but cannot verify the owner (${errText(e).slice(0, 120)})`);
++      }
++      if (org.organization_uuid !== target.organizationUuid) {
++        throw markDead(`refreshed credential belongs to ${org.organization_name} (org ${org.organization_uuid.slice(0, 8)}) - re-auth with \`tokenmaxxing auth ${target.label}\``);
+       }
+-      throw e;
+     }
+-    await writeItem(parkedTarget(target.keychainItem), JSON.stringify({ claudeAiOauth: fresh }));
+   }
+ 
++  let harvested = false;
+   await withClaudeRefreshLock(async (lock) => {
+     const currentLive = await readItem(liveTarget());
+     if (lock.compromised()) throw new Error("refresh lock compromised - aborting the swap before any write");
+@@ -84,29 +198,44 @@ export async function performSwap(target: Account): Promise<void> {
+       throw new Error("live credential changed while unlocked (concurrent /login or refresh) - aborting this swap; the next check re-resolves the owner and retries");
+     }
+ 
+-    if (liveOwner && currentLive) {
+-      await writeItem(parkedTarget(liveOwner.keychainItem), claudeAiOauthOnly(currentLive));
+-      log("swap.harvest", { account: liveOwner.accountUuid.slice(0, 8) });
++    if (liveOwner && liveCreds && currentLive) {
++      const harvest = parseBlob(currentLive).claudeAiOauth;
++      const parkedNowRaw = await readItem(parkedTarget(liveOwner.keychainItem));
++      const parkedNow = parkedNowRaw == null ? null : CredentialBlobSchema.safeParse((() => { try { return JSON.parse(parkedNowRaw); } catch { return null; } })()).data?.claudeAiOauth ?? null;
++      const parkedIsNewer = parkedNow != null && !isDeadCredential(parkedNow) && parkedNow.accessToken !== harvest.accessToken && (parkedNow.expiresAt ?? 0) > (harvest.expiresAt ?? 0);
++      if (parkedIsNewer) {
++        log("swap.harvest_skipped_newer_parked", { account: liveOwner.accountUuid.slice(0, 8) });
++      } else {
++        await writeItem(parkedTarget(liveOwner.keychainItem), claudeAiOauthOnly(currentLive));
++        harvested = true;
++        log("swap.harvest", { account: liveOwner.accountUuid.slice(0, 8) });
++      }
+     }
+ 
+     if (fresh != null) {
+       await writeItem(liveTarget(), mergeIntoLive(currentLive, fresh));
+     }
+     swapOAuthAccount(target.oauthAccount);
+-    idx.activeAccountUuid = target.accountUuid;
+-    const t2 = idx.accounts.find((a) => a.accountUuid === target.accountUuid);
++    const idx2 = loadAccounts();
++    idx2.activeAccountUuid = target.accountUuid;
++    const t2 = idx2.accounts.find((a) => a.accountUuid === target.accountUuid);
+     if (t2) { t2.needsReauth = false; }
+-    saveAccounts(idx);
++    saveAccounts(idx2);
+     clearUsageSnapshots();
+     clearDepletedWait();
+     clearNextCheck();
+     saveLastSwapAt(Date.now());
+   });
+-  log("swap.done", { account: target.accountUuid.slice(0, 8), email: target.email });
++  log("swap.done", { account: target.accountUuid.slice(0, 8), email: target.email, refreshed });
++  return { refreshed, expiresAt: fresh?.expiresAt ?? null, harvested };
++}
++
++export function isSkippableSwapError(e: unknown): boolean {
++  return e instanceof InvalidGrantError || e instanceof RefreshRejectedError || e instanceof SwapCandidateError;
+ }
+ 
+-export async function chooseAndSwap(ctx: PickCtx): Promise<Account | null> {
+-  const tried = new Set<string>();
++export async function chooseAndSwap(ctx: PickCtx, exclude: ReadonlySet<string> = new Set()): Promise<Account | null> {
++  const tried = new Set<string>(exclude);
+   while (true) {
+     const idx = loadAccounts();
+     const candidates = idx.accounts.filter((a) => !tried.has(a.accountUuid));
+@@ -117,9 +246,8 @@ export async function chooseAndSwap(ctx: PickCtx): Promise<Account | null> {
+       await performSwap(best);
+       return best;
+     } catch (e) {
+-      if (e instanceof InvalidGrantError) continue;
++      if (isSkippableSwapError(e)) continue;
+       throw e;
+     }
+   }
+ }
+-
+diff --git a/src/lib/types.ts b/src/lib/types.ts
+index f38b2f3..37e8cc1 100644
+--- a/src/lib/types.ts
++++ b/src/lib/types.ts
+@@ -4,7 +4,7 @@ import { z } from "zod";
+ const OAuthCredsSchema = z.looseObject({
+   accessToken: z.string(),
+   refreshToken: z.string(),
+-  expiresAt: z.number(),
++  expiresAt: z.number().nullish().transform((v) => v ?? 0),
+   refreshTokenExpiresAt: z.number().optional(),
+   scopes: z.array(z.string()).default([]),
+   subscriptionType: z.string().optional(),
+@@ -70,6 +70,7 @@ export const AccountSchema = z.object({
+   lastUsageAt: z.number().optional(),
+   enforcedUntil: z.number().optional(),
+   needsReauth: z.boolean().optional(),
++  lastRefreshRejected: z.object({ at: z.number(), status: z.number(), code: z.string().nullable() }).optional(),
+   subscriptionType: z.string().optional(),
+   rateLimitTier: z.string().optional(),
+ });
+diff --git a/src/lib/usage.ts b/src/lib/usage.ts
+index b9ef2aa..b855505 100644
+--- a/src/lib/usage.ts
++++ b/src/lib/usage.ts
+@@ -338,7 +338,7 @@ async function probeUsageOnce(env: Record<string, string>, now: number): Promise
+ 
+ const PROBE_RETRY_DELAYS_MS = [2000, 5000];
+ 
+-function probeEnv(configDir?: string): Record<string, string> {
++export function probeEnv(configDir?: string): Record<string, string> {
+   const env: Record<string, string> = { ...process.env, TOKENMAXXING_PROBE: "1", [WRAP_DEPTH_ENV]: String(MAX_WRAP_DEPTH) };
+   for (const k of CRED_ENV_OVERRIDES) delete env[k];
+   if (configDir) env.CLAUDE_CONFIG_DIR = configDir;
+diff --git a/src/main.ts b/src/main.ts
+index bf0950c..cf5c9be 100755
+--- a/src/main.ts
++++ b/src/main.ts
+@@ -25,6 +25,10 @@ import { cmdRename } from "./cli/rename.ts";
+ import { cmdSwitch } from "./cli/switch.ts";
+ import { cmdCheck } from "./cli/check.ts";
+ import { cmdConfig } from "./cli/config.ts";
++import { cmdSyncFile } from "./cli/syncfile.ts";
++import { credDir, HOME, liveFileMirrorEnabled } from "./lib/paths.ts";
++import { keychainStatus } from "./lib/keychain.ts";
++import { join } from "node:path";
+ import { timerDeactivationHint, uninstallSupervisor } from "./lib/install.ts";
+ import { c } from "./cli/render.ts";
+ 
+@@ -46,6 +50,7 @@ function printHelp(): void {
+   ${c.cyan("tokenmaxxing watch")} [seconds]  live status: re-render every N seconds (default 120, never pings)
+   ${c.cyan("tokenmaxxing config")} [get|set|unset|tidy]  inspect and edit config.json (bare = effective config with sources)
+   ${c.cyan("tokenmaxxing doctor")}     verify the install is intact
++  ${c.cyan("tokenmaxxing sync-file")}  reconcile the live keychain item with ~/.claude/.credentials.json (macOS live file mirror)
+   ${c.cyan("tokenmaxxing rename")} [--codex] <sel> <label>
+   ${c.cyan("tokenmaxxing rm")} [--codex] <sel>
+   ${c.cyan("tokenmaxxing uninstall")}  remove supervisor + settings entries
+@@ -72,7 +77,8 @@ async function main(): Promise<number> {
+   if (!(sub != null && sub.startsWith("__")) && !process.env.TOKENMAXXING_PROBE) {
+     const nonEmpty = (v: string | undefined) => (v != null && v !== "" ? v : null);
+     const ambient = nonEmpty(process.env.CLAUDE_SECURESTORAGE_CONFIG_DIR) ?? nonEmpty(process.env.CLAUDE_CONFIG_DIR);
+-    if (ambient != null) {
++    const mirroredDefault = process.platform === "darwin" && liveFileMirrorEnabled() && nonEmpty(process.env.CLAUDE_CONFIG_DIR) == null && credDir() === join(HOME, ".claude").normalize("NFC") && !keychainStatus().ok;
++    if (ambient != null && !mirroredDefault) {
+       console.error(c.red(`CLAUDE_CONFIG_DIR / CLAUDE_SECURESTORAGE_CONFIG_DIR is set (${ambient}): claude uses a namespaced credential store there that tokenmaxxing does not manage - unset it (or run from a clean shell) and retry.`));
+       return 1;
+     }
+@@ -100,6 +106,7 @@ async function main(): Promise<number> {
+     case "status": return cmdStatus(args.includes("--force"));
+     case "watch": return cmdWatch(args[1]);
+     case "doctor": return cmdDoctor();
++    case "sync-file": return cmdSyncFile();
+     case "rm": {
+       const rest = args.slice(1).filter((a) => a !== "--codex");
+       return args.includes("--codex") ? cmdCodexRm(rest[0]) : cmdRm(rest[0]);

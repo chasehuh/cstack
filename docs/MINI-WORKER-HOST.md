@@ -27,6 +27,8 @@ explore stay on the laptop.
 # same pack as the laptop; the launcher + sume-bg-remote come from this checkout
 git clone git@github.com:chasehuh/cstack.git ~/.cstack/src && ~/.cstack/src/install.sh
 # log in once, on the Mini itself: gh auth login, gt auth, tokenmaxxing init (claude/codex), grok
+# SSH workers read ~/.claude/.credentials.json, not the keychain: turn on the live file mirror
+~/.cstack/src/sume-desk/tokenmaxxing/install-tokenmaxxing-desk.sh --mirror   # docs/TOKENMAXXING.md
 # Remote Login on (System Settings → General → Sharing) — key auth, no password
 ```
 

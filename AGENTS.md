@@ -26,7 +26,7 @@ Then **read**, in this order:
 2. `~/.agents/skills/sume-gt-mq/SKILL.md` before any `gt submit` / `gt merge`
 3. `docs/FLOW.md` (this pack’s map of files → when to apply)
 4. `docs/TOKENMAXXING.md` — this machine’s `claude` is a **tokenmaxxing**
-   supervisor (Chase/dev Max pool), not a single login and not an API key
+   supervisor (pooled Max 20x accounts), not a single login and not an API key
 5. Formats SoT (LC package + dest fire + catalog pin):
    `~/.agents/skills/mobidoo-live-commerce-update/SKILL.md` before any
    `createCommit` / CS push / dest Format run create
@@ -60,8 +60,8 @@ and re-run `./install.sh`.
   Never Cursor `Task` + `claude-opus-*` or `cursor-grok-*`.
   Composer explore stays Cursor `Task`.
   That wrapper must hit **tokenmaxxing’s** `claude` (`~/.config/tokenmaxxing/bin`
-  ahead of the real CLI). Quota swap is automatic; expired parked tokens are
-  not — see `docs/TOKENMAXXING.md`.
+  ahead of the real CLI). Quota swap is automatic; a parked account whose
+  refresh is rejected is not — `tokenmaxxing doctor`, `docs/TOKENMAXXING.md`.
 - Terminal title / board Job = `Opus : <job-slug> (#N)` or `Fable : …`.
 - `sume-com` PRs: `cstack-clone` + `gt create` + `gt submit`. **Forbidden:**
   `gh pr create`. After submit: **`cstack-gt-wait-merge`** (tip
