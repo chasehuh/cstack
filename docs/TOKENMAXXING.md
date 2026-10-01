@@ -85,8 +85,16 @@ still needed (cstack#25):
 - **Desk additions**: a parked access token with more than 10 minutes left
   is owner-checked (roles endpoint) and installed **without** a refresh;
   refresh only runs when the parked token is expiring. `invalid_grant` still
-  sets needs-reauth; `refresh_rejected` does not, it is stamped on the account
-  (`lastRefreshRejected`: time, HTTP status, error code — never the body). A
+  sets needs-reauth; `refresh_rejected` (a 400/401 with an OAuth error code
+  other than `invalid_grant`) does not, it is stamped on the account
+  (`lastRefreshRejected`: time, HTTP status, error code — never the body).
+  Any other 4xx/5xx/network failure is transient: that account is skipped
+  for this run and not stamped. A stamped account is installed without a
+  refresh only with at least an hour of access left, and automatic switches
+  do not retry its refresh for 30 minutes (an explicit `switch <email>` does).
+  A dead live credential (cleared by Claude Code after a failed refresh, no
+  copy still valid) makes the check timer and a bare `switch` move to another
+  account even when no usage bar is crossed. A
   live credential that is dead-cleared, gets `invalid_grant`, or gets a 401
   from the roles endpoint is **not** parked back over its account's slot; one
   whose refresh is rejected (or that has no `expiresAt`) is parked only if its
@@ -222,7 +230,10 @@ exists; the installer's `--mirror` creates it):
   the usable one, else the later `expiresAt`. A refresh done by an SSH
   worker therefore wins over the stale keychain copy and is what gets parked.
 - The check timer, `tokenmaxxing status`, and `tokenmaxxing sync-file`
-  copy the current side to the other one under Claude Code's refresh lock.
+  copy the current side to the other one under Claude Code's refresh lock,
+  after the roles endpoint confirms the copied token belongs to the active
+  account (`~/.claude.json`); an expired copy is never pushed over a
+  dead-cleared or expired one.
   The timer fires every 60 s, so a refresh on either side reaches the
   other copy within about a minute.
 - The old `~/.local/bin/tokenmaxxing-sync-claude-file.sh` (one-way keychain

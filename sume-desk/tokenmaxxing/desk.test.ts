@@ -22,7 +22,7 @@ setDefaultTimeout(60_000);
 
 const tokens = new Map<string, Name>();
 const calls = { token: 0, roles: 0 };
-type Behavior = "ok" | "rejected" | "invalid_grant" | "claude-only";
+type Behavior = "ok" | "rejected" | "invalid_grant" | "claude-only" | "forbidden";
 const refreshBehavior = new Map<string, Behavior>();
 const secrets: string[] = [];
 
@@ -46,6 +46,7 @@ beforeAll(() => {
         const fromClaude = req.headers.get("x-desk-test-client") === "claude-code";
         const behavior = refreshBehavior.get(body.refresh_token) ?? "rejected";
         if (behavior === "claude-only" && !fromClaude) return Response.json({ type: "error", error: { type: "invalid_request_error", message: "Invalid request" } }, { status: 400 });
+        if (behavior === "forbidden") return new Response("<html>blocked</html>", { status: 403 });
         if (behavior === "invalid_grant") return Response.json({ error: "invalid_grant", error_description: "Refresh token revoked" }, { status: 400 });
         if (behavior === "rejected") return Response.json({ type: "error", error: { type: "invalid_request_error", message: "Refresh token not found or invalid" } }, { status: 400 });
         const owner = [...tokens.entries()].find(([t]) => t === body.refresh_token)?.[1] ?? "A";
@@ -131,7 +132,10 @@ function account(n: Name, usage: { five: number; week: number; weekResetH: numbe
   };
 }
 
-function seed(input: { live: Blob | null; parked: Partial<Record<Name, Blob>>; file?: Blob | null; claudeBin?: string; usage?: Partial<Record<Name, { five: number; week: number; weekResetH: number }>> }) {
+type Stamp = { at: number; status: number; code: string | null };
+const DEAD: Blob = { claudeAiOauth: { accessToken: "", refreshToken: "", expiresAt: 0, scopes: [], subscriptionType: "max" } };
+
+function seed(input: { live: Blob | null; parked: Partial<Record<Name, Blob | string>>; file?: Blob | null; claudeBin?: string; stamps?: Partial<Record<Name, Stamp>>; usage?: Partial<Record<Name, { five: number; week: number; weekResetH: number }>> }) {
   home = mkdtempSync(join(tmpdir(), "tm-desk-"));
   kc = join(home, "fake-keychain");
   tm = join(home, ".config", "tokenmaxxing");
@@ -139,12 +143,12 @@ function seed(input: { live: Blob | null; parked: Partial<Record<Name, Blob>>; f
   mkdirSync(tm, { recursive: true });
   mkdirSync(join(home, ".claude"), { recursive: true });
   const usage = { A: { five: 100, week: 40, weekResetH: 72 }, B: { five: 0, week: 0, weekResetH: 24 }, C: { five: 0, week: 30, weekResetH: 140 }, ...input.usage };
-  writeFileSync(join(tm, "accounts.json"), JSON.stringify({ version: 1, activeAccountUuid: ORG.A, accounts: (["A", "B", "C"] as Name[]).map((n) => account(n, usage[n])) }, null, 2));
+  writeFileSync(join(tm, "accounts.json"), JSON.stringify({ version: 1, activeAccountUuid: ORG.A, accounts: (["A", "B", "C"] as Name[]).map((n) => ({ ...account(n, usage[n]), ...(input.stamps?.[n] ? { lastRefreshRejected: input.stamps[n] } : {}) })) }, null, 2));
   writeFileSync(join(tm, "config.json"), JSON.stringify({ claudeBin: input.claudeBin ?? "/usr/bin/true" }));
   writeFileSync(join(home, ".claude.json"), JSON.stringify({ oauthAccount: account("A", usage.A).oauthAccount }));
   if (input.live) writeFileSync(kcFile(LIVE_SERVICE), JSON.stringify({ ...input.live, mcpOAuth: { keep: "keychain-side" } }));
   if (input.file !== undefined ? input.file : input.live) writeFileSync(liveFile(), JSON.stringify({ ...(input.file ?? input.live), mcpOAuth: { keep: "file-side" } }), { mode: 0o600 });
-  for (const [n, b] of Object.entries(input.parked)) writeFileSync(kcFile(parkedService(n as Name)), JSON.stringify(b));
+  for (const [n, b] of Object.entries(input.parked)) writeFileSync(kcFile(parkedService(n as Name)), typeof b === "string" ? b : JSON.stringify(b));
 }
 
 async function run(args: string[], extra: Record<string, string> = {}) {
@@ -336,13 +340,13 @@ describe("live file mirror (keychain item <-> ~/.claude/.credentials.json)", () 
 
   test("a file Claude Code dead-cleared is replaced from the keychain", async () => {
     const good = blob("A", { expiresIn: 2 * H });
-    seed({ live: good, file: { claudeAiOauth: { accessToken: "", refreshToken: "", expiresAt: 0, scopes: [], subscriptionType: "max" } }, parked: {} });
+    seed({ live: good, file: DEAD, parked: {} });
     await run(["sync-file"]);
     expect(fileToken()).toBe(good.claudeAiOauth.accessToken);
   });
 
   test("an expired keychain copy is not pushed over a file Claude Code dead-cleared (no refresh ping-pong)", async () => {
-    seed({ live: blob("A", { expiresIn: -1 * H }), file: { claudeAiOauth: { accessToken: "", refreshToken: "", expiresAt: 0, scopes: [], subscriptionType: "max" } }, parked: {} });
+    seed({ live: blob("A", { expiresIn: -1 * H }), file: DEAD, parked: {} });
     await run(["sync-file"]);
     expect(fileToken()).toBe("");
   });
@@ -360,3 +364,93 @@ describe("live file mirror (keychain item <-> ~/.claude/.credentials.json)", () 
     expect(d.stdout).toContain("login keychain not readable from this session");
   });
 });
+
+describe("review follow-ups", () => {
+  const lowUsage = { A: { five: 10, week: 10, weekResetH: 100 } };
+
+  test("check moves off a dead live credential even under every usage bar", async () => {
+    seed({ live: blob("A", { expiresIn: -1 * H }), file: DEAD, parked: { B: blob("B") }, usage: lowUsage });
+    const now = Date.now();
+    writeFileSync(join(tm, "usage.json"), JSON.stringify({ fiveHour: { usedPercentage: 10, resetsAt: now + 2 * H }, sevenDay: { usedPercentage: 10, resetsAt: now + 100 * H }, org: ORG.A, ts: now, model: null }));
+    const r = await run(["check"]);
+    expect(r.stdout).toContain("switched to B");
+    expect(accounts().activeAccountUuid).toBe(ORG.B);
+    expect(readFileSync(join(tm, "tokenmaxxing.log"), "utf8")).toContain("decide.live_dead");
+  });
+
+  test("bare switch moves off a dead live credential that is not over any bar", async () => {
+    seed({ live: blob("A", { expiresIn: -1 * H }), file: DEAD, parked: { B: blob("B") }, usage: lowUsage });
+    const r = await run(["switch"]);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain("switched to B");
+  });
+
+  test("a recently rejected account with under an hour left is skipped without calling the token endpoint", async () => {
+    seed({
+      live: blob("A", { expiresIn: 3 * H }),
+      parked: { B: blob("B", { expiresIn: 5 * H }), C: blob("C", { expiresIn: 30 * 60_000, refresh: "rejected" }) },
+      stamps: { C: { at: Date.now() - 5 * 60_000, status: 400, code: "invalid_request_error" } },
+      usage: { B: { five: 0, week: 30, weekResetH: 140 }, C: { five: 0, week: 0, weekResetH: 24 } },
+    });
+    const r = await run(["switch"]);
+    expect(r.code).toBe(0);
+    expect(r.stderr).toContain("skipping C: refresh_rejected");
+    expect(r.stdout).toContain("switched to B");
+    expect(calls.token).toBe(0);
+  });
+
+  test("an explicit switch retries a recently rejected account", async () => {
+    seed({ live: blob("A", { expiresIn: 3 * H }), parked: { C: blob("C", { expiresIn: -1 * H, refresh: "rejected" }) }, stamps: { C: { at: Date.now() - 5 * 60_000, status: 400, code: "invalid_request_error" } } });
+    const r = await run(["switch", "C"]);
+    expect(r.code).toBe(1);
+    expect(calls.token).toBe(1);
+  });
+
+  test("a non-OAuth 403 from the token endpoint is transient: skipped, not stamped", async () => {
+    seed({ live: blob("A", { expiresIn: 3 * H }), parked: { B: blob("B", { expiresIn: -1 * H, refresh: "forbidden" }), C: blob("C") } });
+    const r = await run(["switch"]);
+    expect(r.code).toBe(0);
+    expect(r.stderr).toContain("skipping B: token refresh failed (HTTP 403)");
+    expect(acct("B").lastRefreshRejected).toBeUndefined();
+    expect(acct("B").needsReauth).toBeFalsy();
+  });
+
+  test("a corrupt parked item is skipped instead of aborting the switch", async () => {
+    seed({ live: blob("A", { expiresIn: 3 * H }), parked: { B: "{not json", C: blob("C") } });
+    const r = await run(["switch"]);
+    expect(r.code).toBe(0);
+    expect(r.stderr).toContain("skipping B: parked credential does not parse");
+    expect(r.stdout).toContain("switched to C");
+  });
+
+  test("a check from an SSH session (keychain locked) writes nothing and logs keychain_unavailable", async () => {
+    seed({ live: blob("A", { expiresIn: 3 * H }), parked: { B: blob("B") } });
+    const now = Date.now();
+    writeFileSync(join(tm, "usage.json"), JSON.stringify({ fiveHour: { usedPercentage: 100, resetsAt: now + 2 * H }, sevenDay: { usedPercentage: 40, resetsAt: now + 72 * H }, org: ORG.A, ts: now, model: null }));
+    writeFileSync(join(kc, "LOCKED"), "");
+    const before = readFileSync(join(tm, "accounts.json"), "utf8");
+    const r = await run(["check"], { CLAUDE_SECURESTORAGE_CONFIG_DIR: join(home, ".claude") });
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain("keychain-unavailable");
+    expect(accounts().activeAccountUuid).toBe(ORG.A);
+    expect(JSON.parse(before).activeAccountUuid).toBe(ORG.A);
+    expect(readFileSync(join(tm, "tokenmaxxing.log"), "utf8")).toContain("decide.keychain_unavailable");
+  });
+
+  test("a GUI run with CLAUDE_SECURESTORAGE_CONFIG_DIR set is still refused", async () => {
+    seed({ live: blob("A", { expiresIn: 3 * H }), parked: {} });
+    const r = await run(["status"], { CLAUDE_SECURESTORAGE_CONFIG_DIR: join(home, ".claude") });
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain("CLAUDE_SECURESTORAGE_CONFIG_DIR is set");
+  });
+
+  test("the mirror does not copy a newer side whose token belongs to another account", async () => {
+    const stale = blob("A", { expiresIn: 1 * H });
+    const foreign = blob("B", { expiresIn: 7 * H });
+    seed({ live: stale, file: foreign, parked: {} });
+    const s = await run(["sync-file"]);
+    expect(s.code).toBe(1);
+    expect(liveToken()).toBe(stale.claudeAiOauth.accessToken);
+  });
+});
+
