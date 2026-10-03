@@ -653,6 +653,11 @@ migrations, "figure out why and design the fix" asks.
    (**via Claude Code CLI**):
    - investigate / RCA; write the GitHub mega-issue when needed
      (`github-mega-issue` skill);
+   - when the change crosses a module boundary or adds an API / data
+     model, shape it first with `sume-architect` (usage → types → design
+     twice; rationale in the mega-issue or a Job issue comment). Before
+     `gt submit` on a risky diff, `sume-blast-radius` proves the one
+     safety fact by running code (`## Blast radius` in the PR body);
    - then (same session) **`cstack-clone`** → code → local green →
      **`gt create` → `gt submit`** (single or stack) →
      **`cstack-gt-wait-merge`** (label the **tip** `merge-queue` now;
