@@ -81,6 +81,11 @@ link_skill sume-main-agent-orchestration
 link_skill sume-gt-mq
 link_skill github-mega-issue
 link_skill mobidoo-live-commerce-update
+# Engineering skills adapted from pstack (docs/PSTACK.md).
+link_skill sume-principles
+link_skill sume-architect
+link_skill sume-blast-radius
+link_skill sume-automate-me
 
 echo "== user Cursor rules =="
 mkdir -p "$HOME/.cursor/rules"
@@ -139,6 +144,7 @@ chmod +x "$BIN/agent-human-stream.sh" "$BIN/agent-human-stream.py" \
   "$GTBIN/cstack-clone.sh" "$GTBIN/cstack-clone-rm.sh" \
   "$GTBIN/cstack-mirror-sync.sh" "$GTBIN/cstack-gt-wait-merge.sh" \
   "$GTBIN/cstack-gt-wait-merge.test.sh" \
+  "$DESK/skills/sume-principles/sync-from-pstack.sh" \
   "$ROOT/bootstrap.sh" || true
 if ! echo ":$PATH:" | grep -q ":$HOME/.local/bin:"; then
   echo "NOTE: add \$HOME/.local/bin to PATH (e.g. in ~/.zshrc)"
@@ -242,6 +248,7 @@ echo "state:   ~/.cstack/state/opus-live"
 echo "mini:    sume-bg-launch --host mini (CSTACK_WORKER_HOST / CSTACK_MINI_SSH) — docs/MINI-WORKER-HOST.md"
 echo "harness: Cursor + Claude Code + Codex + Grok Build (~/.grok/skills)"
 echo "LC:      ~/.agents/skills/mobidoo-live-commerce-update/SKILL.md"
+echo "eng:     sume-architect / sume-blast-radius / sume-principles / sume-automate-me (pstack-derived, docs/PSTACK.md)"
 echo "Claude:  docs/TOKENMAXXING.md (tokenmaxxing pool, not a single login)"
 echo "Codex:   agent-human-stream --backend codex (tokenmaxxing Codex pool, same doc)"
 echo "Do not copy API keys / PEMs / tokenmaxxing accounts.json into this repo."

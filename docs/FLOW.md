@@ -26,6 +26,15 @@ Stage: `STOP at MQ enqueue` unless Chase said “merge까지 / landing까지”.
 | `sume-desk/skills/sume-gt-mq/` | `sume-gt-mq` | **Before** every `gt submit` / `gt merge` / MQ unstick / land handoff |
 | `sume-desk/skills/github-mega-issue/` | `github-mega-issue` | Filing the durable issue the worker will execute without the chat |
 | `sume-desk/skills/mobidoo-live-commerce-update/` | `mobidoo-live-commerce-update` | **Formats SoT** — LC package pull/push, catalog pin vs execute, dest fire. UI chrome stays mega-issue + `gt`. |
+| `sume-desk/skills/sume-architect/` | `sume-architect` | Before code that crosses a module boundary or adds an API / data model: usage → types → design twice → rationale on the Job issue |
+| `sume-desk/skills/sume-blast-radius/` | `sume-blast-radius` | Before submitting a risky diff: what else breaks, with the one safety fact proven by running code (`## Blast radius` in the PR body) |
+| `sume-desk/skills/sume-principles/` | `sume-principles` | 24 engineering principles (vendored, `references/`) — steering names (“apply prove it works”) and the vocabulary the two above cite |
+| `sume-desk/skills/sume-automate-me/` | `sume-automate-me` | Only when Chase asks: draft / refresh `chase-mode` from his corrections across harnesses, landed in this repo |
+
+The last four are adapted from pstack (MIT). What was taken, what was
+skipped and why, and how to resync: `docs/PSTACK.md`. They shape *how* code
+is built; routing, effort, Graphite, land, and dest evidence stay in the
+skills above.
 
 Runtime logs live at **`~/.cstack/state/`** (not inside the git skill tree).
 The wrapper recreates that dir.
