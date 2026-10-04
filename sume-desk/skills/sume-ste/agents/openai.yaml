@@ -1,0 +1,7 @@
+# Codex skill metadata. Codex ignores `disable-model-invocation` in SKILL.md;
+# this policy keeps the skill out of implicit invocation (explicit only).
+interface:
+  display_name: Sume STE
+  short_description: Simplified Technical English for English technical docs
+policy:
+  allow_implicit_invocation: false
