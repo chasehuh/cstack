@@ -56,10 +56,12 @@ docs/FLOW.md              # map of rules → when
 docs/TOKENMAXXING.md      # local Claude = tokenmaxxing supervisor
 docs/MINI-WORKER-HOST.md  # sume-bg-launch --host mini (detached Mac Mini worker)
 docs/PSTACK.md            # pstack-derived skills: taken / skipped / resync / MIT
+docs/STE.md               # sume-ste: Simplified Technical English pin, scope, ASD notice
 sume-desk/
   GRAPHITE-HARD-LOCK.md   # paste block for every author prompt
   skills/                 # SoT (orchestration, gt-mq, mega-issue, Formats LC,
-                          #      sume-architect / -blast-radius / -principles / -automate-me)
+                          #      sume-architect / -blast-radius / -principles / -automate-me,
+                          #      sume-ste)
   cursor-rules/user/      # ~/.cursor/rules
   cursor-rules/sume-com/  # <repo>/.cursor/rules
 ```
