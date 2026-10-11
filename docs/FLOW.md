@@ -58,7 +58,7 @@ duplicate the full SKILL into the `.mdc`.
 | `status-board.mdc` | Status board: `지금` / `스테이징` / `백로그` (24h). `지금` includes **진행** (one-shot live-log step). Confirm = resolve (drop; do not show `확인됨`) |
 | `active-workers-canvas.mdc` | Canvas surface of the status board |
 | `end-of-turn-worker-brief.mdc` | Chat work report is SoT (Slack-optional to read); every turn ends with the status board |
-| `slack-coding-agents.mdc` | `#coding-agents` team mirror. Not every turn: 4–5 turns / ~30m / Chase-asked. Not a substitute for the chat report |
+| `slack-coding-agents.mdc` | `#coding-agents` team mirror. Not every turn: 4–5 turns / ~30m / Chase-asked. Not a substitute for the chat report. Workers post their own completion report (`docs/SLACK-REPORT.md`) |
 | `canvas-user-language.mdc` | Canvas visible copy = Chase’s chat language (Korean thread → Korean) |
 | `chat-title-folder-prefix.mdc` | Rename chats `[workspace-folder] …` |
 | `origin-main-sot.mdc` | Code Q&A reads `origin/main`, not dirty local main |
@@ -116,6 +116,14 @@ agent-human-stream --resume <id> "Follow-up …"                   # backend fro
 Auto backend: `grok*` → grok, `gpt-*|o3*|o4*|codex*` → codex, Claude names
 → claude. Every backend prints `📎 session_id=<id>  backend=<…>`, tees to
 `~/.cstack/state/opus-live/`, and appends to the same registry.
+
+**Completion report (default on):** the wrapper appends the slack-report
+tail, so every worker posts one Korean report to `#coding-agents` when it
+finishes (`cstack-slack-post`; `SLACK_TEXT:` in the final block if it
+cannot). `--resume` steers get a one-line reminder, forks get the full tail,
+`sume-cron-job` is off. Opt out: `--no-slack-report`, `CSTACK_SLACK_REPORT=0`,
+or `<!-- slack-report:off -->` in the prompt. Dry run:
+`sume-bg-launch --print-prompt …`. SoT: `docs/SLACK-REPORT.md`.
 
 Mac Mini host: `sume-bg-launch --host mini …` (or `CSTACK_WORKER_HOST=mini`)
 runs the same wrapper **detached on the Mini** and mirrors its log into the
@@ -179,5 +187,5 @@ is the monitor.
 
 `./install.sh` links `agent-human-stream`, `claude-human-stream`,
 `sume-bg-launch`, `sume-bg-remote` (Mini side of `--host mini`),
-`cstack-clone`, and `cstack-gt-wait-merge` to `~/.local/bin`.
+`cstack-slack-post`, `cstack-clone`, and `cstack-gt-wait-merge` to `~/.local/bin`.
 Skills also land in `~/.grok/skills` for Grok Build.

@@ -56,6 +56,8 @@ Harness notes (do not fork policy here):
 - **Slack #coding-agents (always apply on user install):**
   `~/.cursor/rules/slack-coding-agents.mdc`
   (not every turn: 4–5 turns / ~30m / Chase-asked; then one burst).
+  Workers post their own completion report there by default
+  (`--no-slack-report` to opt out; `docs/SLACK-REPORT.md`).
 - **Canvas language (always apply on user install):**
   `~/.cursor/rules/canvas-user-language.mdc`
   (visible canvas copy matches Chase’s chat language).

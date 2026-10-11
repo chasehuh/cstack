@@ -4,11 +4,14 @@
 # it stages the prompt and calls `sume-bg-remote start` locally. No second
 # agent runner, no ssh, no attach.
 #
-#   sume-cron-job --name <slug> [--backend claude] [--cwd <dir>] [-- backend flags…]
+#   sume-cron-job --name <slug> [--backend claude] [--cwd <dir>] [--slack-report] [-- backend flags…]
 #
 # Prompt:  ~/.cstack/cron/<slug>.md   (fixed path; never in the crontab line)
 # Log:     ~/.cstack/state/cron/<slug>.log (one line per fire: started|skip|error)
 # Default backend flags (claude): --model claude-opus-5-5 --effort medium
+#
+# Slack: cron prompts post their own result, so the launcher's completion
+# report (docs/SLACK-REPORT.md) is off unless --slack-report is passed.
 #
 # One live job per slug: if a remote-jobs/<stamp>-<slug> job is still alive,
 # the fire is skipped (exit 0). Refuses inside a worker session (exit 5).
@@ -33,14 +36,16 @@ REMOTE="${SUME_BG_REMOTE_BIN:-$ROOT/sume-bg-remote.sh}"
 NAME=""
 BACKEND="claude"
 CWD="$HOME"
+SLACK_REPORT=0
 EXTRA=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --name) NAME=${2:-}; shift 2 ;;
     --backend) BACKEND=${2:-}; shift 2 ;;
     --cwd) CWD=${2:-}; shift 2 ;;
+    --slack-report) SLACK_REPORT=1; shift ;;
     --) shift; EXTRA=("$@"); break ;;
-    -h|--help) sed -n '2,16p' "$SOURCE" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,19p' "$SOURCE" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "sume-cron-job: error: unknown option $1" >&2; exit 2 ;;
   esac
 done
@@ -98,6 +103,7 @@ JOB="$(date -u +%Y%m%dT%H%M%SZ)-$NAME"
 "$REMOTE" prep --job "$JOB" >/dev/null
 cp "$PROMPT" "$JOBS_DIR/$JOB/prompt.md"
 START=(start --job "$JOB" --backend "$BACKEND" --name "$NAME" --cwd "$CWD")
+if [[ "$SLACK_REPORT" == "0" ]]; then START+=(--no-slack-report); fi
 if [[ ${#EXTRA[@]} -gt 0 ]]; then START+=(-- "${EXTRA[@]}"); fi
 out=$("$REMOTE" "${START[@]}") || fail 1 "start failed for job $JOB"
 say "started: $out"

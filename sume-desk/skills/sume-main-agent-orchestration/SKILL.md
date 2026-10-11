@@ -50,6 +50,15 @@ launch, resume, or hand off another worker from a worker — the launcher
 refuses nested launches (exit 5) and a nested process is killed when the
 session ends, which is the "Astra disconnect" ghost pattern (sume#7839).
 
+**Completion report (default on, `docs/SLACK-REPORT.md`):** the wrapper
+appends the slack-report tail to every fresh or forked worker prompt, so
+the worker posts one Korean report to `#coding-agents` in the Job thread
+when it finishes (`cstack-slack-post`). Do not paste Slack-report steps into
+job prompts. A final block with `SLACK_TEXT:` means the worker could not post:
+the main agent posts that text. Opt out per job: `--no-slack-report`,
+`CSTACK_SLACK_REPORT=0`, or `<!-- slack-report:off -->` in the prompt.
+Check the final prompt with `sume-bg-launch --print-prompt …`.
+
 ## Core Role Split
 
 ### Main Agent
@@ -161,6 +170,7 @@ Final report:
 - Dest/prod browser verify: `SHOTS: <gh issue comment URL>` (2–4 shots +
   host/workspace/Auto/SHA/pass-fail). No URL ⇒ no `DEST: pass`.
 - Caveats/follow-ups.
+- (Slack: the launcher appends the completion-report tail; nothing to add.)
 ```
 
 For research-only tasks, state "research only; no code changes." For production
