@@ -30,6 +30,12 @@
 # (--host mini from the Mini). Control-plane reads still work.
 # Override on purpose only: SUME_BG_ALLOW_NESTED=1.
 #
+# Completion report (docs/SLACK-REPORT.md): the wrapper appends the
+# slack-report tail, so the worker posts one Korean report to #coding-agents
+# when it finishes. --no-slack-report or CSTACK_SLACK_REPORT=0 turns it off
+# (the flag also reaches the Mini). --print-prompt prints the final prompt
+# (preamble + task + tail) and launches nothing; it also works inside a worker.
+#
 # Shell: description = "Grok : <job-slug> (#N)" (or "Codex : …"), block_until_ms = 0.
 # After spawn: read the terminal once for 📎 session_id= or exit_code.
 set -euo pipefail
@@ -48,6 +54,8 @@ RESUME=""
 FORK=0
 PROMPT_FILE=""
 EXTRA=()
+SLACK_REPORT="${CSTACK_SLACK_REPORT:-1}"
+PRINT_PROMPT=0
 HOST="${CSTACK_WORKER_HOST:-local}"
 HOST_SET=0
 CWD=""
@@ -71,7 +79,10 @@ usage() {
   cat <<'EOF'
 sume-bg-launch --backend grok|claude|codex --name <slug> --prompt-file <path> \
   [--host local|mini] [--cwd <remote dir>] \
-  [--resume <uuid> [--fork-session]] -- [backend flags…]
+  [--resume <uuid> [--fork-session]] [--no-slack-report] [--print-prompt] -- [backend flags…]
+
+  --no-slack-report   do not append the completion-report tail (also CSTACK_SLACK_REPORT=0)
+  --print-prompt      print the final prompt the worker would get; launch nothing
 
 Mini control plane (--host mini):
   sume-bg-launch --host mini --attach <job>     # re-attach; rewrites the local replica log
@@ -122,6 +133,14 @@ while [[ $# -gt 0 ]]; do
     --cwd)
       CWD=$2
       shift 2
+      ;;
+    --no-slack-report)
+      SLACK_REPORT=0
+      shift
+      ;;
+    --print-prompt)
+      PRINT_PROMPT=1
+      shift
       ;;
     --attach|--status|--kill)
       ACTION=${1#--}
@@ -354,7 +373,7 @@ EOF
   exit 5
 }
 
-if [[ "$ACTION" == "launch" ]]; then
+if [[ "$ACTION" == "launch" && "$PRINT_PROMPT" -eq 0 ]]; then
   refuse_nested_launch
 fi
 
@@ -472,6 +491,41 @@ if [[ -n "$CWD" && "$HOST" == "local" ]]; then
   cd "$CWD"
 fi
 
+resolve_wrapper() {
+  WRAPPER="${SUME_BG_LAUNCH_WRAPPER:-$(command -v agent-human-stream || true)}"
+  if [[ -z "$WRAPPER" && -x "$ROOT/agent-human-stream.sh" ]]; then
+    WRAPPER="$ROOT/agent-human-stream.sh"
+  fi
+  if [[ -z "$WRAPPER" ]]; then
+    echo "error: agent-human-stream not on PATH" >&2
+    exit 127
+  fi
+}
+
+# Dry run: the wrapper composes the prompt exactly as a launch would, prints
+# it, and exits. Nothing starts, nothing is stopped, the Mini is not touched.
+if [[ "$PRINT_PROMPT" -eq 1 ]]; then
+  resolve_wrapper
+  if [[ "$HOST" == "mini" ]]; then
+    echo "note: --print-prompt composes the prompt here; the Mini adds its job id to the preamble line" >&2
+  fi
+  CMD=("$WRAPPER" --print-prompt --backend "$BACKEND" --name "$NAME")
+  if [[ "$SLACK_REPORT" == "0" ]]; then
+    CMD+=(--no-slack-report)
+  fi
+  CMD+=(--prompt-file "$PROMPT_FILE")
+  if [[ -n "$RESUME" ]]; then
+    CMD+=(--resume "$RESUME")
+  fi
+  if [[ "$FORK" -eq 1 ]]; then
+    CMD+=(--fork-session)
+  fi
+  if [[ ${#EXTRA[@]} -gt 0 ]]; then
+    CMD+=("${EXTRA[@]}")
+  fi
+  exec "${CMD[@]}"
+fi
+
 # ---------------------------------------------------------------------------
 # --host mini: scp prompt → detached start → attach (replica)
 # ---------------------------------------------------------------------------
@@ -549,6 +603,10 @@ if [[ "$HOST" == "mini" ]]; then
   if [[ "$FORK" -eq 1 ]]; then
     START_ARGS+=(--fork-session)
   fi
+  # The laptop's env does not cross ssh; send the opt-out as a flag.
+  if [[ "$SLACK_REPORT" == "0" ]]; then
+    START_ARGS+=(--no-slack-report)
+  fi
   if [[ ${#EXTRA[@]} -gt 0 ]]; then
     START_ARGS+=(-- "${EXTRA[@]}")
   fi
@@ -586,16 +644,13 @@ if [[ -n "$RESUME" && "$FORK" -eq 0 ]]; then
   sleep 0.2
 fi
 
-WRAPPER="${SUME_BG_LAUNCH_WRAPPER:-$(command -v agent-human-stream || true)}"
-if [[ -z "$WRAPPER" && -x "$ROOT/agent-human-stream.sh" ]]; then
-  WRAPPER="$ROOT/agent-human-stream.sh"
-fi
-if [[ -z "$WRAPPER" ]]; then
-  echo "error: agent-human-stream not on PATH" >&2
-  exit 127
-fi
+resolve_wrapper
 
-CMD=("$WRAPPER" --backend "$BACKEND" --name "$NAME" --prompt-file "$PROMPT_FILE")
+CMD=("$WRAPPER" --backend "$BACKEND" --name "$NAME")
+if [[ "$SLACK_REPORT" == "0" ]]; then
+  CMD+=(--no-slack-report)
+fi
+CMD+=(--prompt-file "$PROMPT_FILE")
 if [[ -n "$RESUME" ]]; then
   CMD+=(--resume "$RESUME")
 fi

@@ -59,7 +59,7 @@ JOB=$(ls "$JOBS" | grep -E '^[0-9]{8}T[0-9]{6}Z-demo$' | head -1)
 [[ -n "$JOB" ]] || die "no job dir"
 cmp -s "$HOME/.cstack/cron/demo.md" "$JOBS/$JOB/prompt.md" || die "prompt not staged"
 for _ in $(seq 1 50); do [[ -s "$HOME/launch-argv.txt" ]] && break; sleep 0.1; done
-tr '\n' ' ' <"$HOME/launch-argv.txt" | grep -q -- "--host local --backend claude --name demo --prompt-file $JOBS/$JOB/prompt.md -- --model claude-opus-5-5 --effort medium" \
+tr '\n' ' ' <"$HOME/launch-argv.txt" | grep -q -- "--host local --backend claude --name demo --prompt-file $JOBS/$JOB/prompt.md --no-slack-report -- --model claude-opus-5-5 --effort medium" \
   || die "launcher argv: $(tr '\n' ' ' <"$HOME/launch-argv.txt")"
 [[ "$(cat "$HOME/launch-shell.txt")" != "/bin/sh" ]] || die "SHELL stayed /bin/sh"
 "$ROOT/sume-bg-remote.sh" status --job "$JOB" | grep -q ' alive=yes ' || die "job not alive"
@@ -86,5 +86,15 @@ sleep 1
 "$CRON" --name demo >/dev/null
 [[ $(ls "$JOBS" | grep -cE -- '-demo$') -eq 2 ]] || die "no fresh job after exit"
 ok "fresh fire after exit"
+
+# 8) cron prompts post their own Slack: completion report off unless --slack-report.
+"$ROOT/sume-bg-remote.sh" kill --job "$(ls "$JOBS" | grep -E -- '-demo$' | tail -1)" >/dev/null
+sleep 1
+rm -f "$HOME/launch-argv.txt"
+echo "x" >"$HOME/.cstack/cron/loud.md"
+"$CRON" --name loud --slack-report >/dev/null
+for _ in $(seq 1 50); do [[ -s "$HOME/launch-argv.txt" ]] && break; sleep 0.1; done
+! grep -qx -- '--no-slack-report' "$HOME/launch-argv.txt" || die "--slack-report still sent --no-slack-report"
+ok "--slack-report keeps the completion report"
 
 echo "sume-cron-job: $pass passed"

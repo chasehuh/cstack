@@ -218,6 +218,8 @@ else:
             binary = base / backend
             binary.write_text(stub)
             binary.chmod(0o755)
+        # The completion-report tail is covered by slack-report.test.sh.
+        env["CSTACK_SLACK_REPORT"] = "0"
         prompt = base / "prompt.md"
         prompt.write_text("Fork fixture prompt")
         wrapper = str(ROOT / "agent-human-stream.sh")
@@ -340,7 +342,9 @@ def test_worker_preamble_and_nested_guard() -> None:
         env.update(PATH=f"{tmp}:{env['PATH']}", TOKENMAXXING_REQUIRE_SUPERVISOR="0",
                    AGENT_HUMAN_STREAM_REGISTRY=str(base / "registry.jsonl"),
                    AGENT_HUMAN_STREAM_LIVE_DIR=str(base / "live"),
-                   ARGV_FILE=str(base / "argv.json"))
+                   ARGV_FILE=str(base / "argv.json"),
+                   # The completion-report tail is covered by slack-report.test.sh.
+                   CSTACK_SLACK_REPORT="0")
         stub = base / "codex"
         stub.write_text("""#!/usr/bin/env python3
 import json, os, sys

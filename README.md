@@ -39,7 +39,10 @@ Tokenmaxxing credentials stay in `~/.config/tokenmaxxing/` + keychain.
 - Host bins on `~/.local/bin`: `cstack-clone`, `cstack-clone-rm`,
   `cstack-mirror-sync`, **`cstack-gt-wait-merge`**, `agent-human-stream`,
   `sume-bg-launch` (+ `sume-bg-remote` for the Mac Mini worker host —
-  `docs/MINI-WORKER-HOST.md`)
+  `docs/MINI-WORKER-HOST.md`), `cstack-slack-post`
+- Workers post one Korean completion report to Slack `#coding-agents` by
+  default (opt out: `--no-slack-report` / `CSTACK_SLACK_REPORT=0`) —
+  `docs/SLACK-REPORT.md`
 - Runtime logs at `~/.cstack/state/` (not inside the git tree)
 - Pointers in `~/.codex/AGENTS.md`, `~/.claude/CLAUDE.md`, `~/.grok/AGENTS.md`
 
@@ -55,6 +58,7 @@ install.sh
 docs/FLOW.md              # map of rules → when
 docs/TOKENMAXXING.md      # local Claude = tokenmaxxing supervisor
 docs/MINI-WORKER-HOST.md  # sume-bg-launch --host mini (detached Mac Mini worker)
+docs/SLACK-REPORT.md      # worker completion report → #coding-agents (default on)
 docs/PSTACK.md            # pstack-derived skills: taken / skipped / resync / MIT
 docs/STE.md               # sume-ste: Simplified Technical English pin, scope, ASD notice
 sume-desk/

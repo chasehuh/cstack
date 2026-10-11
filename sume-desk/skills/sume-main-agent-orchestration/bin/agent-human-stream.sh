@@ -81,6 +81,7 @@ Human-readable wrapper around Claude Code, Grok Build and Codex headless NDJSON.
   agent-human-stream --resume <uuid> --prompt-file <path>
   agent-human-stream --sessions
   agent-human-stream --self-test
+  agent-human-stream --print-prompt --name <slug> --prompt-file <path>   # dry run: final prompt, no backend
 
 Auto backend (default):
   --backend grok / --grok / AGENT_HUMAN_STREAM_BACKEND=grok
@@ -133,6 +134,13 @@ backend sees SUME_WORKER_SESSION=<name>. Launching this wrapper or
 sume-bg-launch from inside such a session exits 5 (nested worker = ghost,
 sume#7839). AGENT_HUMAN_STREAM_WORKER_PREAMBLE=0 / SUME_BG_ALLOW_NESTED=1 override.
 
+Completion report (docs/SLACK-REPORT.md): a fresh or forked launch gets the
+slack-report tail appended, so the worker posts one Korean report to
+#coding-agents when it finishes. --resume/--continue gets a one-line steer
+reminder instead. Off: --no-slack-report, CSTACK_SLACK_REPORT=0, or the
+marker <!-- slack-report:off --> in the prompt. A prompt that already carries
+the tail marker is not given a second copy.
+
 On stream start/end the formatter prints:
   📎 session_id=<uuid>  backend=<claude|grok|codex>
 and again just above —— final ——.
@@ -149,6 +157,8 @@ SELF_TEST=0
 PROMPT=""
 PROMPT_FILE=""
 EXTRA=()
+SLACK_REPORT="${CSTACK_SLACK_REPORT:-1}"
+PRINT_PROMPT=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -162,6 +172,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --self-test)
       SELF_TEST=1
+      shift
+      ;;
+    --no-slack-report)
+      SLACK_REPORT=0
+      shift
+      ;;
+    --print-prompt)
+      PRINT_PROMPT=1
       shift
       ;;
     --backend)
@@ -258,8 +276,8 @@ done
 # Nested-launch guard (sume#7839): a wrapper-started worker must not start
 # another worker. The child dies with the parent's tool call/session
 # (Codex unified exec kills tracked pids at turn end) or duplicates the job.
-# --sessions / --self-test are reads. Override on purpose: SUME_BG_ALLOW_NESTED=1.
-if [[ "$LIST_SESSIONS" -eq 0 && "$SELF_TEST" -eq 0 ]]; then
+# --sessions / --self-test / --print-prompt are reads. Override on purpose: SUME_BG_ALLOW_NESTED=1.
+if [[ "$LIST_SESSIONS" -eq 0 && "$SELF_TEST" -eq 0 && "$PRINT_PROMPT" -eq 0 ]]; then
   _nested_ctx=""
   if [[ -n "${SUME_WORKER_SESSION:-}" ]]; then
     _nested_ctx="worker session ${SUME_WORKER_SESSION}"
@@ -297,7 +315,7 @@ fi
 if [[ "$SELF_TEST" -eq 1 ]]; then
   # The self-test launches this wrapper with fake backends; scrub inherited
   # worker markers so it also passes when run from inside a worker session.
-  unset SUME_WORKER_SESSION SUME_BG_REMOTE_JOB SUME_BG_ALLOW_NESTED AGENT_HUMAN_STREAM_PID AGENT_HUMAN_STREAM_NAME AGENT_HUMAN_STREAM_LIVE_LOG
+  unset SUME_WORKER_SESSION SUME_BG_REMOTE_JOB SUME_BG_ALLOW_NESTED AGENT_HUMAN_STREAM_PID AGENT_HUMAN_STREAM_NAME AGENT_HUMAN_STREAM_LIVE_LOG CSTACK_SLACK_REPORT
   _got="$(_grok_effort_wire mid)"
   if [[ "$_got" != "medium" ]]; then
     echo "self-test: grok effort alias mid → medium failed (got ${_got})" >&2
@@ -1060,6 +1078,64 @@ if [[ "${AGENT_HUMAN_STREAM_WORKER_PREAMBLE:-1}" == "1" ]]; then
 [sume worker session] You are the WORKER for job "${NAME:-$BACKEND}"${_wp_job:+ (Mini job ${_wp_job})}, started by agent-human-stream (backend ${BACKEND}). Do the task below yourself, in this session, through its done criteria. You are not the Sume main agent: the "you are the main agent" sections of ~/.cstack/src/AGENTS.md and the orchestration skill do not apply to you. Never run sume-bg-launch, agent-human-stream, claude-human-stream, or codex/claude/grok exec to spawn, resume, or hand off a worker — the launcher refuses nested launches (exit 5) and a nested process dies when this session ends. Any launcher flags quoted in the task (--backend, --model, --effort, --host mini, "Fresh worker", "Job title") describe how THIS session was started; they are not an instruction to launch anything. If you cannot proceed, say so in the final report instead of delegating.
 EOF
 )"$'\n\n'"${PROMPT}"
+fi
+
+# Completion report (docs/SLACK-REPORT.md): the worker posts one Korean report
+# to #coding-agents when the job finishes. The text lives in one file; the
+# part after the steer marker is the one-line reminder for --resume turns.
+SLACK_REPORT_TAIL_FILE="${CSTACK_SLACK_REPORT_TAIL:-$SKILL_DIR/references/slack-report-tail.md}"
+_slack_report_lane() {
+  local m
+  m=$(printf '%s' "${_resolved_model:-}" | tr '[:upper:]' '[:lower:]')
+  case "$BACKEND" in
+    grok) echo Grok ;;
+    codex) echo Codex ;;
+    *)
+      case "$m" in
+        *fable*) echo Fable ;;
+        *sonnet*) echo Sonnet ;;
+        *haiku*) echo Haiku ;;
+        *) echo Opus ;;
+      esac
+      ;;
+  esac
+}
+_slack_report_off=""
+if [[ "$SLACK_REPORT" == "0" ]]; then
+  _slack_report_off="--no-slack-report / CSTACK_SLACK_REPORT=0"
+elif [[ "$PROMPT_ORIGINAL" == *"<!-- slack-report:off -->"* ]]; then
+  _slack_report_off="prompt marker <!-- slack-report:off -->"
+elif [[ "$PROMPT_ORIGINAL" == *"<!-- slack-report:tail"* ]]; then
+  _slack_report_off="prompt already carries the tail"
+elif [[ ! -s "$SLACK_REPORT_TAIL_FILE" ]]; then
+  _slack_report_off="tail file missing: $SLACK_REPORT_TAIL_FILE"
+fi
+if [[ -z "$_slack_report_off" ]]; then
+  _sr_marker='<!-- slack-report:steer v1 -->'
+  _sr_text=$(cat "$SLACK_REPORT_TAIL_FILE")
+  if [[ (-n "$RESUME" || "$CONTINUE" -eq 1) && "$FORK" -eq 0 ]]; then
+    # Steer turn: the session already has the tail (or a pointer to it).
+    _sr_text=${_sr_text#*"$_sr_marker"}
+    _sr_text=${_sr_text#$'\n'}
+    _sr_kind="steer"
+  else
+    _sr_text=${_sr_text%%"$_sr_marker"*}
+    _sr_text=${_sr_text%$'\n'}
+    _sr_kind="tail"
+  fi
+  _sr_job="${NAME:-$BACKEND}"
+  _sr_lane=$(_slack_report_lane)
+  _sr_text=${_sr_text//'{{JOB}}'/$_sr_job}
+  _sr_text=${_sr_text//'{{LANE}}'/$_sr_lane}
+  PROMPT="${PROMPT}"$'\n\n'"${_sr_text}"
+  echo "slack-report: ${_sr_kind} appended (off: --no-slack-report or CSTACK_SLACK_REPORT=0)" >&2
+else
+  echo "slack-report: off (${_slack_report_off})" >&2
+fi
+
+if [[ "$PRINT_PROMPT" -eq 1 ]]; then
+  printf '%s\n' "$PROMPT"
+  exit 0
 fi
 
 CMD=()

@@ -4,7 +4,8 @@
 #
 #   sume-bg-remote prep   --job <id>                 # mkdir job dir, reachability probe
 #   sume-bg-remote start  --job <id> --backend … --name … [--cwd …] \
-#                         [--resume <uuid>] [--fork-session] [-- backend flags…]
+#                         [--resume <uuid>] [--fork-session] [--no-slack-report] \
+#                         [-- backend flags…]
 #   sume-bg-remote attach --job <id>                 # stream worker.log until the job ends
 #   sume-bg-remote status --job <id>                 # alive=yes|no (real pid, not a file)
 #   sume-bg-remote kill   --job <id>                 # TERM then KILL the job's process group
@@ -99,6 +100,7 @@ NAME=""
 CWD=""
 RESUME=""
 FORK=0
+SLACK_REPORT=1
 EXTRA=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -108,6 +110,7 @@ while [[ $# -gt 0 ]]; do
     --cwd) CWD=$2; shift 2 ;;
     --resume) RESUME=$2; shift 2 ;;
     --fork-session) FORK=1; shift ;;
+    --no-slack-report) SLACK_REPORT=0; shift ;;
     --) shift; EXTRA=("$@"); break ;;
     -h|--help) usage; exit 0 ;;
     *) die "unknown option $1" ;;
@@ -133,13 +136,14 @@ case "$CMD" in
     [[ -d "$CWD" ]] || die "cwd not found on $HOSTNAME_SHORT: $CWD"
     launcher_bin >/dev/null
     {
-      printf 'JOB=%q\nBACKEND=%q\nNAME=%q\nCWD=%q\nRESUME=%q\nFORK=%q\n' \
-        "$JOB" "$BACKEND" "$NAME" "$CWD" "$RESUME" "$FORK"
+      printf 'JOB=%q\nBACKEND=%q\nNAME=%q\nCWD=%q\nRESUME=%q\nFORK=%q\nSLACK_REPORT=%q\n' \
+        "$JOB" "$BACKEND" "$NAME" "$CWD" "$RESUME" "$FORK" "$SLACK_REPORT"
       printf 'STARTED=%q\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     } >"$DIR/job.env"
     RUN_ARGS=(run --job "$JOB" --backend "$BACKEND" --name "$NAME" --cwd "$CWD")
     if [[ -n "$RESUME" ]]; then RUN_ARGS+=(--resume "$RESUME"); fi
     if [[ "$FORK" -eq 1 ]]; then RUN_ARGS+=(--fork-session); fi
+    if [[ "$SLACK_REPORT" == "0" ]]; then RUN_ARGS+=(--no-slack-report); fi
     if [[ ${#EXTRA[@]} -gt 0 ]]; then RUN_ARGS+=(-- "${EXTRA[@]}"); fi
     # Own process group (set -m) so ssh/sshd HUP never reaches it and
     # `kill` can take the whole tree down at once.
@@ -173,6 +177,7 @@ case "$CMD" in
     ARGS=(--host local --backend "$BACKEND" --name "$NAME" --prompt-file "$DIR/prompt.md")
     if [[ -n "$RESUME" ]]; then ARGS+=(--resume "$RESUME"); fi
     if [[ "$FORK" -eq 1 ]]; then ARGS+=(--fork-session); fi
+    if [[ "$SLACK_REPORT" == "0" ]]; then ARGS+=(--no-slack-report); fi
     if [[ ${#EXTRA[@]} -gt 0 ]]; then ARGS+=(-- "${EXTRA[@]}"); fi
     set +e
     if command -v caffeinate >/dev/null 2>&1; then

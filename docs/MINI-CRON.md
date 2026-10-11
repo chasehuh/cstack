@@ -32,6 +32,9 @@ on the Mini. There is no second agent runner, no ssh-to-self, no attach.
   `… --name <slug> -- --model claude-sonnet-5-5 --effort medium`
   (desk alias `sonnet-5.5`). The default stays Opus 5.5.
 - `--cwd <dir>` sets where the job starts (default `$HOME`).
+- Slack: a cron prompt posts its own result, so the launcher's completion
+  report ([SLACK-REPORT.md](SLACK-REPORT.md)) is **off** for cron fires.
+  `--slack-report` turns it on for that entry.
 - cron runs `/bin/sh`; `sume-cron-job` sets `SHELL` to the user's login shell
   so the worker gets the same zsh login PATH as an ssh launch.
 

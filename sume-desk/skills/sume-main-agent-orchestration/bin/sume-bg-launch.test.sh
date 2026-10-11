@@ -295,4 +295,15 @@ pass "nested-launch guard"
 grep -q 'SUME_BG_REMOTE_JOB="\$JOB"' "$REMOTE" || fail "sume-bg-remote run must export SUME_BG_REMOTE_JOB"
 pass "remote run exports SUME_BG_REMOTE_JOB"
 
+# 12) completion-report opt-out crosses ssh as a flag (env does not): the
+#     laptop's CSTACK_SLACK_REPORT=0 lands in the Mini job.env and wrapper argv.
+CSTACK_SLACK_REPORT=0 FAKE_WRAPPER_ARGV="$MINI/remote-argv-noslack.txt" \
+  "$LAUNCH" --host mini --backend grok --name noslack-job --prompt-file "$PROMPT" >/dev/null 2>"$T/err12.txt"
+JOB12=$(sed -n 's/.*job: \([^ ]*\).*/\1/p' "$T/err12.txt" | head -n 1)
+grep -q '^SLACK_REPORT=0$' "$MINI/.cstack/state/remote-jobs/$JOB12/job.env" || fail "Mini job.env lacks SLACK_REPORT=0"
+grep -qx -- '--no-slack-report' "$MINI/remote-argv-noslack.txt" || fail "--no-slack-report did not reach the Mini wrapper"
+grep -q 'sume-bg-remote start .*--no-slack-report' "$FAKE_SSH_LOG" || fail "start over ssh lacks --no-slack-report"
+! grep -qx -- '--no-slack-report' "$MINI/remote-argv.txt" || fail "default Mini launch must not opt out"
+pass "slack-report opt-out reaches the Mini"
+
 echo "sume-bg-launch host tests: all ok"
