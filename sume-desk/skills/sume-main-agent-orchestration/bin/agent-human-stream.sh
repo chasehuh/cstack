@@ -1219,6 +1219,13 @@ export AGENT_HUMAN_STREAM_PID="$$"
 # launcher/wrapper refuse to start a nested worker when they see it.
 export SUME_WORKER_SESSION="${NAME:-$BACKEND}"
 export AGENT_HUMAN_STREAM_CWD="$PWD"
+# Load caps for the worker's test gates (sume#12962): VITEST_MAX_WORKERS and
+# pnpm workspace concurrency. Values already in the environment win.
+WORKER_ENV="${CSTACK_WORKER_ENV:-$SKILL_DIR/../../worker.env}"
+if [[ -f "$WORKER_ENV" ]]; then
+  # shellcheck disable=SC1090
+  source "$WORKER_ENV"
+fi
 export AGENT_HUMAN_STREAM_RESUME_FROM="${RESUME:-}"
 if [[ "$CONTINUE" -eq 1 ]]; then
   export AGENT_HUMAN_STREAM_RESUME_FROM="${AGENT_HUMAN_STREAM_RESUME_FROM:-continue}"
