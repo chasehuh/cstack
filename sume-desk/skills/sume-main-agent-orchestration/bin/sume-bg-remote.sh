@@ -189,6 +189,12 @@ case "$CMD" in
     set -e
     echo "$RC" >"$DIR/exit_code"
     printf 'sume-bg-remote: job=%s exited rc=%s\n' "$JOB" "$RC"
+    # Close the ego task spaces this job left open (success or failure), and
+    # sweep agent spaces of dead jobs older than 1 h (sume#12962). Best
+    # effort: it never changes RC. CSTACK_EGO_REAP=0 turns it off.
+    if [[ "${CSTACK_EGO_REAP:-1}" != "0" ]] && command -v node >/dev/null 2>&1; then
+      node "$ROOT/cstack-ego-reap.mjs" --job-dir "$DIR" --sweep --apply >>"$DIR/ego-reap.log" 2>&1 || true
+    fi
     exit "$RC"
     ;;
 
