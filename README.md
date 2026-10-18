@@ -44,7 +44,8 @@ Tokenmaxxing credentials stay in `~/.config/tokenmaxxing/` + keychain.
   default (opt out: `--no-slack-report` / `CSTACK_SLACK_REPORT=0`) —
   `docs/SLACK-REPORT.md`
 - Runtime logs at `~/.cstack/state/` (not inside the git tree)
-- Pointers in `~/.codex/AGENTS.md`, `~/.claude/CLAUDE.md`, `~/.grok/AGENTS.md`
+- Pointers in `~/.codex/AGENTS.md`, `~/.claude/CLAUDE.md`, `~/.grok/AGENTS.md`,
+  including the always-on no-code-comments rule (`docs/CODE-COMMENTS.md`)
 
 Edit files **here**, then `./install.sh`. Do not edit the skill copies
 under `~/.agents` as if they were independent.
@@ -61,6 +62,7 @@ docs/MINI-WORKER-HOST.md  # sume-bg-launch --host mini (detached Mac Mini worker
 docs/SLACK-REPORT.md      # worker completion report → #coding-agents (default on)
 docs/PSTACK.md            # pstack-derived skills: taken / skipped / resync / MIT
 docs/STE.md               # sume-ste: Simplified Technical English pin, scope, ASD notice
+docs/CODE-COMMENTS.md     # no code comments: docs are the SoT (every harness)
 sume-desk/
   GRAPHITE-HARD-LOCK.md   # paste block for every author prompt
   skills/                 # SoT (orchestration, gt-mq, mega-issue, Formats LC,
