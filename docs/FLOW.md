@@ -44,6 +44,14 @@ The wrapper recreates that dir.
 
 Formats policy lives **only** in that skill. Do not fork it into FLOW.
 
+## Code comments: none (every harness)
+
+`docs/CODE-COMMENTS.md` is the SoT: do not write code comments; rules, locks
+and reasons live in the repo docs. `install.sh` appends
+`sume-desk/code-comments-snippet.md` to `~/.codex/AGENTS.md` (Claude Code
+imports it) and `~/.grok/AGENTS.md`; Cursor gets `no-code-comments.mdc`
+(below). `check-wiring.sh` checks the Codex entry.
+
 ## Layer 1 — user-global Cursor rules (`~/.cursor/rules/`)
 
 Pointers + cookbooks. They must stay **pointers** where noted — do not
@@ -64,6 +72,7 @@ duplicate the full SKILL into the `.mdc`.
 | `origin-main-sot.mdc` | Code Q&A reads `origin/main`, not dirty local main |
 | `worker-reasoning-effort.mdc` | Code default: opus medium / fable high / grok xhigh / codex high. Named Claude `max`/`xhigh` pass through. Grok and Codex `max` → xhigh. Research: grok medium (opus+fable low) |
 | `aside-browser-verify.mdc` | Browser verification: `ego-browser` TaskSpace (preferred) or `aside repl`; own tab; dev/prod under sumelabs; dest Auto; evidence = one issue comment w/ 2–4 shots (`SHOTS:` URL required, #7110); local first, then dest |
+| `no-code-comments.mdc` | No code comments; docs are the SoT (`docs/CODE-COMMENTS.md`) |
 
 ## Layer 2 — `sume-com` repo rules (install into `<sume-com>/.cursor/rules/`)
 

@@ -197,6 +197,12 @@ append_entry "$HOME/.codex/AGENTS.md" \
 append_entry "$HOME/.grok/AGENTS.md" \
   "$ROOT/sume-desk/worker-mode-snippet.md" \
   "## Sume worker mode (always on)"
+append_entry "$HOME/.codex/AGENTS.md" \
+  "$ROOT/sume-desk/code-comments-snippet.md" \
+  "## Sume code comments (always on)"
+append_entry "$HOME/.grok/AGENTS.md" \
+  "$ROOT/sume-desk/code-comments-snippet.md" \
+  "## Sume code comments (always on)"
 
 # Existing snippets keep the old marker, so append the wait cook if missing.
 ensure_wait_hint() {

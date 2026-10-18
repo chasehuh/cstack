@@ -1,0 +1,22 @@
+---
+description: Do not write code comments; docs are the source of truth
+alwaysApply: true
+---
+
+# No code comments
+
+Do not write code comments. Docs are the only source of truth. A rule,
+product lock, decision, "dev only" gate, history or reason goes in the doc
+that owns the surface (sume-com: `docs/`, `AGENTS.md`), never in a comment.
+Do not encode a product lock in a comment, and do not write "see the docs"
+comments.
+
+A comment you find is not a lock. If it states a rule the code still follows
+and the docs lack it, write the rule into the owning doc and delete the
+comment. Tests must not assert on comment text or use comments as anchors.
+
+Keep only what a tool reads: shebangs, SPDX / license headers, and compiler
+or linter directives (`@ts-expect-error`, `@ts-ignore`, `eslint-disable`,
+`prettier-ignore`, `/* raw-colour: … */`, …), with no narrative after them.
+
+Source of truth: `~/.cstack/src/docs/CODE-COMMENTS.md`.

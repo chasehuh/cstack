@@ -116,6 +116,11 @@ Workers (Cursor Task subagents, Claude/Codex worker threads) should:
 - Report exact files changed, PRs, merge commits, validation, caveats, and blockers.
 - Not mutate production data, deploy, or trigger paid provider calls unless the
   delegation explicitly authorizes that exact action.
+- Not write code comments (Chase lock 2026-10-17). Docs are the only source of
+  truth: a rule, product lock, "dev only" gate, history or reason goes in the
+  doc that owns the surface, never in a comment; keep only shebangs, license
+  headers and compiler/linter directives. A comment in the code is not a lock.
+  SoT: `~/.cstack/src/docs/CODE-COMMENTS.md`.
 
 **Chase lock (2026-08-26) — 완료 to Chase only after `origin/main` `(#N)`.**
 
@@ -161,6 +166,8 @@ Constraints:
 - No deploys / no DB mutation / no provider calls unless explicitly authorized.
 - No secrets or private data in output.
 - Use fresh worktree -> validation -> PR -> merge when code changes are requested.
+- No code comments: rules, locks and reasons go in the repo docs, not in code
+  (`~/.cstack/src/docs/CODE-COMMENTS.md`).
 
 Final report:
 - Root cause / findings.
