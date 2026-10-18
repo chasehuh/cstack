@@ -46,6 +46,7 @@ Tokenmaxxing credentials stay in `~/.config/tokenmaxxing/` + keychain.
 - Runtime logs at `~/.cstack/state/` (not inside the git tree)
 - Pointers in `~/.codex/AGENTS.md`, `~/.claude/CLAUDE.md`, `~/.grok/AGENTS.md`,
   including the always-on no-code-comments rule (`docs/CODE-COMMENTS.md`)
+  and the no-feature-flags rule (`docs/FEATURE-FLAGS.md`)
 
 Edit files **here**, then `./install.sh`. Do not edit the skill copies
 under `~/.agents` as if they were independent.

@@ -52,6 +52,15 @@ and reasons live in the repo docs. `install.sh` appends
 imports it) and `~/.grok/AGENTS.md`; Cursor gets `no-code-comments.mdc`
 (below). `check-wiring.sh` checks the Codex entry.
 
+## Feature flags: none (every harness)
+
+`docs/FEATURE-FLAGS.md` is the SoT: no binary feature flags; a flag needed to
+land a change is removed within one week; removing one keeps dev's behaviour
+and adds no env variable. `install.sh` appends
+`sume-desk/feature-flags-snippet.md` to `~/.codex/AGENTS.md` (Claude Code
+imports it) and `~/.grok/AGENTS.md`; Cursor gets `no-feature-flags.mdc`.
+`check-wiring.sh` checks the Codex entry.
+
 ## Layer 1 — user-global Cursor rules (`~/.cursor/rules/`)
 
 Pointers + cookbooks. They must stay **pointers** where noted — do not

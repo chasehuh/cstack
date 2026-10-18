@@ -1,0 +1,12 @@
+---
+description: No binary feature flags; a flag lands for one week at most
+alwaysApply: true
+---
+
+# No binary feature flags
+
+Do not add an env variable or a host check that turns product behaviour on
+or off, or picks A or B. Dev and production run the same product. A flag
+needed to land a change is removed within one week; removing it keeps dev's
+behaviour and adds no env variable. SoT: `~/.cstack/src/docs/FEATURE-FLAGS.md`
+and sume-com `docs/operations/feature-flags.md`.
