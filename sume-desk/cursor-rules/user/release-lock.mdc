@@ -1,0 +1,12 @@
+---
+description: Only a dedicated release agent may go staging to prod, and only after Chase allows that release
+alwaysApply: true
+---
+
+# Release lock
+
+Staging → prod is forbidden unless Chase explicitly allows that release.
+"Do it on prod" / "hide it on prod" is not permission to tag. Only a
+dedicated release subagent may tag, approve Production, or dispatch the prod
+release, and it does only the release. Product workers stop at `origin/main`
+and a staging candidate. SoT: `~/.cstack/src/docs/RELEASE-LOCK.md`.

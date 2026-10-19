@@ -366,6 +366,7 @@ print(json.dumps({'type': 'thread.started', 'thread_id': 'cccccccc-cccc-7ccc-8cc
         body = argv[-1]
         assert body.startswith('[sume worker session] You are the WORKER for job "preamble-test"'), body
         assert "Never run sume-bg-launch" in body, body
+        assert "Only a dedicated release subagent may tag, approve Production, or dispatch the prod release" in body, body
         assert body.endswith("\n\n" + prompt.read_text()), body
         seen = json.loads((base / "env.json").read_text())
         assert seen.get("SUME_WORKER_SESSION") == "preamble-test", seen
