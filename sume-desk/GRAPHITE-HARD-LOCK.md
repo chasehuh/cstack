@@ -40,6 +40,10 @@ GRAPHITE (hard lock) — Chase 2026-09-06: author owns land to origin/main:
   Enqueue is not 완료. Done report only after main-tip proof:
   clone path + Graphite URL + GitHub PR URL + SHA + `LANDED: yes`.
   `cstack-clone-rm <job-slug>` after land (keep the tree while unblocking).
+- RELEASE (hard lock 2026-10-18, docs/RELEASE-LOCK.md): stop at origin/main
+  and a staging candidate. No rc / vX.Y.Z tag, no release dispatch, no
+  Production approval. "Do it on prod" is not permission to tag; only a
+  release-only job that quotes Chase allowing that release may ship.
 - DEST EVIDENCE (hard lock 2026-09-11, #7110): after dest/prod browser verify,
   post ONE `gh issue comment` on the Job issue with 2–4 screenshots + host,
   sumelabs, Auto (not Astra), SHA, pass/fail. Final report must carry

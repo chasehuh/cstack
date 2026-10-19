@@ -61,6 +61,18 @@ and adds no env variable. `install.sh` appends
 imports it) and `~/.grok/AGENTS.md`; Cursor gets `no-feature-flags.mdc`.
 `check-wiring.sh` checks the Codex entry.
 
+## Releases: release agent only (every harness)
+
+`docs/RELEASE-LOCK.md` is the SoT: staging → prod only when Chase allows that
+release, and only a dedicated release subagent tags, approves Production, or
+dispatches the prod release. Product workers stop at `origin/main` and a
+staging candidate. The worker preamble in `agent-human-stream.sh` carries the
+rule into every wrapper-launched job; `install.sh` appends
+`sume-desk/release-lock-snippet.md` to `~/.codex/AGENTS.md` (Claude Code
+imports it) and `~/.grok/AGENTS.md`; Cursor gets `release-lock.mdc`;
+`GRAPHITE-HARD-LOCK.md` repeats it in the author paste block.
+`check-wiring.sh` checks the Codex entry.
+
 ## Layer 1 — user-global Cursor rules (`~/.cursor/rules/`)
 
 Pointers + cookbooks. They must stay **pointers** where noted — do not

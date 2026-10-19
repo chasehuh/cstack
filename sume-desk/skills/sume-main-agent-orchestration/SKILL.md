@@ -59,6 +59,18 @@ the main agent posts that text. Opt out per job: `--no-slack-report`,
 `CSTACK_SLACK_REPORT=0`, or `<!-- slack-report:off -->` in the prompt.
 Check the final prompt with `sume-bg-launch --print-prompt …`.
 
+**Release lock (Chase 2026-10-18, `docs/RELEASE-LOCK.md`):** staging → prod
+is forbidden unless Chase explicitly allows **that** release. "Do it on prod"
+/ "hide it on prod" is not permission to tag. The only agent that may tag,
+approve Production, or dispatch the prod release is a dedicated release
+subagent, and that agent does **only** the release. Product workers stop at
+`origin/main` and a staging candidate. Never write "land and ship a
+production release" (or any tag / release step) into a product job prompt;
+deliver on dev, ask Chase, and launch a release-only job only after he allows
+that release, quoting his words and the exact SHA. Incident: `v1.0.4`
+(2026-10-18) shipped every commit since `v1.0.3` because a "hide Brand OS on
+prod" job was told to release.
+
 ## Core Role Split
 
 ### Main Agent
@@ -1046,7 +1058,8 @@ Default still follows the same split when a PR is expected:
   tip `merge-queue`**). Do **not** default Opus onto MQ draft / land /
   deploy babysit after the label.
 - **Grok owns post-enqueue land ops by default:** MQ draft CI → `main` tip
-  confirm → deploy/flag babysit, release watches, and other mainly
+  confirm → deploy/flag babysit, release watches (watch only; tagging and
+  Production approval are the release agent's, `docs/RELEASE-LOCK.md`), and other mainly
   non-coding ops. Fallback: **label the tip now** → land when Opus
   could not label. If land CI needs a real code fix, either push a tiny
   fix **or** bounce implementation back to Opus — do not silently start a

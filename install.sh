@@ -209,6 +209,12 @@ append_entry "$HOME/.codex/AGENTS.md" \
 append_entry "$HOME/.grok/AGENTS.md" \
   "$ROOT/sume-desk/feature-flags-snippet.md" \
   "## Sume feature flags (always on)"
+append_entry "$HOME/.codex/AGENTS.md" \
+  "$ROOT/sume-desk/release-lock-snippet.md" \
+  "## Sume release lock (always on)"
+append_entry "$HOME/.grok/AGENTS.md" \
+  "$ROOT/sume-desk/release-lock-snippet.md" \
+  "## Sume release lock (always on)"
 
 # Existing snippets keep the old marker, so append the wait cook if missing.
 ensure_wait_hint() {
