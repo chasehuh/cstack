@@ -222,6 +222,35 @@ append_entry "$HOME/.grok/AGENTS.md" \
   "$ROOT/sume-desk/release-lock-snippet.md" \
   "## Sume release lock (always on)"
 
+refresh_section() {
+  local f="$1" snip="$2"
+  [ -f "$f" ] && [ -f "$snip" ] || return 0
+  python3 - "$f" "$snip" <<'PY'
+import sys
+
+path, snip = sys.argv[1], sys.argv[2]
+with open(snip, encoding="utf-8") as fh:
+    new = fh.read().rstrip("\n") + "\n"
+heading = new.splitlines()[0]
+with open(path, encoding="utf-8") as fh:
+    lines = fh.read().splitlines(keepends=True)
+starts = [i for i, line in enumerate(lines) if line.rstrip("\n") == heading]
+if len(starts) != 1:
+    raise SystemExit(0)
+start = starts[0]
+end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
+if "".join(lines[start:end]).rstrip("\n") + "\n" == new:
+    raise SystemExit(0)
+lines[start:end] = [new + ("\n" if end < len(lines) else "")]
+with open(path, "w", encoding="utf-8") as fh:
+    fh.write("".join(lines))
+print(f"refreshed pointer: {path} ({heading})")
+PY
+}
+refresh_section "$HOME/.codex/AGENTS.md" "$ROOT/sume-desk/codex-agents-snippet.md"
+refresh_section "$HOME/.claude/CLAUDE.md" "$ROOT/sume-desk/claude-author-snippet.md"
+refresh_section "$HOME/.grok/AGENTS.md" "$ROOT/sume-desk/grok-agents-snippet.md"
+
 # Existing snippets keep the old marker, so append the wait cook if missing.
 ensure_wait_hint() {
   local f="$1"
