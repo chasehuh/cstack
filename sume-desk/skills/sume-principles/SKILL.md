@@ -16,7 +16,7 @@ vendored from pstack (MIT, Lauren Tan). Provenance, upstream pin, and resync:
 `docs/PSTACK.md` in chasehuh/cstack.
 
 They steer **how** you build. They do not change who builds, where, or at
-what effort: roles, routing, transport, effort lanes, Graphite, land, and
+what effort: roles, routing, transport, effort lanes, stacks, land, and
 dest evidence stay in `sume-main-agent-orchestration` and `sume-gt-mq`.
 
 ## Use
@@ -93,9 +93,9 @@ like this:
   agent, in-process means Composer `Task` explore only, never `Task` with
   `claude-opus-*` or `cursor-grok-*`.
 - `separate-before-serializing-shared-state`. One `cstack-clone` per job.
-  Never `git worktree` under a shared checkout for `gt` (#2383).
+  Never `git worktree` under a shared checkout (#2383).
 - `outcome-oriented-execution`. Planned breakage stays inside a branch or a
-  Graphite train. Every PR that lands passes MQ CI.
+  stack. Every PR that lands passes its merge-queue run.
 - `explain-the-number`. TTFT, latency, cost, and CI-minute numbers in a
   report carry the run count, the spread, and the limiter.
   `benchmark-checklist.md` names Linux tools. On the Macs use

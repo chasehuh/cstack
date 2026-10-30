@@ -71,5 +71,5 @@ style, the user wins.
 
 STE is not the default voice of any agent on this desk. It applies only to
 the doc in scope, only when asked or named. It never overrides roles,
-routing, effort, Graphite, land, or dest evidence in
+routing, effort, stacks, land, or dest evidence in
 `sume-main-agent-orchestration` and `sume-gt-mq`.

@@ -18,7 +18,7 @@ from it with `not implemented` bodies, compare at least two structurally
 different shapes, then fill in code against the one you chose.
 
 This skill decides the shape of the code. Roles, routing, transport, effort
-lanes, Graphite, land, and dest evidence stay in
+lanes, stacks, land, and dest evidence stay in
 `sume-main-agent-orchestration` and `sume-gt-mq`. Principles cited below
 live in `~/.agents/skills/sume-principles/references/<name>.md`. Read a leaf
 before you cite it.
@@ -100,7 +100,7 @@ Chase reads work: the mega-issue's `Proposed API / Schema` and
 comment on the Job issue. The PR body links it. A small change can keep the
 rationale in the PR body alone.
 
-The type sketch can be its own first commit, or the bottom PR of a Graphite
+The type sketch can be its own first commit, or the bottom PR of a
 stack when it is green under MQ CI on its own: scaffold before fill-in
 (`foundational-thinking`). Planned, scoped breakage while filling it in is
 fine inside the branch (`outcome-oriented-execution`).

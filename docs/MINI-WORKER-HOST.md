@@ -197,7 +197,7 @@ crontab calls `sume-bg-remote start` locally. See [MINI-CRON.md](MINI-CRON.md).
 ## Non-goals
 
 Cursor IDE on the Mini, custom RPC / sockets, sharing dirty worktrees,
-changing sume-com Graphite / MQ policy.
+changing sume-com stack / merge-queue policy.
 
 ## Tests
 

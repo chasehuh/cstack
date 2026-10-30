@@ -10,19 +10,19 @@ Discuss (same language as Chase) → lock nouns/defaults/non-goals →
 if Chase named Fable; `claude-human-stream` =
 `agent-human-stream --backend claude`, job slug 2–4 kebab tokens) →
 `cstack-clone <slug>` (`/tmp/sume-com-<slug>` from the bare mirror) →
-`gt create` → `gt submit` → **`cstack-gt-wait-merge`** (tip
-`merge-queue` label now; MWR if PR CI pending) → **STOP** → **Grok**
-land (`main` tip `(#N)`).
+`gh stack init` / `gh stack add` → `gh stack submit --auto --open` →
+**`cstack-gt-wait-merge`** (validate green → GitHub merge queue) → the
+author stays until `main` tip `(#N)`.
 
 Triggers: “그렇게 가보자”, “mega-issue → opus”, “플로우 타자”.
 
-Stage: `STOP at MQ enqueue` unless Chase said “merge까지 / landing까지”.
+Stage: the author lands through `main` (Chase lock 2026-09-06).
 
 ## Layer 0 — SoT skills (symlink into `~/.agents/skills/` → this repo)
 
 | Path in this repo | Installs as | When |
 |---|---|---|
-| `sume-desk/skills/sume-main-agent-orchestration/` | `sume-main-agent-orchestration` | Any main-agent turn: roles, language, Opus vs Grok vs Composer, Graphite hard lock, Cursor-only monitoring |
+| `sume-desk/skills/sume-main-agent-orchestration/` | `sume-main-agent-orchestration` | Any main-agent turn: roles, language, Opus vs Grok vs Composer, stacks hard lock, Cursor-only monitoring |
 | `sume-desk/skills/sume-gt-mq/` | `sume-gt-mq` | **Before** every `gt submit` / `gt merge` / MQ unstick / land handoff |
 | `sume-desk/skills/github-mega-issue/` | `github-mega-issue` | Filing the durable issue the worker will execute without the chat |
 | `sume-desk/skills/mobidoo-live-commerce-update/` | `mobidoo-live-commerce-update` | **Formats SoT** — LC package pull/push, catalog pin vs execute, dest fire. UI chrome stays mega-issue + `gt`. |
@@ -36,7 +36,7 @@ Stage: `STOP at MQ enqueue` unless Chase said “merge까지 / landing까지”.
 `sume-automate-me` are adapted from pstack (MIT): what was taken, what was
 skipped and why, and how to resync are in `docs/PSTACK.md`. `sume-ste` is
 vendored from 0xpili/simplified-technical-english: `docs/STE.md`. They shape *how* code
-is built; routing, effort, Graphite, land, and dest evidence stay in the
+is built; routing, effort, stacks, land, and dest evidence stay in the
 skills above.
 
 Runtime logs live at **`~/.cstack/state/`** (not inside the git skill tree).
@@ -83,7 +83,7 @@ duplicate the full SKILL into the `.mdc`.
 | `main-agent-orchestration.mdc` | Pointer at orchestration SKILL |
 | `sume-chase-work-loop.mdc` | Discuss → issue → author through origin/main |
 | `opus-background-terminal.mdc` | `claude-human-stream` recipe: prompt file, `cd` not `--cwd`, `block_until_ms: 0`, title = Job |
-| `graphite-ci-ready.mdc` | After submit, `cstack-gt-wait-merge` labels the tip now (no CI wait) |
+| `graphite-ci-ready.mdc` | After `gh stack submit`, `cstack-gt-wait-merge` queues the whole stack (file keeps its old name) |
 | `status-board.mdc` | Status board: `지금` / `스테이징` / `백로그` (24h). `지금` includes **진행** (one-shot live-log step). Confirm = resolve (drop; do not show `확인됨`) |
 | `active-workers-canvas.mdc` | Canvas surface of the status board |
 | `end-of-turn-worker-brief.mdc` | Chat work report is SoT (Slack-optional to read); every turn ends with the status board |
@@ -185,16 +185,21 @@ Shell tool: `block_until_ms: 0`, `description`: `Opus : <job-slug> (#N)`
 One smoke for `📎 session_id=`. Then stop waiting. Completion notification
 is the monitor.
 
-## Graphite (sume-com only)
+## Stacks and the merge queue (sume-com only)
+
+Graphite is retired for `sume` since 2026-10-30: GitHub stacks
+(`gh stack`) and GitHub's merge queue (ruleset `main-merge-queue`, squash).
 
 - Isolated clone: **`cstack-clone <slug>`** → `/tmp/sume-com-<slug>` from
   `~/.cstack/mirrors/sume-com.git`. **Not** `git worktree` under the
-  Cursor checkout (`#2383`). After enqueue/land: `cstack-clone-rm <slug>`.
+  Cursor checkout (`#2383`). After land: `cstack-clone-rm <slug>`.
 - Host binaries: `cstack-clone` / `cstack-clone-rm` / `cstack-mirror-sync`
-  / **`cstack-gt-wait-merge`** on `~/.local/bin` (install.sh).
+  / **`cstack-gt-wait-merge`** on `~/.local/bin` (install.sh), plus the
+  `gh stack` extension.
 - Never `gh pr create` on `sumelabs/sume` / `sume-com`.
-- Dry-run **Required checks failed** → break, ≤2 rerun or CI unblock.
-- Landed = `main` commit `(#N)`. Graphite FF may show `CLOSED` + `mergedAt: null`.
+- Queue run red → fix, `gh stack sync`, run the helper again; ≤2 reruns for
+  a flake.
+- Landed = `main` commit `(#N)` for every layer (a squash per PR).
 
 ## What is not in this pack (on purpose)
 
@@ -205,7 +210,7 @@ is the monitor.
 
 ## Host binaries the flow assumes
 
-- `gh`, `gt` (Graphite CLI), `git`, `pnpm`, `cstack-clone`, `cstack-gt-wait-merge`
+- `gh` (with `gh stack`), `git`, `pnpm`, `cstack-clone`, `cstack-gt-wait-merge`
 - Claude Code CLI via **tokenmaxxing** (`claude` supervisor on PATH) for
   `claude-human-stream` / `agent-human-stream --backend claude` —
   see `docs/TOKENMAXXING.md`

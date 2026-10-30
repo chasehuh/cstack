@@ -157,6 +157,12 @@ chmod +x "$BIN/agent-human-stream.sh" "$BIN/agent-human-stream.py" \
   "$DESK/skills/sume-ste/sync-from-upstream.sh" \
   "$DESK/skills/sume-ste/scripts/ste_check.py" \
   "$ROOT/bootstrap.sh" || true
+echo "== gh stack extension =="
+if command -v gh >/dev/null 2>&1; then
+  if ! gh extension list 2>/dev/null | grep -q 'github/gh-stack'; then
+    gh extension install github/gh-stack || echo "warn: gh extension install github/gh-stack failed" >&2
+  fi
+fi
 if ! echo ":$PATH:" | grep -q ":$HOME/.local/bin:"; then
   echo "NOTE: add \$HOME/.local/bin to PATH (e.g. in ~/.zshrc)"
 fi
@@ -221,7 +227,7 @@ ensure_wait_hint() {
   local f="$1"
   [ -f "$f" ] || return 0
   if ! grep -q "cstack-gt-wait-merge" "$f"; then
-    printf '\nAfter `gt submit` on sume-com, run `cstack-gt-wait-merge` (do not hand-roll a sleep/grep loop).\n' >> "$f"
+    printf '\nAfter `gh stack submit` on sume-com, run `cstack-gt-wait-merge` (do not hand-roll a sleep/grep loop).\n' >> "$f"
     echo "updated wait hint: $f"
   fi
 }
@@ -273,7 +279,7 @@ echo "Installed. SoT is chasehuh/cstack (this checkout), not a rsync fork."
 echo "pointer: ~/.cstack/src"
 echo "policy:  ~/.agents/skills/sume-main-agent-orchestration/SKILL.md"
 echo "gt:      ~/.agents/skills/sume-gt-mq/SKILL.md"
-echo "wait:    cstack-gt-wait-merge  (label tip merge-queue now; MWR if CI pending)"
+echo "land:    cstack-gt-wait-merge  (after gh stack submit: validate green → GitHub merge queue)"
 echo "clone:   cstack-clone / cstack-clone-rm / cstack-mirror-sync"
 echo "state:   ~/.cstack/state/opus-live"
 echo "slack:   workers post one Korean report to #coding-agents at completion (opt out: --no-slack-report / CSTACK_SLACK_REPORT=0) — docs/SLACK-REPORT.md"

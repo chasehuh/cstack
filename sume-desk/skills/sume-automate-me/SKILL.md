@@ -21,7 +21,7 @@ other desk skill.
 The mode skill captures style and taste. For policy it points at the desk
 skills and never restates or overrides them: `sume-main-agent-orchestration`
 (roles, routing, transport, effort lanes, status board, dest evidence),
-`sume-gt-mq` (Graphite land), `github-mega-issue`,
+`sume-gt-mq` (stack land), `github-mega-issue`,
 `mobidoo-live-commerce-update`, and `sume-principles`.
 
 ## 0. Check for an existing mode skill
@@ -145,7 +145,7 @@ After the merge, each desk machine links the skill with
 - Don't be clever. Operational rules only.
 - Reference, don't inline.
 - Keep sections minimal. Skip a section with no Chase-specific rule.
-- Never override a desk lock. Effort lanes, routing, Graphite, land, and dest
+- Never override a desk lock. Effort lanes, routing, stacks, land, and dest
   evidence belong to their skills, and the mode skill points at them.
 - chasehuh/cstack is public. No secrets, tokens, customer names or data, or
   private URLs.

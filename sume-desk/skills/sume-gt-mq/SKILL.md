@@ -1,27 +1,26 @@
 ---
 name: sume-gt-mq
 description: >-
-  Sume Graphite (`gt`) author → tip `merge-queue` at submit → land
-  playbook for sumelabs/sume-com. Use whenever creating/updating PRs
-  with Graphite, running `gt submit`, labeling `merge-queue` (MWR),
-  unsticking BLOCKED PRs with zero CI after restack. The author session
-  stays until origin/main. Hard rules against gh pr create, shared-checkout
-  worktrees, HANDOFF: grok-land, and exiting before the main tip.
+  Sume stack author → GitHub merge queue → land playbook for sumelabs/sume
+  (sume-com). Use whenever creating/updating PRs with `gh stack`, running
+  `gh stack submit`, queueing with `cstack-gt-wait-merge`, or unsticking a
+  PR the queue removed. The author session stays until origin/main. Hard
+  rules against gh pr create, shared-checkout worktrees, admin bypass,
+  HANDOFF: grok-land, and exiting before the main tip.
 ---
 
-# Sume Graphite MQ (`sume-gt-mq`)
+# Sume stacks and GitHub merge queue (`sume-gt-mq`)
 
-**Operational SoT** for `gt` submit → tip `merge-queue` label → land on `sume-com`.
-
-Product / train policy summary still lives in:
-
-`~/.agents/skills/sume-main-agent-orchestration/SKILL.md`
-§ **"PR trains and Graphite (`gt`)"**
-
-**Do not fork rules.** If this file and orchestration disagree on ops, **this
-file wins for enqueue/land mechanics**; update orchestration to point here.
+**Operational SoT** for `gh stack submit` → `cstack-gt-wait-merge` → land
+on `sume-com`. The skill keeps its old name; Graphite (`gt`, the
+`merge-queue` label, Graphite's queue) is retired for `sume` since
+2026-10-30 (Chase, during Graphite's merge-queue outage).
 
 Repo ops doc: `docs/operations/pr-stack-and-merge-queue.md` (in sume-com).
+Failures runbook: `docs/operations/merge-queue-failures.md`.
+
+**Do not fork rules.** If this file and orchestration disagree on ops, **this
+file wins for queue/land mechanics**; update orchestration to point here.
 
 ---
 
@@ -30,33 +29,31 @@ Repo ops doc: `docs/operations/pr-stack-and-merge-queue.md` (in sume-com).
 **Nobody tells Chase “완료 / done / completed / landed” until the change
 is actually on trunk.**
 
-Proof (required before those words):
+Proof (required before those words), for **every** layer:
 
 ```bash
 git fetch origin main
-git log origin/main --oneline --grep='(#N)'   # or the landed SHA
+git log origin/main --oneline --fixed-strings --grep='(#N)'
 ```
 
-The log line must exist. Graphite FF may show GitHub `CLOSED` /
-`mergedAt: null` — that is still landed **only if** `origin/main` has
-`(#N)`.
+GitHub squash-merges each PR as `<title> (#N)` and marks it `MERGED`.
 
 **Not 완료** (do not say it, do not write a done report that reads as
 finished to Chase):
 
-- PR opened / Graphite “Your changes” still lists it
-- PR-branch CI green / `gt` Ready / `CLEAN`
-- Enqueued / `merge-queue` label / MQ draft open
-- `HANDOFF: grok-land` / author STOP after enqueue (forbidden default)
+- PR opened / `gh stack view` lists it open
+- PR-branch CI green / `CLEAN`
+- Queued (`cstack-gt-wait-merge` exited 0, the queue page lists it)
+- `HANDOFF: grok-land` / author STOP after queueing (forbidden default)
 - Worker process exited
 
 **Chase lock 2026-09-06:** the **author session owns land**. Do not STOP
-after enqueue. Stay until `origin/main` has `(#N)`. MQ eject → re-enqueue
-**same session**. Forbidden: `HANDOFF: grok-land`.
+after queueing. Stay until `origin/main` has every `(#N)`. Queue removal →
+fix → re-queue **same session**. Forbidden: `HANDOFF: grok-land`.
 
-Main agent: never translate enqueue / green checks into “완료됐습니다”
+Main agent: never translate queueing / green checks into “완료됐습니다”
 to Chase. If the author exited early, **resume that same session** — do
-not launch Grok land. Graphite leftover “Your changes” = land still open.
+not launch Grok land.
 
 ---
 
@@ -64,18 +61,17 @@ not launch Grok land. Graphite leftover “Your changes” = land still open.
 
 Read this file **before** any of:
 
-- `gt create` / `gt submit` / `gt submit --stack`
-- After `gt submit` (label the tip `merge-queue` now)
-- `merge-queue` label / Graphite MWR / land babysit
-- Restack / sync after trunk moves
-- Unstick BLOCKED / CI-missing PRs
+- `gh stack init` / `gh stack add` / `gh stack submit`
+- `cstack-gt-wait-merge` (queueing), land babysit
+- Restack / sync after a lower layer lands or review edits
+- Unsticking a PR the queue removed
 - Writing `HANDOFF: grok-land` (forbidden) or exiting before main tip
-- Main agent launching Opus/Astra/Fable/Grok **author** trains
+- Main agent launching Opus/Fable/Grok **author** trains
 
-Main-agent Opus prompts on `sume-com` must say:
+Main-agent author prompts on `sume-com` must say:
 
 ```text
-Required skill: read ~/.agents/skills/sume-gt-mq/SKILL.md before gt submit/merge.
+Required skill: read ~/.agents/skills/sume-gt-mq/SKILL.md before gh stack submit.
 ```
 
 ---
@@ -84,40 +80,53 @@ Required skill: read ~/.agents/skills/sume-gt-mq/SKILL.md before gt submit/merge
 
 | Role | Owns | Must not |
 |------|------|----------|
-| **Author** (Opus / Astra / Fable / Grok-if-named) | `cstack-clone` → code → `gt submit` → **`cstack-gt-wait-merge`** → MQ draft → **`origin/main` `(#N)`** → then `cstack-clone-rm` | STOP at enqueue; `HANDOFF: grok-land`; say 완료 before main tip; other trains |
-| **Main agent** | Launch / steer / board; resume **same** author if they exited early; **완료 to Chase only after main tip** | Launch Grok land by default; tell Chase 완료 on enqueue/green CI |
+| **Author** (Opus / Fable / Grok-if-named) | `cstack-clone` → code → `gh stack submit` → **`cstack-gt-wait-merge`** → queue runs → **`origin/main` `(#N)` for every layer** → then `cstack-clone-rm` | STOP at queueing; `HANDOFF: grok-land`; say 완료 before main tip; other trains |
+| **Main agent** | Launch / steer / board; resume **same** author if they exited early; **완료 to Chase only after main tip** | Launch Grok land by default; tell Chase 완료 on queueing/green CI |
 
 **Ownership rule:** one job slug ↔ one PR stack. Parallel trains = parallel
-owners. Never two workers label / empty-commit / restack the same head.
+owners. Never two workers queue / push / restack the same head.
 
 ---
 
 ## Hard locks (sume-com)
 
-1. **Isolated clone only** for all `gt` commands — **`cstack-clone <job-slug>`**  
-   → `/tmp/sume-com-<job-slug>` from the bare mirror
-   `~/.cstack/mirrors/sume-com.git`.  
-   **Forbidden:** `git worktree add` under the shared Cursor checkout (#2383).  
-   **Forbidden:** a full `git clone` of `sume-com` when the mirror exists
-   (use `cstack-clone`; `--depth=100` is not the cook).  
-   After author enqueue (or land `origin/main` `(#N)`): **`cstack-clone-rm
-   <slug>`** unless a live worker still has that cwd.
-2. **Forbidden:** `gh pr create` (single or stack) as author path.  
-   Publish **only** via `gt submit`.
-3. **`gt submit` fails** (trunk out of date / poisoned) → **new clone**
-   (`cstack-clone --force <slug>` or a new slug) → cherry-pick/track →
-   `gt submit`. Never `gh pr create`.
-4. After restack/sync: **`gt submit` again** before enqueue.
-5. **Primary enqueue = `cstack-gt-wait-merge`** after `gt submit`.
-   It labels the **tip** `merge-queue` immediately. Do **not** wait for
-   PR CI / dry-run Ready. Do **not** hand-roll a sleep/grep loop.
-6. **Opus default enqueue:** tip `merge-queue` label (Graphite MWR if
-   CI is still running; enters MQ when `validate` is green). Manual
-   fallback if the binary cannot label:
-   `gh pr edit <N> --add-label merge-queue`. Do **not** `gt merge` as
-   the author wait path.
-7. **Author stays after enqueue.** Land is the same session until
-   `origin/main` has `(#N)`. Do not hand MQ to Grok.
+1. **Isolated clone only** — **`cstack-clone <job-slug>`** →
+   `/tmp/sume-com-<job-slug>` from the bare mirror
+   `~/.cstack/mirrors/sume-com.git`.
+   **Forbidden:** `git worktree add` under the shared Cursor checkout (#2383).
+   After land: **`cstack-clone-rm <slug>`** unless a live worker still has
+   that cwd.
+2. **Publish only via `gh stack submit --auto --open`.** It pushes every
+   layer, opens ready PRs with the right bases and links them into one
+   GitHub stack. **Forbidden:** `gh pr create` (single or stack).
+3. **Queue only via `cstack-gt-wait-merge`.** It walks the PR chain from the
+   tip, marks drafts ready, links the chain into a stack, waits for
+   `validate` on every layer, then runs `gh stack merge <tip> --yes` (a
+   stack) or `gh pr merge <N> --auto --squash` (one PR). Do **not** hand-roll
+   a sleep/grep loop.
+4. **Forbidden:** `gh pr merge --admin`, a direct push to `main`, or any
+   queue bypass without Chase's word for that PR. GitHub can bypass only the
+   bottom layer of a stack anyway.
+5. **Retired:** `gt create` / `gt submit` / `gt merge` and the
+   `merge-queue` label (Graphite's queue for `sume` is off; the label does
+   nothing). A stack opened by `gt submit` before the switch still lands:
+   run `cstack-gt-wait-merge` from its tip.
+6. **Author stays after queueing.** Land is the same session until
+   `origin/main` has every `(#N)`.
+
+---
+
+## What GitHub's queue does (probe #17991–#17995, 2026-10-30)
+
+- Every layer is its own queue entry with its own `merge_group` run of the
+  full suite (Typecheck and Format, Test 1–4, Build). Layer N's run is built
+  on layer N−1's squash commit, so it tests that layer's diff.
+- When a layer fails in the queue, the queue removes it and every layer
+  above it. **A layer below it still lands on its own.**
+- When every layer passes, the stack lands together: one squash commit per
+  PR, bottom first.
+- A push to a queued PR removes it from the queue. Finish every edit before
+  `cstack-gt-wait-merge`.
 
 ---
 
@@ -127,147 +136,105 @@ These are **failed handoffs**, not “still waiting”:
 
 | Bad | Why | Required |
 |-----|-----|----------|
-| Arm `Monitor` / `ScheduleWakeup` then **end the session** with “I’ll enqueue when green” | Wrapper exits; label never lands | **Stay in-session** until the tip has `merge-queue` (MWR counts) |
-| Done report without enqueue evidence | Looks green, no label | Evidence = tip `merge-queue` label |
-| `HANDOFF: grok-land` | Wrong split (2026-09-06) | Author labels + stays until main |
-
-**Forbidden:** “wakeup in 20 min” / Monitor / “I’ll merge when checks settle”
-then process exit before the label.
-
----
-
-## Enqueue at submit (Chase lock 2026-09-01)
-
-From the **Graphite-ready author clone**, after `gt submit`:
-
-```bash
-cstack-gt-wait-merge --rm <job-slug>
-```
-
-That labels the **tip** immediately. Do **not** poll `gt merge --dry-run`.
-Do **not** wait for PR CI. Pending CI is Graphite MWR — the PR enters
-MQ when `validate` is green. Author STOP after the label.
-
-Land owns PR-CI failure / MQ draft red / eject. Author does not sit
-in a Ready loop.
-
-**Forbidden:** `cstack-gt-wait-merge 2>&1 | tail`. Stay until it exits.
-
-### PR / MQ CI failed (land — Chase lock 2026-08-08)
-
-Author does not wait for this. Land:
-
-1. Known repo flake: `gh run rerun --failed` **≤2** on that head.
-2. Still red → **minimal CI unblock** (§ F) → `gt submit` → label again
-   if the label dropped.
-3. Still blocked → `HANDOFF: grok-ci-merge` with evidence.
-
-**Forbidden:** author-side dry-run / `gh pr checks` poll loops after submit.
+| Arm `Monitor` / `ScheduleWakeup` then **end the session** with “I’ll queue when green” | Wrapper exits; nothing queues | **Stay in-session**; `cstack-gt-wait-merge` waits for `validate` itself |
+| Done report without queue evidence | Looks green, nothing queued | Evidence = the helper's `QUEUED` line or the queue page |
+| `HANDOFF: grok-land` | Wrong split (2026-09-06) | Author queues + stays until main |
 
 ---
 
 ## Clone / disk (Chase lock 2026-09-01)
 
-Graphite wants **one clean repo** and a stack. `#2383` forbids that repo
-from being the dirty Cursor checkout (shared `.git` poisons `gt submit`).
-
-Desk BP:
-
 | Piece | Path | Role |
 |---|---|---|
 | Bare mirror | `~/.cstack/mirrors/sume-com.git` | Object store only. `cstack-mirror-sync` / `cstack-clone --sync-only`. **Do not `gc --prune=now`** while job clones have alternates. |
-| Job clone | `/tmp/sume-com-<slug>` | `git clone --reference <mirror>` — **no `--dissociate`**, no `--depth`. Own `.git`, own `gt`. |
-| Cursor checkout | `~/sume/sume-com` | Read / chat root. **Never `gt` here. Never `git worktree add` + `gt`.** |
+| Job clone | `/tmp/sume-com-<slug>` | `git clone --reference <mirror>` — **no `--dissociate`**, no `--depth`. Own `.git`, own `gh stack` state. |
+| Cursor checkout | `~/sume/sume-com` | Read / chat root. **Never author here. Never `git worktree add`.** |
 | `node_modules` | per clone | Still `pnpm install --prefer-offline`. Do not symlink across clones. |
 
 Binaries (install.sh puts them on `~/.local/bin`):
 
 ```bash
-cstack-clone <job-slug>           # stdout = /tmp/sume-com-<slug> only
-cstack-clone --force <job-slug>   # wipe + remake
-cstack-mirror-sync                # fetch main into the mirror
-cstack-clone-rm <job-slug>        # after enqueue / land; refuses live cwd
-cstack-gt-wait-merge [--rm <slug>]  # after gt submit; label tip now
+cstack-clone <job-slug>             # stdout = /tmp/sume-com-<slug> only
+cstack-clone --force <job-slug>     # wipe + remake
+cstack-mirror-sync                  # fetch main into the mirror
+cstack-clone-rm <job-slug>          # after land; refuses live cwd
+cstack-gt-wait-merge [--rm <slug>]  # after gh stack submit; queue the stack
 ```
 
-`CLONE="$(cstack-clone <slug>)"` is the cook. Progress is stderr.
+`gh stack` is a gh extension: `gh extension install github/gh-stack`
+(install.sh does it).
 
-**Seed:** if `$CSTACK_SEED_REPO` (default `$HOME/sume/sume-com`) exists,
-the first mirror is `git clone --bare` from that tree, then `origin` is
-GitHub. **Do not** `--reference` the Cursor `.git` — it is shallow and
-git rejects it.
-
-**Fetch:** **main only.** Never `+refs/heads/*` (that pulls every
-`gtmq_*` branch into the mirror).
+**Fetch:** **main only.** Never `+refs/heads/*` (that pulls every queue and
+author branch into the mirror).
 
 ---
 
 ## Canonical flow
 
 ```text
-cstack-clone <slug> → gt init → gt create → commit(s) → gt submit [--stack]
-  → cstack-gt-wait-merge --rm <slug>   # label tip now; same session
-  → enqueue evidence
-  → AUTHOR stays: watch MQ → re-enqueue on eject → origin/main (#N)
-  → then LANDED: yes + cstack-clone-rm
-  → only then STATUS: landed (Chase 완료)
+CLONE="$(cstack-clone <slug>)" && cd "$CLONE"
+gh stack init <branch-1>               # bottom layer, based on main
+  → edit + git commit
+gh stack add <branch-2>                # each extra layer, same session
+  → edit + git commit
+gh stack submit --auto --open          # push, open ready PRs, link the stack
+cstack-gt-wait-merge --rm <slug>       # validate green → whole stack queued
+  → AUTHOR stays: queue runs → fix + re-queue on removal → origin/main (#N) ×layers
+  → LANDED: yes (PR URLs + main SHAs)
 ```
 
-Stack: **all layers one session** → `gt submit --stack` → label the **tip**.
-Do not “land A only → resume for B”.
+All layers in one session. Do not “land A only → resume for B”. Review
+edits to a lower layer: `gh stack down` / `gh stack up` → commit →
+`gh stack sync` → `cstack-gt-wait-merge` again.
 
 ---
 
-## Enqueue evidence (required in done report)
+## Queue evidence (required in done report)
 
-At least one of:
+- `cstack-gt-wait-merge: QUEUED #a #b — tip #b is queued` (or `merged`)
+- or the queue page <https://github.com/sumelabs/sume/queue/main> listing them
 
-- Graphite / `gt` output showing queued / merge requested
-- `merge-queue` label present on the PR(s)
-- Graphite activity / MQ draft reference
-
-Plus: clone path + Graphite URL + GitHub PR URL(s). Enqueue-only reports
-must say **`LANDED: no`** and **keep the session**. Chase-facing done
-only after main-tip proof + **`LANDED: yes`**.
+Plus: clone path + GitHub PR URL(s) + stack URL. Queue-only reports must
+say **`LANDED: no`** and **keep the session**. Chase-facing done only after
+main-tip proof + **`LANDED: yes`**.
 
 ---
 
 ## Unstick playbook (owned stack only)
 
-### A. After lower PR lands / restack: `mergeStateStatus=BLOCKED`, **zero CI.yml checks**
+Runbook in sume-com: `docs/operations/merge-queue-failures.md`.
 
-Symptom: head only has Vercel + Graphite mergeability; Format/Test/… missing.
+### A. The queue removed a layer (its `merge_group` run is red)
 
-1. Confirm ownership (your slug’s PRs).
-2. In Graphite-ready clone (or push access to head): **empty commit** + push to
-   re-fire `ci.yml` (same pattern as wallet #2769).
-3. Keep or re-add `merge-queue` on the **tip**. Do not wait for Ready.
-4. Do not open a new PR.
+1. `gh run list --event merge_group --limit 10`, then
+   `gh run view <run> --log-failed`.
+2. Real failure → fix in the owning layer, `gh stack sync`,
+   `cstack-gt-wait-merge` again. Lower layers that already landed stay
+   landed; the helper queues what is left.
+3. Known flake → § F.
 
-### B. Superseded / cancelled validate “fail”
+### B. Helper exit 3 (`validate` failed on a PR head)
 
-Ignore cancelled runs on old SHAs. Judge current head. Re-label the tip
-if the label dropped.
+Review CI is thin: a red PR `validate` means a review job failed (Format,
+CSS-module purity, a script test). Fix, `gh stack sync`, run again.
 
-### C. Mid-stack Graphite CI optimizer `skipping`
+### C. Helper exit 4 (`validate` still pending)
 
-Expected on intermediate stack PRs. Label the **tip**.
+No CI at a head (a push GitHub did not run): push a real commit to that
+layer or dispatch ci.yml with `base_sha`; then run the helper again.
 
-### D. MQ draft red
+### D. Every queue run fails the same unrelated test
 
-Author land: fix in the same session. Do not thrash restack while Graphite says
-already merging unless entry failed / evicted.
+Something reached `main` outside the queue and broke it (2026-10-30:
+migration `0165` after a direct merge). Fix `main` in its own PR at the
+bottom of your stack.
 
-### E. Graphite FF land
-
-`CLOSED` + `mergedAt: null` can still be landed. Truth = `main` tip `(#N)`.
-
-### F. Repo-wide CI flake blocking enqueue (Chase lock 2026-08-07)
+### F. Repo-wide CI flake blocking land (Chase lock 2026-08-07)
 
 Incident class: Opus `sentry-cutover-stack` / `studio-stream-arch-100k`
 sat in endless `gh run rerun` while `studio-agent-core` Vitest **5s
 timeouts** / EPIPE / pool death hit **unrelated PRs** the same way. Product
-diff was green locally; enqueue never happened.
+diff was green locally; nothing landed.
 
 **Diagnosis (do this first, ≤2 evidence points):**
 
@@ -281,22 +248,17 @@ PR forever.”
 
 **Allowed after 1–2 failed reruns (same head):**
 
-1. **Minimal CI unblock commit** on the owned train (fresh clone →
-   `gt create` / amend tip → `gt submit` again), e.g.:
-   - package `vitest.config` `testTimeout` bump for known load-flake suites
-   - isolate/timeout only the known `sandbox-runner.*` class
-   - empty commit to re-fire CI **only** if prior run was cancelled/missing
-     jobs (playbook A) — not as a substitute for a real flake fix
+1. **Minimal CI unblock commit** on the owned train (a new bottom layer or
+   an amend), e.g. a package `vitest.config` `testTimeout` bump for a known
+   load-flake suite.
 2. Keep scope **CI-only**. Do not expand product locks to “fix CI.”
-3. Then `gt submit` again if the tip moved → `cstack-gt-wait-merge`
-   (label again if the label dropped).
+3. `gh stack sync` → `cstack-gt-wait-merge`.
 
 **Forbidden:**
 
 - Infinite / double-digit `gh run rerun --failed` with **zero code change**
 - Simultaneous mass-reruns of many PRs that overload the self-hosted pool
-- Calling flake “not my problem” then **STOP without land** — unblock
-  in the same session
+- Calling flake “not my problem” then **STOP without land**
 - Large suite rewrites / unrelated refactors as “CI fix”
 
 If you still cannot land after a minimal unblock: stay, report flake
@@ -304,67 +266,49 @@ evidence to main, do **not** `HANDOFF: grok-land`.
 
 ---
 
-## Author land (after enqueue — stay until main)
+## Author land (after queueing — stay until main)
 
-1. **Do not re-enqueue** if already queued **and still in MQ**.
-   Evicted / labels empty / Graphite “Your changes” leftover →
-   **re-enqueue same session**. Do not exit.
+1. **Do not re-queue** while the PR is still in the queue.
+   Removed → fix → **re-queue same session**. Do not exit.
 2. Own **only** this train.
-3. Watch MQ draft CI; act on red only.
+3. Watch the `merge_group` runs; act on red only.
 4. **Do not STOP / do not say 완료** until
-   `git fetch origin main && git log origin/main --oneline --grep='(#N)'`
-   shows the commit.
+   `git fetch origin main && git log origin/main --oneline --fixed-strings --grep='(#N)'`
+   shows every layer.
 5. Issue comment + STOP **only after** that proof.
-
-Forbidden land exits:
-
-- `HANDOFF: grok-land`
-- “back in the queue, this session stops”
-- Done report that only lists enqueue evidence
-
-If the tip has no `merge-queue` label, **label now**. Then **stay until
-main tip**. If PR never Graphite-bound → repair with fresh-clone
-`gt submit` first. Label present + CI still running is **MWR, not eject**.
 
 ---
 
-## Delegation block (paste into Opus prompts)
+## Delegation block (paste into author prompts)
 
 Same text: `sume-desk/GRAPHITE-HARD-LOCK.md` in chasehuh/cstack.
 
 ```text
-Required skill: read ~/.agents/skills/sume-gt-mq/SKILL.md before any gt submit/merge.
+Required skill: read ~/.agents/skills/sume-gt-mq/SKILL.md before gh stack submit.
 
-GRAPHITE (hard lock) — Chase 2026-09-06: author owns land to origin/main:
+STACKS (hard lock) — Chase 2026-10-30: GitHub stacks + GitHub merge queue; author owns land to origin/main:
 - Isolated clone only: `CLONE="$(cstack-clone <job-slug>)"` then `cd "$CLONE"`.
-  All `gt` commands run in that clone. Forbidden: `git worktree` under the
-  shared Cursor checkout (#2383). Forbidden: `gh pr create` (single or stack).
-  Publish ONLY via `gt submit`. If submit fails (trunk out of date): new
-  `cstack-clone` → cherry-pick/track → `gt submit`. Never `gh pr create`.
-- After `gt submit`: SAME session — `cstack-gt-wait-merge --rm <job-slug>`.
-  Label the **tip** `merge-queue` immediately. Do NOT wait for PR CI,
-  dry-run Ready, or `Cannot determine`. Do NOT write a sleep/grep loop.
-  Not mergeable yet → Graphite MWR; `validate` green → enters MQ.
-  Already labeled / already in MQ → keep going (do not STOP).
-  Label rejected → `gh pr edit <N> --add-label merge-queue` and continue.
-- Then **stay until** `git fetch origin main && git log origin/main --oneline --grep='(#N)'`.
-  Re-enqueue on eject. Repo CI flake: ≤2 `gh run rerun --failed`, then
-  minimal CI unblock. Forbidden: endless rerun. Forbidden: `HANDOFF: grok-land`.
+  Forbidden: `git worktree` under the shared Cursor checkout (#2383).
+  Forbidden: `gh pr create`, `gt`, the `merge-queue` label, `gh pr merge --admin`.
+- Author: `gh stack init <branch>` → commit → `gh stack add <branch>` per layer
+  → `gh stack submit --auto --open`.
+- Then SAME session: `cstack-gt-wait-merge --rm <job-slug>` (waits for validate,
+  queues the whole stack). Do NOT write a sleep/grep loop.
+- Then **stay until** `git fetch origin main && git log origin/main --oneline --fixed-strings --grep='(#N)'`
+  shows every layer. Queue removal → fix → `gh stack sync` → helper again.
+  Repo CI flake: ≤2 `gh run rerun --failed`, then minimal CI unblock.
+  Forbidden: endless rerun. Forbidden: `HANDOFF: grok-land`.
 - Forbidden: ScheduleWakeup then exit before the main tip.
-  Enqueue is not 완료. Done report only after main-tip proof:
-  clone path + Graphite URL + GitHub PR URL + SHA + `LANDED: yes`.
+  Queueing is not 완료. Done report only after main-tip proof:
+  clone path + GitHub PR URL(s) + SHA(s) + `LANDED: yes`.
   `cstack-clone-rm <job-slug>` after land (keep the tree while unblocking).
 ```
-
-**Grok land prompt must also say:** stay until `origin/main` `(#N)`;
-re-enqueue on eject; forbidden to STOP at enqueue or write `HANDOFF:
-grok-land` from the land session.
 
 ---
 
 ## Pointers
 
 - Orchestration (routing, Chase loop): `sume-main-agent-orchestration`
-- Cursor ready-signal rule: `~/.cursor/rules/graphite-ci-ready.mdc`
+- Cursor queue rule: `~/.cursor/rules/graphite-ci-ready.mdc`
 - Opus Shell cookbook: `~/.cursor/rules/opus-background-terminal.mdc`
 - Chase loop: `~/.cursor/rules/sume-chase-work-loop.mdc`

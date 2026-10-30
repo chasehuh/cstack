@@ -2,8 +2,9 @@
 
 You are on **Chase’s agent desk**. This repo (`chasehuh/cstack`) is the
 **installable source of truth** for how Sume work is run: discuss → lock →
-GitHub issue → Opus (Fable only if named) through Graphite MQ (`cstack-clone`,
-not a Cursor worktree) → Grok land → `cstack-clone-rm`.
+GitHub issue → Opus (Fable only if named) through `gh stack` and GitHub's
+merge queue (`cstack-clone`, not a Cursor worktree) → the author lands →
+`cstack-clone-rm`.
 
 Old `merge` / `audit` / `propose` copies that used to live here are
 **deprecated**. Ignore them. Use `sume-desk/` only.
@@ -63,10 +64,12 @@ and re-run `./install.sh`.
   ahead of the real CLI). Quota swap is automatic; a parked account whose
   refresh is rejected is not — `tokenmaxxing doctor`, `docs/TOKENMAXXING.md`.
 - Terminal title / board Job = `Opus : <job-slug> (#N)` or `Fable : …`.
-- `sume-com` PRs: `cstack-clone` + `gt create` + `gt submit`. **Forbidden:**
-  `gh pr create`. After submit: **`cstack-gt-wait-merge`** (tip
-  `merge-queue` now) → **stay until `origin/main` `(#N)`**. The author
-  owns land. Skill: `sume-gt-mq`.
+- `sume-com` PRs: `cstack-clone` + `gh stack init` / `gh stack add` +
+  `gh stack submit --auto --open`. **Forbidden:** `gh pr create`, `gt`, the
+  `merge-queue` label. After submit: **`cstack-gt-wait-merge`** (validate
+  green → the whole stack enters GitHub's merge queue) → **stay until
+  `origin/main` `(#N)`** for every layer. The author owns land. Skill:
+  `sume-gt-mq`.
 - Same SoT for **Cursor, Claude Code, Codex, and Grok Build**. Edit files
   in this repo (`chasehuh/cstack`) and re-run `./install.sh`. Do not fork
   into `~/.agents/skills` copies — those are symlinks into this tree.

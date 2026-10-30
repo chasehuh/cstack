@@ -90,8 +90,8 @@ row (see § 진행).
 |-----|-------|---------|------|
 
 Required: issue OPEN/CLOSED, **why still OPEN** if open, PR + MQ/`main`
-tip `(#N)`, Graphite FF quirk if needed. Not a one-line “done”.
-If the PR is still in Graphite “Your changes” / not on `origin/main`,
+tip `(#N)`. Not a one-line “done”.
+If the PR is still open or queued / not on `origin/main`,
 the note must say **`LANDED: no`** — never imply 완료.
 
 Include **entered staging** (KST) so the 24h clock is visible.

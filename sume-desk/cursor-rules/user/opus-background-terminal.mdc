@@ -178,37 +178,34 @@ as the steer launch — do not leave the old terminal running.
 ## After enqueue (**default: same worker lands**)
 
 **Chase lock (2026-09-06):** the author (Opus / Astra / Fable / Grok-if-named)
-**stays until `origin/main` `(#N)`**. CI is thinner. Do **not** hand MQ to
-Grok. Forbidden: `HANDOFF: grok-land`.
+**stays until `origin/main` `(#N)`**. CI is thinner. Do **not** hand the
+queue to Grok. Forbidden: `HANDOFF: grok-land`.
 
-1. Author: **fresh clone only** → fix → local green → Graphite open →
-   label tip → **stay**.
-   - **Always:** `gt create` → **`gt submit`** (required). Treat `gt` like
-     `gh` — first-class, not optional.
-   - **Forbidden:** `git worktree add` under the shared Cursor checkout for
-     any `gt` command (shared `.git` trunk poisons submit — #2383).
-   - **Forbidden:** `gh pr create` on `sume-com` (single or stack). If
-     `gt submit` fails (“trunk out of date”), new fresh clone →
-     cherry-pick/track → `gt submit`. Never fall back to `gh`.
+1. Author: **fresh clone only** → fix → local green → `gh stack submit` →
+   queue → **stay**. Graphite (`gt`, the `merge-queue` label) is retired
+   for `sume` since 2026-10-30.
+   - **Always:** `gh stack init` → commit → `gh stack add` per layer →
+     **`gh stack submit --auto --open`**.
+   - **Forbidden:** `git worktree add` under the shared Cursor checkout
+     (#2383).
+   - **Forbidden:** `gh pr create` on `sume-com` (single or stack), and
+     `gh pr merge --admin`.
    - **After submit:** SAME session — **`cstack-gt-wait-merge --rm <slug>`**.
-     That binary labels the **tip** `merge-queue` **now**. Do **not**
-     wait for PR CI / dry-run Ready. Do **not** write a sleep/grep loop.
-     Not mergeable yet → Graphite MWR; `validate` green → enters MQ.
-     Already labeled / already in MQ → keep going. Label rejected →
-     `gh pr edit <N> --add-label merge-queue`.
-   - **PR / MQ CI red** is still this session. ≤2
-     `gh run rerun --failed` for known flake, else minimal CI unblock.
-     **Forbidden:** endless `gh run rerun` with no code change.
-   - **PR-A/B/C train:** all layers in one session → `gt submit --stack` →
-     label the **tip**. Do **not** “open A only → merge → resume for B”.
-   - **Stay** until `origin/main` has `(#N)`. Re-enqueue on eject.
+     It waits for `validate`, then queues the whole stack in GitHub's merge
+     queue. Do **not** write a sleep/grep loop.
+   - **Queue run red** is still this session: fix, `gh stack sync`, run the
+     helper again. ≤2 `gh run rerun --failed` for known flake, else minimal
+     CI unblock. **Forbidden:** endless `gh run rerun` with no code change.
+   - **PR-A/B/C train:** all layers in one session → one
+     `gh stack submit`. Do **not** “open A only → merge → resume for B”.
+   - **Stay** until `origin/main` has every `(#N)`.
      **Do not tell Chase 완료** before that grep.
-   - Prompt **must** include the GRAPHITE hard-lock block from
+   - Prompt **must** include the STACKS hard-lock block from
      `GRAPHITE-HARD-LOCK.md` / `sume-gt-mq`.
-   - Done report only after main-tip proof: clone path + Graphite URL +
-     GitHub PR URL + SHA + **`LANDED: yes`**.
+   - Done report only after main-tip proof: clone path + GitHub PR URL(s) +
+     SHA(s) + **`LANDED: yes`**.
 2. Main agent: on author completion, read `—— final ——`. If they exited
-   at enqueue (`LANDED: no`), **resume the same session** — do not launch
-   Grok land. Say **완료** only after `origin/main` `(#N)`.
+   after queueing (`LANDED: no`), **resume the same session** — do not
+   launch Grok land. Say **완료** only after `origin/main` `(#N)`.
 
 Policy SoT: `sume-main-agent-orchestration` + **`sume-gt-mq`**.

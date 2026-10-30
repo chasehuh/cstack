@@ -11,8 +11,8 @@ loop. Policy SoT (do not fork forever):
 § "Chase work loop — discuss → lock → mega-issue → author → main".
 
 Opus Shell recipe: `~/.cursor/rules/opus-background-terminal.mdc`.
-Graphite enqueue/land ops: `~/.agents/skills/sume-gt-mq/SKILL.md` (required
-before any `gt submit` / `gt merge`).
+Stack/queue/land ops: `~/.agents/skills/sume-gt-mq/SKILL.md` (required
+before any `gh stack submit`).
 
 ## What this is
 
@@ -27,7 +27,7 @@ sole implementer for work Chase expected on that flow.
 |-----|------|
 | Chase | Product locks, “go / defer” |
 | Main (this chat) | Discuss (match Chase’s language), survey, issue, launch workers, **self-contained chat report** (Slack is a mirror) |
-| Opus | **Default author** if Chase did not name a model. BP → fresh clone → `gt submit` → tip `merge-queue` → **stay until `origin/main` `(#N)`** |
+| Opus | **Default author** if Chase did not name a model. BP → fresh clone → `gh stack submit` → `cstack-gt-wait-merge` → **stay until `origin/main` `(#N)`** |
 | Fable | Author **only** when Chase said Fable. Same path through main tip. |
 | Astra / Codex | Author when Chase named them. Same path through main tip. |
 | Grok | Author **only** when Chase said Grok. Same path through main tip. Never default MQ babysit. Never Cursor `Task`. |
@@ -95,7 +95,7 @@ Leave issue OPEN with an explicit residual, or close when AC met.
 | Bad | Do instead |
 |-----|------------|
 | Main implements the whole feature Chase meant for Opus | Issue → author |
-| Author STOP after `merge-queue` / `HANDOFF: grok-land` | Same session until main tip |
+| Author STOP after queueing / `HANDOFF: grok-land` | Same session until main tip |
 | Launch Grok land after enqueue | Resume the author if they left early |
 | Tell Chase 완료 on enqueue / green CI / “Your changes” | 완료 only after `origin/main` `(#N)` |
 | `gh pr create` | Fresh clone → `gt create` → `gt submit` |

@@ -22,7 +22,8 @@ git clone git@github.com:chasehuh/cstack.git ~/.cstack/src
 ~/.cstack/src/install.sh --sume-com ~/sume/sume-com
 ```
 
-Requires: `git`, `gh`, Graphite `gt`, and **tokenmaxxing-wrapped**
+Requires: `git`, `gh` with the `gh stack` extension (install.sh adds it),
+and **tokenmaxxing-wrapped**
 `claude` on PATH for Opus/Fable workers (see `docs/TOKENMAXXING.md`).
 Codex workers (`agent-human-stream --backend codex`) use the
 tokenmaxxing-wrapped `codex` (separate Codex pool, same doc).
@@ -79,9 +80,9 @@ sume-desk/
 Discuss → lock → GitHub issue → `agent-human-stream` / `claude-human-stream`
 (Opus; Fable only if named; Grok Build via `--backend grok`; Codex via
 `--backend codex` only if named) →
-`cstack-clone` → `gt submit` → **`cstack-gt-wait-merge`** (tip
-`merge-queue` now; MWR if PR CI pending) → STOP →
-Grok lands `main` → `cstack-clone-rm`.
+`cstack-clone` → `gh stack submit --auto --open` → **`cstack-gt-wait-merge`**
+(validate green → GitHub merge queue) → the author stays until `main` →
+`cstack-clone-rm`.
 
 Details: `docs/FLOW.md` then the skills after install.
 Formats (LC package + dest fire): `mobidoo-live-commerce-update`.

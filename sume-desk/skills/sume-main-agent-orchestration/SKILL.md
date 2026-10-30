@@ -147,9 +147,8 @@ git log origin/main --oneline --grep='(#N)'
 No log line → **not 완료**. Forbidden words to Chase until that proof:
 완료 / done / completed / landed / “들어갔습니다.”
 
-**Not proof:** PR open, PR-branch CI green, `gt` Ready, enqueued,
-`merge-queue` label, MQ draft, `HANDOFF: grok-land`, Graphite “Your
-changes” still listing the PR, worker process exited.
+**Not proof:** PR open, PR-branch CI green, queued in the merge queue,
+a queue run in progress, `HANDOFF: grok-land`, worker process exited.
 
 **Chase lock 2026-09-06:** the author session **owns land**. Do not STOP
 after enqueue. Stay until the main-tip grep hits; MQ eject → re-enqueue
@@ -216,9 +215,9 @@ asks). Composer remains explore-only.
 | Role | Model | Transport (from a Cursor main agent) |
 |------|-------|--------------------------------------|
 | Opus (default author: design / RCA / mega-issue / **code → MQ enqueue**) | Claude Opus via Claude Code subscription | **`claude-human-stream`**. Do **not** use Cursor `Task` with `claude-opus-*`. |
-| Fable (author only if Chase named Fable) | Claude Fable via same wrapper | **`claude-human-stream --model fable`**. Same Graphite enqueue path as Opus. |
-| Opus 5.5 (author when Chase names Opus 5.5) | Claude Opus 5.5 (`claude-opus-5-5`, sume#8221) via same wrapper | **`agent-human-stream --model claude-opus-5-5`** (desk alias `--model opus-5.5`). Same Graphite enqueue path as Opus. |
-| Sonnet 5.5 (author only if Chase named Sonnet 5.5) | Claude Sonnet 5.5 (`claude-sonnet-5-5`) via same wrapper | **`agent-human-stream --model claude-sonnet-5-5`** (desk alias `--model sonnet-5.5`; bare `sonnet` is the Claude CLI's own alias, not rewritten). Same Graphite enqueue path as Opus. |
+| Fable (author only if Chase named Fable) | Claude Fable via same wrapper | **`claude-human-stream --model fable`**. Same stack + queue path as Opus. |
+| Opus 5.5 (author when Chase names Opus 5.5) | Claude Opus 5.5 (`claude-opus-5-5`, sume#8221) via same wrapper | **`agent-human-stream --model claude-opus-5-5`** (desk alias `--model opus-5.5`). Same stack + queue path as Opus. |
+| Sonnet 5.5 (author only if Chase named Sonnet 5.5) | Claude Sonnet 5.5 (`claude-sonnet-5-5`) via same wrapper | **`agent-human-stream --model claude-sonnet-5-5`** (desk alias `--model sonnet-5.5`; bare `sonnet` is the Claude CLI's own alias, not rewritten). Same stack + queue path as Opus. |
 | GPT-6 Sol (author only if Chase named GPT-6 Sol / Codex) | OpenAI GPT-6 Sol (`gpt-6-sol`, sume#8221) via Codex | **`agent-human-stream --model gpt-6-sol`** (auto → codex). |
 | Grok (**MQ land babysit / deploy / ops**; author only if Chase said Grok) | Grok Build CLI (`grok` on PATH) | **`agent-human-stream --backend grok`**. Do **not** use Cursor `Task` with `cursor-grok-*`. |
 | Composer (explore only) | Composer | Cursor `Task` with `composer-*` / `explore` |
@@ -256,13 +255,12 @@ Wrapper default when `--effort` is omitted = **code lane** (Opus
 Research **must** pass `--effort`. Mixed research-then-implement in one
 worker → code lane.
 
-**Default split (Chase lock, 2026-08-05 + 2026-09-01):** The author (Opus, or
-Fable if named) owns PR authoring **through the tip `merge-queue` label**
-(**fresh clone** → code → local green → `gt create` → **`gt submit`** →
-**`cstack-gt-wait-merge`** labels the tip now — **never** wait for PR CI /
-`gt` Ready, **never** `gh pr create` on `sume-com`). Label = enqueue
-evidence (Graphite MWR if CI is still running). Then **STOP** and hand
-**land babysit** (+ deploy) to Grok.
+**Default split (Chase lock, 2026-08-05 + 2026-09-06 + 2026-10-30):** The
+author (Opus, or Fable if named) owns PR authoring **through `origin/main`**
+(**fresh clone** → code → local green → `gh stack init` / `gh stack add` →
+**`gh stack submit --auto --open`** → **`cstack-gt-wait-merge`** queues the
+whole stack once `validate` is green — **never** `gh pr create` on
+`sume-com`) and stays until every layer is on `main`.
 
 ### Opus transport — Claude Code CLI (required)
 
@@ -643,8 +641,8 @@ the **identical** title as the live job.
 |-----|------|
 | **Chase (user)** | Product intent, locks, approvals ("그렇게 가자", merge 여부) |
 | **Main agent** (usually Cursor Grok) | Discuss in Chase’s language; survey code; draft/file issues; launch workers; status; never silently steal Opus’s implementation |
-| **Opus** (`claude-human-stream`) | BP when needed; implement in **fresh clone**; **`gt create` → `gt submit` → tip `merge-queue` → stay until `origin/main` `(#N)`**. Never `gh pr create`. Never `HANDOFF: grok-land`. Never tell Chase 완료 before main tip. |
-| **Grok** (`agent-human-stream --backend grok`) | Author **only** if Chase named Grok. Same land-to-main path. Not the default MQ babysit. |
+| **Opus** (`claude-human-stream`) | BP when needed; implement in **fresh clone**; **`gh stack submit` → `cstack-gt-wait-merge` → stay until `origin/main` `(#N)`**. Never `gh pr create`. Never `HANDOFF: grok-land`. Never tell Chase 완료 before main tip. |
+| **Grok** (`agent-human-stream --backend grok`) | Author **only** if Chase named Grok. Same land-to-main path. Not the default queue babysit. |
 | **Composer** | Explore only |
 
 #### Canonical steps
@@ -668,9 +666,9 @@ the **identical** title as the live job.
 - Main implements the full feature while Chase expected Opus
 - Opening PRs with no issue/locks when the ask was the mega-issue flow
 - Using MCP as a diagnostic substitute for `curl`/api.dev when Chase forbade it
-- Author STOP after MQ enqueue / `HANDOFF: grok-land`
-- Launching Grok land after enqueue
-- Telling Chase 완료 on enqueue, green PR checks, or Graphite “Your changes”
+- Author STOP after queueing / `HANDOFF: grok-land`
+- Launching Grok land after queueing
+- Telling Chase 완료 on queueing or green PR checks
 
 ### Pipeline 1 — heavy / ambiguous work
 
@@ -685,352 +683,59 @@ migrations, "figure out why and design the fix" asks.
    - when the change crosses a module boundary or adds an API / data
      model, shape it first with `sume-architect` (usage → types → design
      twice; rationale in the mega-issue or a Job issue comment). Before
-     `gt submit` on a risky diff, `sume-blast-radius` proves the one
+     `gh stack submit` on a risky diff, `sume-blast-radius` proves the one
      safety fact by running code (`## Blast radius` in the PR body);
    - then (same session) **`cstack-clone`** → code → local green →
-     **`gt create` → `gt submit`** (single or stack) →
-     **`cstack-gt-wait-merge`** (label the **tip** `merge-queue` now;
-     do **not** wait for PR CI / dry-run Ready) → **stay until
-     `origin/main` `(#N)`**;
-   - fallback if the binary cannot label:
-     `gh pr edit <N> --add-label merge-queue`;
+     **`gh stack init` / `gh stack add` → `gh stack submit --auto --open`**
+     (single or stack) → **`cstack-gt-wait-merge`** (waits for `validate`,
+     queues the whole stack) → **stay until `origin/main` `(#N)`**;
    - **never** fall back to `gh pr create`; **never** `HANDOFF: grok-land`.
 2. Main agent does **not** launch a second land worker. Resume Opus if it
-   exited at enqueue. Confirm land via `main` tip `(#N)`.
+   exited after queueing. Confirm land via `main` tip `(#N)`.
 
-### PR trains and Graphite (`gt`) — default for *all* PR authoring
+### PR trains and GitHub stacks — default for *all* PR authoring
 
-**Operational enqueue / land playbook SoT (read before any `gt submit` /
-`gt merge` / MQ unstick):**  
-[`sume-gt-mq`](~/.agents/skills/sume-gt-mq/SKILL.md)  
-(`~/.agents/skills/sume-gt-mq/SKILL.md`). Includes exit-before-enqueue ban,
-stack ownership, and CI-missing-after-restack unstick. **Do not fork** those
-rules here — update `sume-gt-mq` instead.
+Mechanics SoT: `~/.agents/skills/sume-gt-mq/SKILL.md` (queue/land) and
+sume-com `docs/operations/pr-stack-and-merge-queue.md`. Graphite (`gt`,
+the `merge-queue` label, Graphite's queue) is retired for `sume` since
+2026-10-30 (Chase, during Graphite's merge-queue outage). Authors stack with
+GitHub's `gh stack` and land through GitHub's merge queue (ruleset
+`main-merge-queue`, squash, one commit per PR).
 
-When a mega-issue / BP locks a **PR-A / PR-B / PR-C** (or similar) train:
-
-**Prefer one implementer session that builds the whole train, then land once
-via Graphite MQ — not ping-pong "open A → babysit merge → resume for B".**
-
-**Chase lock (2026-08-04, #2383 incident):** On `sumelabs/sume-com`, treat
-**`gt` as first-class like `gh`**. Agents must follow the BP / this SoT /
-ops gotchas **literally**. A green commit opened only with `gh pr create`
-is a **failed handoff**, even if GitHub shows a PR URL.
-
-#### Use Graphite CLI (`gt`) — mandatory author path (Sume default)
-
-Chase lock (2026-08-04, #2242): native GitHub stacked PRs + GH merge queue
-are **not** reliable on `sumelabs/sume-com`. **Graphite** is the product
-path: CLI stacks + Graphite Merge Queue + CI Optimizations.
-
-Install / auth once (human or ops):
-
-```bash
-brew install withgraphite/tap/graphite   # or npm i -g @withgraphite/graphite-cli@stable
-gt auth --token <from https://app.graphite.com/settings/cli>
-# in EACH fresh clone used for authoring:
-gt init --trunk main
-```
-
-Canonical author → land flow (**do not skip `gt submit`**):
+**One session builds the whole train.** Same mega-issue, B depends on A, or
+the same package path sequence → one stack in one fresh clone, every layer
+in the same session, one `gh stack submit`. Not "open A → babysit merge →
+resume for B".
 
 ```text
-fresh clone → gt init → gt create → commit(s) → gt submit
-         → cstack-gt-wait-merge (tip merge-queue now; MWR if PR CI pending)
-         → STOP
-         → Grok: PR CI / MQ draft → land on main → ops
+CLONE="$(cstack-clone <job-slug>)" && cd "$CLONE"
+gh stack init <branch-1> → commit → gh stack add <branch-2> → commit …
+gh stack submit --auto --open
+cstack-gt-wait-merge --rm <job-slug>   # validate green → whole stack queued
+→ author stays until origin/main has (#N) for every layer
 ```
 
-`gt submit` **publishes** the PR and binds it to Graphite. Without it,
-MQ enqueue fails / `gt merge` says “branch has no associated PR” even if
-`gh pr` exists. Enqueue does **not** replace submit.
+- **Forbidden:** `gh pr create`, `gt`, the `merge-queue` label,
+  `gh pr merge --admin` / queue bypass without Chase's word for that PR,
+  `git worktree add` under a shared checkout (#2383).
+- **No prophylactic rebase.** `main` moved is not a reason; restack
+  (`gh stack sync`) only for a real conflict, review edits, or after a lower
+  layer lands.
+- **Queue behavior** (probe #17991–#17995): every layer gets its own
+  `merge_group` run (Typecheck and Format, Test 1–4, Build) built on the
+  layer below; a red layer leaves the queue with every layer above it,
+  and the layers below it still land.
+- **Proof of land:** `git log origin/main --oneline --fixed-strings --grep='(#N)'`
+  for every layer; PRs show `MERGED`.
+- Workflow file updates under `.github/workflows/` need a credential with
+  the `workflow` scope (SSH or refreshed `gh` token).
 
-**Chase lock (2026-09-01) — Opus default enqueue = tip `merge-queue` label
-right after `gt submit`.** Do not wait for PR CI or dry-run Ready. If the
-PR is not mergeable yet, Graphite treats the label as Merge when ready
-and moves it into MQ when `validate` is green. **Grok default** after the
-label = land babysit (PR CI + MQ draft → `main` tip). Grok labels only if
-the author never got the label on (`HANDOFF: grok-ci-merge`).
+#### Delegation checklist (paste the block from `GRAPHITE-HARD-LOCK.md`)
 
-#### Hard rule — fresh clone only for `gt` (never shared-checkout worktrees)
-
-**Why #2383 burned:** Opus ran `git worktree add` under the Cursor
-checkout. The branch tip was fine (`origin/main`), but Graphite reads the
-**shared `.git` trunk `main`**, which was poisoned (stale / shallow /
-hundreds of local-only commits). `gt submit` aborted “trunk out of date”;
-Opus then illegally used `gh pr create`.
-
-**Locked (2026-08-04) — for every PR author (Opus / Grok / anyone):**
-
-1. **Do all `gt create` / `gt submit` / `gt restack` / `gt sync` in an
-   isolated clone** from `cstack-clone <job-slug>` →
-   `/tmp/sume-com-<job-slug>` (objects from
-   `~/.cstack/mirrors/sume-com.git`). Not `$REPO/_wt/…` under the Cursor
-   tree. After enqueue / land: `cstack-clone-rm <slug>`.
-2. **Forbidden for `gt`:** `git worktree add` under the shared Cursor /
-   agent checkout (they share poisoned trunk metadata). Full
-   `git clone --depth=100` when the mirror exists — use `cstack-clone`.
-3. **Forbidden:** `gh pr create` / `gh pr create --head` as the author
-   path on `sume-com` — single PR or stack. Same for “submit failed so
-   I’ll just open with gh”.
-4. **Allowed `gh` uses (not authoring):** `gh pr view`, `gh pr comment`,
-   `gh pr edit --add-label merge-queue`, issue tools. **`gh pr checks` is
-   not an author wait.** After submit, **`cstack-gt-wait-merge`** labels
-   the tip now (see “Enqueue at submit”).
-5. Always follow the **BP / mega-issue locks** for slice order, stop-at-PR
-   vs merge, and non-goals. Do not invent a parallel land path.
-
-#### `gt` cookbook (as natural as `gh`)
-
-Single PR (default):
-
-```bash
-CLONE="$(cstack-clone <job-slug>)"   # stdout = dest only; objects from mirror
-cd "$CLONE"
-gt init --trunk main   # once per clone
-git fetch origin main && git checkout -B main origin/main
-gt create -m "$(cat <<'EOF'
-fix(area): short why (#NNNN)
-
-EOF
-)"
-# edit files in $CLONE only; commit with gt modify -c or git commit
-gt submit --no-interactive --no-ai --publish
-cstack-gt-wait-merge --rm <job-slug>   # label tip merge-queue now (MWR if CI pending)
-# stay until origin/main (#N); then LANDED: yes + cstack-clone-rm
-```
-
-PR train (A/B/C in one session):
-
-```bash
-# same fresh clone
-gt create -m "…"   # A
-# …implement A…
-gt create -m "…"   # B on top of A
-# …implement B…
-gt create -m "…"   # C
-gt submit --stack --no-interactive --no-ai --publish
-cstack-gt-wait-merge --rm <job-slug>   # enqueue whole train via Graphite MQ
-# stay until origin/main (#N)
-```
-
-Common ops (same clone):
-
-| Intent | Command |
-|--------|---------|
-| New branch + first commit prompt | `gt create -m "…"` |
-| Amend / add commit on current | `gt modify -c` / `git commit` then stay tracked |
-| Publish / update PRs | **`gt submit`** (always required) |
-| Restack after trunk moves | `gt sync` / `gt restack` → **`gt submit` again** |
-| Enqueue after submit | **`cstack-gt-wait-merge`** (tip `merge-queue` now) |
-| Enqueue MQ (**Opus default**) | tip `merge-queue` label (MWR if PR CI pending) |
-| Enqueue MQ (manual / Grok fallback) | `gh pr edit <N> --add-label merge-queue` |
-
-#### Recovery — `gt submit` fails (trunk out of date / poisoned)
-
-**Do this:**
-
-1. Keep the commit SHA (branch tip).
-2. **Abandon** the bad checkout for Graphite (do not “fix” shared `main`
-   with force-reset in the Cursor checkout).
-3. New **fresh clone** → `gt init` → fetch branch or cherry-pick tip onto
-   `origin/main` → `gt track --parent main` (1 commit / clean stack) →
-   **`gt submit`**.
-4. If a mistaken `gh pr` already exists for that head: still
-   `gt track` + `gt submit` (update / bind Graphite). Do **not** open a
-   second PR with `gh`.
-
-**Never do this:**
-
-- `gh pr create` after `gt submit` fails
-- `gt track` claiming “includes N00 commits” against a divergent local
-  `main` — that means the checkout is poisoned; fresh clone instead
-- Long unshallow / merge-base archaeology in the shared repo to “save”
-  the worktree
-
-#### Hard rules for stacks
-
-- **No sibling `main` PRs** on overlapping paths — stack them.
-- **No mid-stack GitHub-only squash-merge** of lower layers outside Graphite
-  MQ (breaks upstack bases). Enqueue the **whole train** by labeling the
-  **tip** `merge-queue` — never A-only then resume B.
-- **Do not** habitually `git rebase` / “update branch” for stack hygiene —
-  use `gt restack` / `gt sync`; the MQ restacks at merge time.
-- Single-PR landings still use Graphite MQ (`merge-queue` label), not
-  `gh pr merge --squash`, unless Chase explicitly asks for a non-MQ land.
-- Workflow files under `.github/workflows/` need a credential with the
-  `workflow` scope (SSH or refreshed `gh` token); Graphite’s OAuth push
-  alone may reject workflow updates.
-
-#### Operator gotchas (Chase lock lessons, 2026-08-04)
-
-Lessons from the first Graphite MQ rollout + #2383 — agents re-hit these
-without this list. Keep in sync with the ops doc.
-
-**Clone / auth**
-
-- **`gt` = fresh clone only.** Shared Cursor checkout + `git worktree add`
-  is **not** a Graphite-ready tree.
-- Before `gt submit`, verify trunk is clean:
-  `git rev-parse main` == `git rev-parse origin/main` (after
-  `git fetch origin main`). If not → new clone, do not invent history.
-- `gt auth` once per machine; each clone still needs `gt init --trunk main`.
-
-**Submit vs merge**
-
-- Always author with **`gt create` → `gt submit`**. **`gh pr create` is
-  forbidden** as the publish path on `sume-com` (single or stack).
-- After `gt restack` / `gt sync` rewrites commits: **`gt submit` again**
-  before enqueue (local tip must match what Graphite will land).
-- `gt submit` aborting “trunk out of date”: **fresh clone recovery**
-  (above) — not `gh pr create`, not thrash-reset of the shared checkout.
-
-**Enqueue at submit (Chase lock 2026-09-01)**
-
-Ops detail: **`sume-gt-mq`** § Enqueue at submit.
-
-After **`gt submit`**, the author labels the **tip** `merge-queue` via
-**`cstack-gt-wait-merge`**. That is Graphite’s official
-enqueue-from-anywhere path
-([use the merge queue](https://graphite.com/docs/get-started-merge-queue)).
-If the PR is not mergeable yet, the label is
-[Merge when ready](https://graphite.com/docs/merge-when-ready):
-`validate` green → enters MQ → MQ draft CI still runs.
-
-Do **not** wait for PR CI. Do **not** poll `gt merge --dry-run`.
-Do **not** `gt merge` as the author wait path. `Cannot determine` is
-irrelevant — label anyway.
-
-**Forbidden as the author path on `sume-com`:**
-
-- `gh pr checks` / dry-run poll loops after submit
-- Sleeping until Ready / `(Waiting on CI...)`
-- `gt merge` while waiting for CI
-- **Endless `gh run rerun --failed`** — land / § F: ≤2 reruns → minimal
-  CI unblock in the **same** session
-
-**Enqueue then land (same author)**
-
-- After `gt submit`, **`cstack-gt-wait-merge`** labels the tip. Then
-  **stay** until `origin/main` `(#N)`.
-- Label present + CI still running is **not** eject.
-- Independent labeled PRs may each enter MQ when mergeable. Authors do
-  **not** rebase while labeled / queued.
-- Graphite “already merging” / `QUEUED_TO_MERGE` means **in the queue**.
-  The **author** watches; do not thrash restack+submit unless Graphite
-  asks or the entry failed.
-
-**Author land**
-
-1. **Do not re-enqueue** unless the entry failed / was evicted.
-2. Confirm MQ draft CI; surface draft URL.
-3. **Stay in session** until `origin/main` has `(#N)`.
-4. Issue landed comment **only after** that proof.
-5. If the PR was only `gh pr create`: repair with fresh-clone `gt submit`.
-
-**What MQ CI actually is**
-
-- MQ opens a temporary **`[Graphite MQ] Draft PR`** (`gtmq_*` branch). Same
-  repo `ci.yml` on **our** runners (heavy jobs → Railway; `optimize_ci` /
-  `validate` → `ubuntu-latest`). Graphite only orchestrates.
-- Watch: Graphite merges UI, draft PR Checks, or the original PR’s
-  `graphite-app` “Merge activity” comment.
-- UI: blue badge = active (CI running **or** “Creating temporary PR”);
-  gray = queued waiting.
-- `graphite-ci-action` **never skips** while a PR is in the MQ (product
-  behavior). Merge-time cost is controlled by Graphite MQ UI (**topmost of
-  stack** + **parallel stacks** + FF), not mid-stack review skip.
-- Touching `.github/workflows/ci.yml` triggers **full** `test:pnpm` via
-  `shouldRunEverything` — MQ drafts for those PRs look “slow” (~minutes);
-  docs-only drafts stay short.
-
-**Landed status quirks**
-
-- Graphite FF often closes the GitHub PR as **`CLOSED` with `mergedAt:
-  null`**. Treat **`main` history** / Graphite “Merged” as truth, not
-  `gh pr view --json mergedAt`.
-- After a lower PR lands, upstack/siblings may need `gt sync` + resubmit;
-  MQ usually restacks speculative drafts — prefer waiting over manual
-  rebase storms.
-
-**Author land babysit**
-
-- Do not “observe forever” once Graphite says queued/already merging and
-  draft CI is running — report the draft URL and only act on red CI /
-  failed MQ eviction / Chase ask.
-- Confirm land by `main` tip SHA containing `(#N)`, not by GitHub
-  `mergedAt`.
-
-#### Fallbacks (only when Graphite product/CLI is unavailable)
-
-1. **`gh stack`** — only if Graphite CLI/app is down **and** Chase
-   approves for that task.
-2. **Manual `--base` chains** — last resort; document in the done report;
-   Chase must approve.
-3. **Sequential onto `main`** — only when the user asks for one-PR-at-a-time.
-
-**Not a fallback:** `gh pr create` because `gt submit` failed in a bad
-checkout. That is always **fresh-clone recovery** (above).
-
-Do **not** default back to `gh stack` on `sume-com` while Graphite MQ is on.
-
-#### Delegation checklist (main agent → worker)
-
-Every **Opus** implement prompt on `sume-com` **must** include this block
-(verbatim intent; wording may match). Full ops: **`sume-gt-mq`**.
-
-Same text: `sume-desk/GRAPHITE-HARD-LOCK.md` in chasehuh/cstack.
-
-```text
-Required skill: read ~/.agents/skills/sume-gt-mq/SKILL.md before any gt submit/merge.
-
-GRAPHITE (hard lock) — Chase 2026-09-06: author owns land to origin/main:
-- Isolated clone only: `CLONE="$(cstack-clone <job-slug>)"` then `cd "$CLONE"`.
-  All `gt` commands run in that clone. Forbidden: `git worktree` under the
-  shared Cursor checkout (#2383). Forbidden: `gh pr create` (single or stack).
-  Publish ONLY via `gt submit`. If submit fails (trunk out of date): new
-  `cstack-clone` → cherry-pick/track → `gt submit`. Never `gh pr create`.
-- After `gt submit`: SAME session — `cstack-gt-wait-merge --rm <job-slug>`.
-  Label the **tip** `merge-queue` immediately. Do NOT wait for PR CI,
-  dry-run Ready, or `Cannot determine`. Do NOT write a sleep/grep loop.
-  Not mergeable yet → Graphite MWR; `validate` green → enters MQ.
-  Already labeled / already in MQ → keep going (do not STOP).
-  Label rejected → `gh pr edit <N> --add-label merge-queue` and continue.
-- Then **stay until** `git fetch origin main && git log origin/main --oneline --grep='(#N)'`.
-  Re-enqueue on eject. Repo CI flake: ≤2 `gh run rerun --failed`, then
-  minimal CI unblock. Forbidden: endless rerun. Forbidden: `HANDOFF: grok-land`.
-- Forbidden: ScheduleWakeup then exit before the main tip.
-  Enqueue is not 완료. Done report only after main-tip proof:
-  clone path + Graphite URL + GitHub PR URL + SHA + `LANDED: yes`.
-  `cstack-clone-rm <job-slug>` after land (keep the tree while unblocking).
-- DEST EVIDENCE (hard lock 2026-09-11, #7110): after dest/prod browser verify,
-  post ONE `gh issue comment` on the Job issue with 2–4 screenshots + host,
-  sumelabs, Auto (not Astra), SHA, pass/fail. Final report must carry
-  `SHOTS: <comment URL>`. Forbidden: `DEST: pass` without SHOTS. Forbidden:
-  exiting after main land while dest deploy is still building.
-```
-
-Prompt hygiene (sume#7839 — nested-worker ghosts): the prompt body is the
-**task**, not the launch command. Open it with the worker role
-(`You are the worker for <job-slug> (#N). Do the work in this session.`) and
-keep launcher flags on the `sume-bg-launch` command line only — never write
-`--backend … --model … --effort … --host mini`, "Fresh worker", or
-"Job title: …" inside the prompt. Astra/Codex reads such a header as "spawn
-this worker", launches a nested session, and exits; the nested session dies
-with it. The wrapper now prepends a `[sume worker session]` preamble and the
-launcher refuses nested launches, but the prompt must not fight them.
-
-When the BP has a PR train, also say:
-
-- Implement **all** locked slices in one session, then **`gt submit --stack`**.
-- Do not open only PR-A then stop.
-- Report Graphite + GitHub PR URLs for every layer.
-- **`cstack-gt-wait-merge`** labels the **tip** (whole train) → **stay
-  until `origin/main`**.
-- Do not invent extra slices beyond the BP train.
-
-Docs: https://graphite.com/docs/cli-overview · MQ: https://graphite.com/docs/graphite-merge-queue  
-Repo ops (sume-com): `docs/operations/pr-stack-and-merge-queue.md` · lock [#2242](https://github.com/sumelabs/sume-com/issues/2242)
+- Job slug, issue URL, locks, stage boundary (author lands through main).
+- `Required skill: read ~/.agents/skills/sume-gt-mq/SKILL.md before gh stack submit.`
+- The STACKS hard-lock block (`~/.cstack/src/sume-desk/GRAPHITE-HARD-LOCK.md`).
+- Report GitHub PR URLs for every layer and the stack URL.
 
 ### Pipeline 2 — clear / well-scoped work
 
@@ -1039,7 +744,7 @@ change, well-understood follow-up.
 
 Default still follows the same split when a PR is expected:
 
-1. **Named author** — implement → `gt submit` → tip `merge-queue` →
+1. **Named author** — implement → `gh stack submit` → `cstack-gt-wait-merge` →
    **`origin/main` `(#N)`**.
 2. Tiny / mechanical one-file follow-ups may stay **Grok end-to-end**
    when Chase named Grok (or the ask is noise). When unsure, prefer Opus
@@ -1053,29 +758,26 @@ Default still follows the same split when a PR is expected:
 - **Grok workers run via `agent-human-stream --backend grok`, not Cursor Task.**
   From a Cursor main agent, never spawn land/author Grok via `Task` /
   `cursor-grok-*`. Composer explore stays `Task`.
-- **Opus owns PR authoring through MQ enqueue by default** (design/RCA when
-  needed, then code through **fresh-clone `gt create` → `gt submit` →
-  tip `merge-queue`**). Do **not** default Opus onto MQ draft / land /
-  deploy babysit after the label.
-- **Grok owns post-enqueue land ops by default:** MQ draft CI → `main` tip
-  confirm → deploy/flag babysit, release watches (watch only; tagging and
-  Production approval are the release agent's, `docs/RELEASE-LOCK.md`), and other mainly
-  non-coding ops. Fallback: **label the tip now** → land when Opus
-  could not label. If land CI needs a real code fix, either push a tiny
-  fix **or** bounce implementation back to Opus — do not silently start a
-  parallel redesign.
+- **Opus owns PR authoring through `origin/main` by default** (design/RCA
+  when needed, then code through **fresh-clone `gh stack submit` →
+  `cstack-gt-wait-merge`**, then the queue runs until every layer is on
+  `main`).
+- **Grok owns post-land ops by default:** deploy/flag babysit, release
+  watches (watch only; tagging and Production approval are the release
+  agent's, `docs/RELEASE-LOCK.md`), and other mainly non-coding ops. If a
+  land needs a real code fix, either push a tiny fix **or** bounce
+  implementation back to Opus — do not silently start a parallel redesign.
 - **Composer is exploration-only.** Composer may be used only for read-only
   codebase exploration / search / survey (e.g. `explore`-type subagents:
   "where is X handled", "map this flow"). Composer must NOT write issues,
   implement code, open/merge PRs, mutate ops state, or babysit releases.
 - When unsure whether a task is "heavy" or "clear", ask: would a context-free
   implementer need a design document to avoid building the wrong thing? If
-  yes → Pipeline 1 (Opus designs, then Opus implements through MQ enqueue).
+  yes → Pipeline 1 (Opus designs, then Opus implements through main).
   If tiny/mechanical → Pipeline 2 exception (Grok e2e OK).
 - The delegation prompt must state the model choice and the stage boundary
-  (e.g. "Opus: gt submit → tip merge-queue → STOP" vs
-  "Grok: land babysit → close issue"; fallback
-  "Grok: label tip now → land").
+  (e.g. "Opus: gh stack submit → cstack-gt-wait-merge → stay until main"
+  vs "Grok: deploy babysit → close issue").
 
 ## Worker Status Checks
 

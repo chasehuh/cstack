@@ -17,7 +17,7 @@ Upstream pin: `cursor/plugins@23e4138daa01c42d4969f7a5465f82704e64f798`
 | `sume-automate-me` | `automate-me` | Mines desk sources (Claude memory, cstack locks, Cursor / Claude / Codex / Grok sessions), drafts `chase-mode` in this repo with `gh` (not `gt`). A worker run stops at the open PR for Chase's review. User-invoked only: `disable-model-invocation` for Claude Code, Cursor, and Grok, and `agents/openai.yaml` `policy.allow_implicit_invocation: false` for Codex. |
 
 None of the four picks a model or an effort. Roles, routing, transport
-(`sume-bg-launch`), effort lanes, Graphite, land, and dest evidence stay in
+(`sume-bg-launch`), effort lanes, stacks, land, and dest evidence stay in
 `sume-main-agent-orchestration` and `sume-gt-mq`. A worker never launches a
 nested worker (sume#7839), so every fan-out these skills mention is an
 in-process subagent.

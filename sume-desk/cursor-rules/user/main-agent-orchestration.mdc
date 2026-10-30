@@ -32,17 +32,17 @@ Harness notes (do not fork policy here):
   `~/.cursor/rules/opus-background-terminal.mdc`
   (`block_until_ms: 0`, prompt file, `cd` not `--cwd`, `--resume`, no Task;
   Shell `description` / terminal title = `Opus : <job-slug> (#N)` =
-  board Job; **default:** Opus `cstack-clone` → `gt submit` →
-  **`cstack-gt-wait-merge`** (tip `merge-queue` now) →
-  stay until `origin/main` `(#N)`; see SoT Graphite hard lock + Chase lock
+  board Job; **default:** Opus `cstack-clone` → `gh stack submit` →
+  **`cstack-gt-wait-merge`** (queues the whole stack) →
+  stay until `origin/main` `(#N)`; see SoT stacks hard lock + Chase lock
   2026-09-06 author-owns-land + 2026-08-26 완료 + “Enqueue at submit”).
-- **Graphite enqueue at submit (always apply on user install):**
+- **Queue at submit (always apply on user install):**
   `~/.cursor/rules/graphite-ci-ready.mdc`
-  (`cstack-gt-wait-merge` labels the tip now — not `gh pr checks` /
+  (`cstack-gt-wait-merge` queues the whole stack — not `gh pr checks` /
   Ready-poll loops).
-- **Graphite MQ enqueue playbook (always apply on user install):**
+- **Stack + merge queue playbook (always apply on user install):**
   `~/.agents/skills/sume-gt-mq/SKILL.md` — required before any
-  `gt submit` / `gt merge` / MQ unstick / land handoff.
+  `gh stack submit` / queue unstick / land.
   **Chase 완료** only after `origin/main` `(#N)` (lock 2026-08-26).
 - **Status board (always apply on user install):**
   `~/.cursor/rules/status-board.mdc`
@@ -76,7 +76,7 @@ and/or pass repo paths. Edit the SoT skill for policy; keep
 `graphite-ci-ready.mdc`, `status-board.mdc`,
 `active-workers-canvas.mdc`, `end-of-turn-worker-brief.mdc`,
 `slack-coding-agents.mdc`, and `canvas-user-language.mdc` in sync
-when the loop, Shell recipe, Graphite ready-signal, or status board
+when the loop, Shell recipe, queue rule, or status board
 changes.
 Enqueue/land ops SoT: `~/.agents/skills/sume-gt-mq/SKILL.md`
 (`install-symlinks.sh` in that skill dir).

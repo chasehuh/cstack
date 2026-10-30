@@ -1,47 +1,36 @@
 ---
-description: Graphite enqueue at submit — label the tip now, do not wait for PR CI
+description: Land through GitHub's merge queue — after gh stack submit, cstack-gt-wait-merge queues the whole stack; stay until main
 alwaysApply: true
 ---
 
-# Graphite enqueue at submit (Cursor / Opus / Grok)
+# Queue at submit (Cursor / Opus / Grok)
 
-Policy SoT for enqueue/land ops:
-`~/.agents/skills/sume-gt-mq/SKILL.md`
-§ **"Enqueue at submit (Chase lock 2026-09-01)"**.
+Policy SoT for queue/land ops: `~/.agents/skills/sume-gt-mq/SKILL.md`.
+The file keeps its old name; Graphite (`gt`, the `merge-queue` label) is
+retired for `sume` since 2026-10-30.
 
-Also in orchestration:
-`~/.agents/skills/sume-main-agent-orchestration/SKILL.md`
-§ **"Enqueue at submit (Chase lock 2026-09-01)"**.
+## Locked (2026-10-30)
 
-## Locked (2026-09-01)
-
-After **`gt submit`** / **`gt submit --stack`**, from the
-**Graphite-ready author clone**:
+After **`gh stack submit --auto --open`**, from the author clone at the
+stack tip:
 
 ```bash
 cstack-gt-wait-merge --rm <job-slug>
 ```
 
-That labels the **tip** `merge-queue` immediately.
+It links the PR chain into one GitHub stack, waits for `validate` on every
+layer, then queues the whole stack (`gh stack merge`; one PR:
+`gh pr merge --auto --squash`).
 
 | Prefer | Avoid |
 |--------|--------|
-| Tip `merge-queue` **now** (Graphite MWR if PR CI pending) | Waiting for PR CI / dry-run Ready |
 | **`cstack-gt-wait-merge`** | Hand-rolled `sleep` + `grep` / `gh pr checks` loops |
-| Label the **tip** (Graphite copies downstack) | Label only the base PR |
-| Author **STOP** after the label | Author poll until `gt merge` Ready |
+| Run it from the **tip** | Queueing only the base PR |
+| Author **stays** until every layer is on `main` | STOP after queueing |
 
-Not mergeable yet → Graphite treats the label as Merge when ready.
-`validate` green → the PR enters MQ → MQ draft CI still runs.
-Already mergeable → the label enqueues now.
-
-`Cannot determine` is irrelevant. Do **not** `gt merge` as the author
-wait path. Do **not** wait for Ready.
-
-**Failed CI is land, not author wait.** Label present + checks still
-running is **not** eject. Land: ≤2 `gh run rerun --failed` for known
-flake, else minimal CI unblock → `gt submit` → label again if dropped
-(or `HANDOFF: grok-ci-merge`). SoT: `sume-gt-mq` § Enqueue at submit + § F.
+**A queue removal is land, not a reason to stop.** Each layer has its own
+queue run. A red layer leaves the queue with every layer above it; layers
+below it still land. Fix, `gh stack sync`, run the helper again.
 
 ## Repo-wide CI flake (Chase lock 2026-08-07)
 
@@ -51,22 +40,11 @@ If required Test fails with **shifting timeouts** / same signature on
 **unrelated** PRs / local suite green in seconds:
 
 1. **≤2** `gh run rerun` attempts on the same head
-2. Then ship a **minimal CI unblock** (e.g. package `testTimeout`) via
-   fresh-clone `gt submit` — product scope stays locked
+2. Then ship a **minimal CI unblock** (e.g. package `testTimeout`) as a
+   layer of the same stack — product scope stays locked
 3. **Forbidden:** endless `gh run rerun` with zero code change
-4. Still blocked → `HANDOFF: grok-ci-merge`
-
-## Why
-
-Graphite documents two official enqueue paths: app/CLI merge, and a
-configured GitHub label (`merge-queue` here). Labeling at submit is
-Merge when ready — the worker is not the ready-signal. Wall clock is
-still PR CI then MQ CI; this lock only removes the author poll.
-
-`gh pr checks` inside Claude tool shells can **401** and also surfaces
-non-required noise. Do not sit in that loop after submit.
 
 **Forbidden:** `cstack-gt-wait-merge 2>&1 | tail`. Stay until it exits.
 
-Keep `sume-chase-work-loop.mdc` + `opus-background-terminal.mdc` GRAPHITE
-blocks in sync with **`sume-gt-mq`** + the orchestration delegation checklist.
+Keep `sume-chase-work-loop.mdc` + `opus-background-terminal.mdc` blocks in
+sync with **`sume-gt-mq`** + the orchestration delegation checklist.
