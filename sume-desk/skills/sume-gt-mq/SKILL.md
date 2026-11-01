@@ -229,6 +229,30 @@ Something reached `main` outside the queue and broke it (2026-10-30:
 migration `0165` after a direct merge). Fix `main` in its own PR at the
 bottom of your stack.
 
+### E. `gh stack submit`: "Stacked PRs are not enabled for this repository" (exit 9)
+
+Stacked PRs are on for `sumelabs/sume`. gh-stack (v0.3.0, `cmd/submit.go`)
+prints this warning and exits 9 when its preflight
+`GET repos/<owner>/<repo>/stacks` fails **for any reason**. It drops the
+real error, so a timeout, a TLS handshake timeout, a 5xx or a rate limit
+all look like "not enabled". It checks before it pushes, so nothing is on
+GitHub yet.
+
+Incident: on 2026-11-01 at 04:10Z the `sentry-since-1031` 3-layer submit
+hit this while the Mini's GitHub traffic was timing out (other sessions
+logged `net/http: TLS handshake timeout` to api.github.com at 04:04Z and
+04:16Z). Stacks #18086 (04:28Z) and #18090 (04:31Z) opened on the same
+repo minutes later.
+
+1. Probe: `gh api 'repos/sumelabs/sume/stacks?per_page=1' --silent && echo ok`.
+2. If that prints `ok`, or fails with a network error, the cause was the
+   network. Wait for `gh api rate_limit` to answer, then run
+   `gh stack submit --auto --open` again.
+3. Only a steady `HTTP 404` on that probe means stacks are off. Report it
+   to main. Do not change repo settings.
+
+Do not split the layers into one-PR stacks to get around it.
+
 ### F. Repo-wide CI flake blocking land (Chase lock 2026-08-07)
 
 Incident class: Opus `sentry-cutover-stack` / `studio-stream-arch-100k`
