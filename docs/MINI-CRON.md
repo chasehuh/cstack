@@ -25,8 +25,7 @@ on the Mini. There is no second agent runner, no ssh-to-self, no attach.
 - Times are the Mini's local time zone.
 - Only the slug is on the line. No prompt text, no tokens, no env secrets.
   The worker uses the Mini's own logins (tokenmaxxing `claude`, `gh`, `gt`).
-- Other backend / flags: `… --name <slug> --backend grok -- --effort high`.
-  With no flags after `--` and `--backend claude` (default) it passes
+- Other flags: `… --name <slug> -- --effort high`. With no flags after `--` and `--backend claude` (default) it passes
   `--model claude-opus-5-5 --effort medium`.
   To run a slug on Claude Sonnet 5.5 instead, name it after `--`:
   `… --name <slug> -- --model claude-sonnet-5-5 --effort medium`

@@ -1,11 +1,10 @@
 # cstack
 
-Chase’s **Sume desk pack**. **This repo is the SoT**
-(`chasehuh/cstack`). Clone + install and Cursor, Claude Code, Codex, and
-Grok Build all resolve to the same tree — not a rsync fork.
+Chase’s **Sume desk pack**. **This repo is the SoT** (`chasehuh/cstack`).
+Clone + install, and Claude Code (main agent on the laptop, Opus workers on
+the M5 Mac Mini) and Codex resolve to the same tree, not an rsync fork.
 
-The old review/merge/audit skills that used to live here are
-**deprecated and removed**. Do not restore them.
+What was removed and why: `docs/CHANGELOG.md`.
 
 ## One-click install
 
@@ -14,20 +13,15 @@ curl -fsSL https://raw.githubusercontent.com/chasehuh/cstack/main/bootstrap.sh \
   | bash -s -- --sume-com ~/sume/sume-com
 ```
 
-That clones/updates **`~/.cstack/src`** then runs `install.sh`.
+That clones/updates **`~/.cstack/src`** then runs `install.sh`. An existing
+checkout updates with:
 
 ```bash
-# already have a clone
-git clone git@github.com:chasehuh/cstack.git ~/.cstack/src
-~/.cstack/src/install.sh --sume-com ~/sume/sume-com
+git -C ~/.cstack/src pull --ff-only && ~/.cstack/src/install.sh
 ```
 
-Requires: `git`, `gh` with the `gh stack` extension (install.sh adds it),
-and **tokenmaxxing-wrapped**
-`claude` on PATH for Opus/Fable workers (see `docs/TOKENMAXXING.md`).
-Codex workers (`agent-human-stream --backend codex`) use the
-tokenmaxxing-wrapped `codex` (separate Codex pool, same doc).
-Grok Build (`grok` on PATH) uses the same skills via `~/.grok/skills`.
+Requires: `git`, `gh` with the `gh stack` extension (install.sh adds it), and
+the **tokenmaxxing-wrapped** `claude` on PATH (`docs/TOKENMAXXING.md`).
 
 **Never commit secrets.** Desk keys stay in `~/.sume/ops/` on the machine.
 Tokenmaxxing credentials stay in `~/.config/tokenmaxxing/` + keychain.
@@ -35,55 +29,51 @@ Tokenmaxxing credentials stay in `~/.config/tokenmaxxing/` + keychain.
 ## What install does
 
 - `~/.cstack/src` → this checkout
-- `~/.agents/skills/<name>` → **symlink** into `sume-desk/skills/<name>`
-- Same symlink for `~/.cursor|claude|codex|grok/skills`
-- Host bins on `~/.local/bin`: `cstack-clone`, `cstack-clone-rm`,
-  `cstack-mirror-sync`, **`cstack-gt-wait-merge`**, `agent-human-stream`,
-  `sume-bg-launch` (+ `sume-bg-remote` for the Mac Mini worker host —
-  `docs/MINI-WORKER-HOST.md`), `cstack-slack-post`
-- Workers post one Korean completion report to Slack `#coding-agents` by
-  default (opt out: `--no-slack-report` / `CSTACK_SLACK_REPORT=0`) —
-  `docs/SLACK-REPORT.md`
-- Runtime logs at `~/.cstack/state/` (not inside the git tree)
-- Pointers in `~/.codex/AGENTS.md`, `~/.claude/CLAUDE.md`, `~/.grok/AGENTS.md`,
-  including the always-on no-code-comments rule (`docs/CODE-COMMENTS.md`),
-  the no-feature-flags rule (`docs/FEATURE-FLAGS.md`) and the release lock
-  (`docs/RELEASE-LOCK.md`)
+- `~/.agents/skills/<name>` → **symlink** into `sume-desk/skills/<name>`,
+  same for `~/.claude/skills`, `~/.codex/skills`, `~/.cursor/skills`
+- Host bins on `~/.local/bin`: `sume-bg-launch` + `sume-bg-remote` (the M5
+  side, `docs/MINI-WORKER-HOST.md`), `agent-human-stream`,
+  `claude-human-stream`, `sume-cron-job`, `cstack-slack-post`,
+  `cstack-clone`, `cstack-clone-rm`, `cstack-mirror-sync`,
+  **`cstack-gt-wait-merge`**, `cstack-gate`, `cstack-ego-reap`
+- `~/.cstack/mini-ssh.env` → `CSTACK_MINI_SSH` = the M5 from
+  `sume-desk/hosts.env`
+- `~/.cstack/state/` (logs, registry, `prompts/`), never inside the git tree
+- Sections in `~/.codex/AGENTS.md` (Claude Code imports it) and
+  `~/.claude/CLAUDE.md`: orchestration pointer, worker mode, author
+  completion, no code comments (`docs/CODE-COMMENTS.md`), no feature flags
+  (`docs/FEATURE-FLAGS.md`), release lock (`docs/RELEASE-LOCK.md`)
+- Offline tests: launcher host routing, cron, Slack tail, wait-merge matcher
 
-Edit files **here**, then `./install.sh`. Do not edit the skill copies
-under `~/.agents` as if they were independent.
+Edit files **here**, then `./install.sh`.
 
 ## Layout
 
 ```
 AGENTS.md                 # first file a raw agent reads
-bootstrap.sh              # one-click → ~/.cstack/src + install
-install.sh
+bootstrap.sh / install.sh
 docs/FLOW.md              # map of rules → when
+docs/CHANGELOG.md         # what changed / was removed in the desk
+docs/MINI-WORKER-HOST.md  # sume-bg-launch --host mini (M5 worker host)
+docs/MINI-CRON.md         # scheduled jobs on the M5
+docs/SLACK-REPORT.md      # worker completion report → #coding-agents
 docs/TOKENMAXXING.md      # local Claude = tokenmaxxing supervisor
-docs/MINI-WORKER-HOST.md  # sume-bg-launch --host mini (detached Mac Mini worker)
-docs/SLACK-REPORT.md      # worker completion report → #coding-agents (default on)
-docs/PSTACK.md            # pstack-derived skills: taken / skipped / resync / MIT
-docs/STE.md               # sume-ste: Simplified Technical English pin, scope, ASD notice
-docs/CODE-COMMENTS.md     # no code comments: docs are the SoT (every harness)
+docs/RELEASE-LOCK.md / CODE-COMMENTS.md / FEATURE-FLAGS.md
+docs/PSTACK.md / STE.md   # vendored engineering + STE skills
 sume-desk/
-  GRAPHITE-HARD-LOCK.md   # paste block for every author prompt
-  skills/                 # SoT (orchestration, gt-mq, mega-issue, Formats LC,
-                          #      sume-architect / -blast-radius / -principles / -automate-me,
-                          #      sume-ste)
-  cursor-rules/user/      # ~/.cursor/rules
-  cursor-rules/sume-com/  # <repo>/.cursor/rules
+  hosts.env               # M5 / M4 ssh targets (single SoT)
+  GRAPHITE-HARD-LOCK.md   # STACKS paste block for every author prompt (old name)
+  *-snippet.md            # sections install.sh writes into ~/.codex / ~/.claude
+  worker.env              # load caps every worker inherits
+  skills/                 # orchestration, gt-mq, mega-issue, Formats LC,
+                          # sume-architect / -blast-radius / -principles /
+                          # -automate-me, sume-ste
+  cursor-rules/           # always-on rules for Cursor as an editor (no main-agent mechanics)
 ```
 
 ## Flow in one line
 
-Discuss → lock → GitHub issue → `agent-human-stream` / `claude-human-stream`
-(Opus; Fable only if named; Grok Build via `--backend grok`; Codex via
-`--backend codex` only if named) →
-`cstack-clone` → `gh stack submit --auto --open` → **`cstack-gt-wait-merge`**
-(validate green → GitHub merge queue) → the author stays until `main` →
-`cstack-clone-rm`.
-
-Details: `docs/FLOW.md` then the skills after install.
-Formats (LC package + dest fire): `mobidoo-live-commerce-update`.
-Local Claude quota: `docs/TOKENMAXXING.md`.
+Discuss → lock → GitHub issue → `sume-bg-launch --host mini` (Opus on the
+M5; fresh, fork or steer) → `cstack-clone` → `gh stack submit --auto --open`
+→ **`cstack-gt-wait-merge`** → the author stays until `origin/main` `(#N)` →
+Korean report in `#coding-agents` → `cstack-clone-rm`.

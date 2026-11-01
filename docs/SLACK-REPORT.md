@@ -12,10 +12,10 @@ and how the post is made.
 
 ## The format (as the desk already posts it)
 
-- **Thread:** reply in the Job's thread. Find it by the job slug or the
-  issue number. If there is none, post the short parent
-  ``<short what> — `Opus : <slug> (#N)` `` first (same as the main-agent
-  parent rule in `slack-coding-agents.mdc`), then the report as its first reply.
+- **Thread (Chase lock 2026-10-13):** a new ask is a new channel message.
+  Do not reply on an older thread. Parent text is
+  ``<short what> — `Opus : <slug> (#N)` `` and the report is that message.
+  A reply is only a follow-up to the parent you just posted.
 - **Report:** Korean, 600 characters or fewer, mrkdwn. A bold title line with
   issue/PR/SHA links, then `•` lines (cause or what was done, check with
   numbers, what remains), then one evidence link. Clips and images go on
@@ -23,8 +23,8 @@ and how the post is made.
 - **Final block:** the usual report (what was done, PR / SHA / issue /
   `SHOTS:` links, `LANDED: yes|no`), then `SLACK: <permalink>`. If the
   worker cannot post, it writes `SLACK_TEXT:` with the exact Korean text
-  and `SLACK: not posted — <reason>`. The **main agent posts that text** in
-  the Job thread.
+  and `SLACK: not posted — <reason>`. The **main agent posts that text** as
+  a new channel message.
 
 ## When the tail is added
 
@@ -32,7 +32,7 @@ and how the post is made.
 |---|---|
 | fresh launch (`sume-bg-launch`, `agent-human-stream`, `claude-human-stream`) | the full tail, after the task text |
 | `--resume <id> --fork-session` | the full tail (a fork is a new Job) |
-| `--resume <id>` / `--continue` (steer) | one steer line: post only if this turn finishes new work, one reply in the existing thread; a status answer posts nothing |
+| `--resume <id>` / `--continue` (steer) | one steer line: post only if this turn finishes new work; a new ask is a new channel message; a status answer posts nothing |
 | `sume-cron-job` | nothing: cron prompts post their own result. `--slack-report` turns it on for one entry |
 | prompt contains `<!-- slack-report:off -->` | nothing |
 | prompt already contains `<!-- slack-report:tail` | nothing more (no second copy) |
@@ -69,18 +69,21 @@ Desk Macs have no Slack bot token. Workers post as Chase through the
 
 ```bash
 cstack-slack-post --job <slug> [--issue N] [--title "<short what>"] \
-  --text-file /tmp/<job>/slack.txt [--file clip.mp4]… [--dry-run]
+  --text-file /tmp/<job>/slack.txt [--file clip.mp4]… --new-thread [--dry-run]
 ```
 
 - It refuses text over 600 characters or text that looks like a credential (exit 2).
 - `auth.test` must say `chase`.
-- It scans `#coding-agents` parents (up to 600, newest first) for the slug,
-  `#N`, or the title, then falls back to `search.messages`. With no match
-  it posts the short parent.
-- It posts one reply (`chat.postMessage`, or one
-  `files.completeUploadExternal` with up to 10 files and the text as its
-  comment) and prints `SLACK: <permalink>`.
-- `--dry-run` shows the thread it would use and posts nothing.
+- `--new-thread` (the default for a completion report): one new channel
+  message, the parent line ``<title> — `<Lane> : <slug> (#N)` `` with the
+  report under it (`chat.postMessage`, or one `files.completeUploadExternal`
+  with up to 10 files and that text as its comment). Prints
+  `SLACK: <permalink>`.
+- Without `--new-thread` (a second note on the same ask): it scans
+  `#coding-agents` parents (up to 600, newest first) for the slug, `#N`, or
+  the title, falls back to `search.messages`, and posts one reply there
+  (with no match it posts the short parent first).
+- `--dry-run` shows what it would post and posts nothing.
 - The token stays in the page. It is never printed.
 
 A worker with a Slack MCP tool may use that instead; the format and the
@@ -96,8 +99,6 @@ final block and posts it.
 ## Main agent
 
 - Workers post their own completion report, so the main agent does not post
-  a second "done" reply for that Job. Its Slack cadence rule
-  (`slack-coding-agents.mdc`) still covers parents, steers, and lane
-  reactions.
+  a second "done" message for that Job.
 - Look for `SLACK:` in the final block. `SLACK_TEXT:` means post it yourself.
 - Opt out per job: `--no-slack-report`, or the marker in the prompt.

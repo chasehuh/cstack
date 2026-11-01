@@ -260,11 +260,11 @@ else:
         require(invalid.stderr, "requires --resume")
 
         # A matching live parent must survive fork, but still be stopped by steer.
-        parent_proc = subprocess.Popen(["sleep", "60"])
+        holder = base / "agent-human-stream"
+        holder.write_text("#!/bin/sh\nsleep 60\n")
+        holder.chmod(0o755)
+        parent_proc = subprocess.Popen(["/bin/sh", str(holder), "--resume", parent])
         try:
-            pgrep = base / "pgrep"
-            pgrep.write_text(f"#!/bin/sh\necho '{parent_proc.pid} agent-human-stream --resume {parent}'\n")
-            pgrep.chmod(0o755)
             env["SUME_BG_LAUNCH_WRAPPER"] = str(base / "codex")
             launch = [str(ROOT / "sume-bg-launch.sh"), "--backend", "codex", "--name", "child",
                       "--resume", parent, "--prompt-file", str(prompt)]

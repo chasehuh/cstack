@@ -1,4 +1,4 @@
-<!-- slack-report:tail v1 -->
+<!-- slack-report:tail v2 -->
 ## Completion report (cstack default: post to Slack #coding-agents)
 
 When this job reaches its real completion (done criteria met, or you stop for good with a final answer), post ONE report to Slack `#coding-agents` (`C0A9L7AU5HS`) before you end. Spec: `~/.cstack/src/docs/SLACK-REPORT.md`.
@@ -22,12 +22,12 @@ Do not post when:
 - Never include secrets, tokens, keys, cookies, `.env` values, or raw proprietary code. File names and identifiers are fine.
 - Attach the clips or images you already made (10 files at most), on the same message.
 
-**Where.** Reply in this job's thread. Search `#coding-agents` for the job slug `{{JOB}}` and the issue number. If there is no thread, post a short parent `` <short what> — `{{LANE}} : {{JOB}} (#N)` ``, then post the report as the parent's first reply. One report message per completion.
+**Where (Chase lock 2026-10-13).** A new ask from Chase is a **new channel message**, not a reply on an old thread. Post the parent `` <short what> — `{{LANE}} : {{JOB}} (#N)` `` and put the report in that message (images on the same message). Do not reply in an older thread for this job, even if one exists. A reply is only for a second note about the same ask in the same session (for example the dev shots after the parent you just posted).
 
 **How.** Post as Chase with your Slack tool. On desk Macs:
-`cstack-slack-post --job {{JOB}} [--issue N] [--title "<short what>"] --text-file <file> [--file <clip>]…`
-It finds or opens the thread, posts one reply through the ego-browser Slack web client, and prints `SLACK: <permalink>`. Never print the Slack token.
+`cstack-slack-post --job {{JOB}} [--issue N] [--title "<short what>"] --text-file <file> [--file <clip>]… --new-thread`
+It posts a new parent through the ego-browser Slack web client and prints `SLACK: <permalink>`. Never print the Slack token. If the tool has no `--new-thread` flag, post a new channel message yourself. Do not search for an old thread and reply there.
 
-**Final block.** End with your usual final report: what was done, PR / SHA / issue / `SHOTS:` links, `LANDED: yes|no` for code jobs, then `SLACK: <permalink>`. If you have no Slack tool or the post fails, write the heading `SLACK_TEXT:` with the exact Korean text below it, then `SLACK: not posted — <reason>`, so the main agent can post it.
-<!-- slack-report:steer v1 -->
-[slack-report] Steer turn on job "{{JOB}}". The completion-report rule still applies (`~/.agents/skills/sume-main-agent-orchestration/references/slack-report-tail.md` if it is not in your history). Post only if this turn finishes new work, such as a new land or the final answer to a new ask: one reply in the job's existing thread. A status answer or a partial steer posts nothing.
+**Final block.** End with your usual final report: what was done, PR / SHA / issue / `SHOTS:` links, `LANDED: yes|no` for code jobs, then `SLACK: <permalink>`. If you have no Slack tool or the post fails, write the heading `SLACK_TEXT:` with the exact Korean text below it, then `SLACK: not posted — <reason>`, so the main agent can post it as a new channel message.
+<!-- slack-report:steer v2 -->
+[slack-report] Steer turn on job "{{JOB}}". The completion-report rule still applies. Post only if this turn finishes new work. A new ask is a **new channel message**, not a reply on the old thread. A status answer or a partial steer posts nothing.

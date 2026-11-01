@@ -5,7 +5,7 @@
 #   agent-human-stream --backend grok --name land-4414 "Watch MQ …"
 #   agent-human-stream --backend codex --name probe-api "Audit routes …"
 #   agent-human-stream --resume <uuid> "Follow-up …"
-#   agent-human-stream --prompt-file /tmp/sume-grok-prompts/job.md
+#   agent-human-stream --prompt-file ~/.cstack/state/prompts/job.md
 #   claude-human-stream "…"          # alias: --backend claude
 #
 # Extra backend flags go after the prompt:
@@ -1111,7 +1111,8 @@ elif [[ ! -s "$SLACK_REPORT_TAIL_FILE" ]]; then
   _slack_report_off="tail file missing: $SLACK_REPORT_TAIL_FILE"
 fi
 if [[ -z "$_slack_report_off" ]]; then
-  _sr_marker='<!-- slack-report:steer v1 -->'
+  _sr_marker=$(grep -o '<!-- slack-report:steer v[0-9]* -->' "$SLACK_REPORT_TAIL_FILE" | head -n 1)
+  _sr_marker=${_sr_marker:-'<!-- slack-report:steer v1 -->'}
   _sr_text=$(cat "$SLACK_REPORT_TAIL_FILE")
   if [[ (-n "$RESUME" || "$CONTINUE" -eq 1) && "$FORK" -eq 0 ]]; then
     # Steer turn: the session already has the tail (or a pointer to it).

@@ -51,6 +51,7 @@ while [[ $# -gt 0 ]]; do
 done
 CMDLINE="$*"
 printf '%s\n' "$CMDLINE" >>"$FAKE_SSH_LOG"
+printf '%s\n' "$HOST" >>"$FAKE_SSH_LOG.hosts"
 cd "$MINI_HOME"
 exec env -u AGENT_HUMAN_STREAM_REGISTRY -u AGENT_HUMAN_STREAM_LIVE_DIR \
   -u CSTACK_WORKER_HOST -u CSTACK_STATE -u CSTACK_MINI_SSH \
@@ -91,6 +92,10 @@ export SUME_BG_SSH="$T/bin/fake-ssh"
 export SUME_BG_SCP="$T/bin/fake-scp"
 export CSTACK_MINI_SSH="chase@mini.tailnet.ts.net"
 export CSTACK_MINI_CWD="$MINI"
+export CSTACK_HOSTS_ENV="$T/hosts.env"
+export CSTACK_MINI_SSH_FILE="$T/mini-ssh.env"
+export CSTACK_PROMPTS_DIR="$T/prompts"
+printf 'CSTACK_MINI_SSH_M5=chase@m5.tailnet.ts.net\nCSTACK_MINI_SSH_M4=chase@m4.tailnet.ts.net\n' >"$CSTACK_HOSTS_ENV"
 unset CSTACK_WORKER_HOST
 
 PROMPT="$T/prompt.md"
@@ -115,7 +120,7 @@ pass "--host local regression"
 
 # 2) default host = local when CSTACK_WORKER_HOST is unset; env picks mini.
 set +e
-CSTACK_WORKER_HOST=mini CSTACK_MINI_SSH= "$LAUNCH" --backend grok --name x --prompt-file "$PROMPT" >/dev/null 2>"$T/err2.txt"
+CSTACK_WORKER_HOST=mini CSTACK_MINI_SSH= CSTACK_HOSTS_ENV=/nonexistent CSTACK_MINI_SSH_FILE=/nonexistent "$LAUNCH" --backend grok --name x --prompt-file "$PROMPT" >/dev/null 2>"$T/err2.txt"
 rc=$?
 set -e
 [[ $rc -eq 2 ]] || fail "CSTACK_WORKER_HOST=mini without CSTACK_MINI_SSH should exit 2 (got $rc)"
@@ -305,5 +310,105 @@ grep -qx -- '--no-slack-report' "$MINI/remote-argv-noslack.txt" || fail "--no-sl
 grep -q 'sume-bg-remote start .*--no-slack-report' "$FAKE_SSH_LOG" || fail "start over ssh lacks --no-slack-report"
 ! grep -qx -- '--no-slack-report' "$MINI/remote-argv.txt" || fail "default Mini launch must not opt out"
 pass "slack-report opt-out reaches the Mini"
+
+# 13) host SoT: env > ~/.cstack/mini-ssh.env > hosts.env M5; a stale M4 value
+#     under --host mini goes to the M5; --host m4 reaches the M4 on purpose.
+last_host() { tail -n 1 "$FAKE_SSH_LOG.hosts"; }
+"$LAUNCH" --host mini --jobs >/dev/null
+[[ "$(last_host)" == "chase@mini.tailnet.ts.net" ]] || fail "env CSTACK_MINI_SSH must win: $(last_host)"
+CSTACK_MINI_SSH= "$LAUNCH" --host mini --jobs >/dev/null
+[[ "$(last_host)" == "chase@m5.tailnet.ts.net" ]] || fail "unset env must fall back to hosts.env M5: $(last_host)"
+printf 'export CSTACK_MINI_SSH="chase@file.tailnet.ts.net"\n' >"$CSTACK_MINI_SSH_FILE"
+CSTACK_MINI_SSH= "$LAUNCH" --host mini --jobs >/dev/null
+[[ "$(last_host)" == "chase@file.tailnet.ts.net" ]] || fail "mini-ssh.env must beat hosts.env: $(last_host)"
+rm -f "$CSTACK_MINI_SSH_FILE"
+CSTACK_MINI_SSH=chase@m4.tailnet.ts.net "$LAUNCH" --host mini --jobs >/dev/null 2>"$T/err13.txt"
+[[ "$(last_host)" == "chase@m5.tailnet.ts.net" ]] || fail "stale M4 env under --host mini must go to the M5: $(last_host)"
+grep -q 'points at the M4' "$T/err13.txt" || fail "stale M4 note missing"
+"$LAUNCH" --host m4 --jobs >/dev/null 2>"$T/err13b.txt"
+[[ "$(last_host)" == "chase@m4.tailnet.ts.net" ]] || fail "--host m4 must reach the M4: $(last_host)"
+pass "host SoT (M5 default, M4 on purpose)"
+
+# 14) liveness is pid + recorded start time; a reused pid is not alive and
+#     --kill refuses it (exit 6) without touching that process.
+JOBS_MINI="$MINI/.cstack/state/remote-jobs"
+sleep 60 &
+VICTIM=$!
+mkdir -p "$JOBS_MINI/20260101T000000Z-reused" "$JOBS_MINI/20260101T000001Z-legacy"
+echo "$VICTIM" >"$JOBS_MINI/20260101T000000Z-reused/pid"
+echo "$VICTIM" >"$JOBS_MINI/20260101T000000Z-reused/pgid"
+echo "Mon Jan  1 00:00:00 2001" >"$JOBS_MINI/20260101T000000Z-reused/pid_start"
+echo "$VICTIM" >"$JOBS_MINI/20260101T000001Z-legacy/pid"
+STATUS=$("$LAUNCH" --host mini --status 20260101T000000Z-reused)
+[[ "$STATUS" == *"alive=no"* && "$STATUS" == *"state=pid-reused"* ]] || fail "reused pid must not be alive: $STATUS"
+STATUS=$("$LAUNCH" --host mini --status 20260101T000001Z-legacy)
+[[ "$STATUS" == *"state=pid-reused"* ]] || fail "legacy job on a foreign pid must be pid-reused: $STATUS"
+set +e
+"$LAUNCH" --host mini --kill 20260101T000000Z-reused >/dev/null 2>"$T/err14.txt"
+rc=$?
+set -e
+[[ $rc -eq 6 ]] || fail "--kill on a reused pid should exit 6 (got $rc)"
+grep -q 'refusing to kill' "$T/err14.txt" || fail "kill refusal message missing"
+kill -0 "$VICTIM" 2>/dev/null || fail "--kill must not touch the process that reused the pid"
+"$LAUNCH" --host mini --jobs >"$T/jobs14.txt"
+grep -q "job=20260101T000000Z-reused alive=no state=pid-reused" "$T/jobs14.txt" || fail "--jobs must show pid-reused"
+kill "$VICTIM" 2>/dev/null || true
+wait "$VICTIM" 2>/dev/null || true
+[[ -s "$JOBS_MINI/$JOB/pid_start" ]] || fail "start must record pid_start"
+pass "pid reuse: not alive, --kill refuses"
+
+# 15) a steer (--resume, no fork) on the Mini stops the older job holding the
+#     session first; a fork leaves it running.
+wait_job() {
+  local f="$1" j=""
+  for _ in $(seq 1 50); do
+    j=$(sed -n 's/.*job: \([^ ]*\).*/\1/p' "$f" 2>/dev/null | head -n 1)
+    [[ -n "$j" ]] && grep -q 'session_id=' "$JOBS_MINI/$j/worker.log" 2>/dev/null && break
+    sleep 0.2
+  done
+  printf '%s' "$j"
+}
+FAKE_WRAPPER_ARGV="$MINI/argv-holder.txt" FAKE_WRAPPER_SLEEP=30 \
+  "$LAUNCH" --host mini --backend grok --name holder --prompt-file "$PROMPT" >/dev/null 2>"$T/holder-err.txt" &
+HPID=$!
+HJOB=$(wait_job "$T/holder-err.txt")
+[[ -n "$HJOB" ]] || fail "holder job never printed its session"
+FAKE_WRAPPER_ARGV="$MINI/argv-fork.txt" \
+  "$LAUNCH" --host mini --backend grok --name holder --resume "$SID" --fork-session --prompt-file "$PROMPT" >/dev/null 2>"$T/fork-err.txt"
+STATUS=$("$LAUNCH" --host mini --status "$HJOB")
+[[ "$STATUS" == *"alive=yes"* ]] || fail "a fork must leave the parent job running: $STATUS"
+FAKE_WRAPPER_ARGV="$MINI/argv-steer.txt" \
+  "$LAUNCH" --host mini --backend grok --name holder --resume "$SID" --prompt-file "$PROMPT" >"$T/steer-out.txt" 2>"$T/steer-err.txt"
+grep -q "steer: stopping older job $HJOB" "$T/steer-err.txt" || fail "steer did not report stopping the older job: $(cat "$T/steer-err.txt")"
+STATUS=$("$LAUNCH" --host mini --status "$HJOB")
+[[ "$STATUS" == *"alive=no"* ]] || fail "older job still alive after the steer: $STATUS"
+wait "$HPID" 2>/dev/null || true
+pass "Mini steer replaces the older wrapper; fork does not"
+
+# 16) local steer finds the older wrapper on macOS too (pgrep -a is not argv there).
+cat >"$T/bin/agent-human-stream" <<'EOS'
+#!/usr/bin/env bash
+sleep 60
+EOS
+chmod +x "$T/bin/agent-human-stream"
+SID_STEER="deadbeef-0000-4000-8000-00000steer01"
+"$T/bin/agent-human-stream" --backend claude --resume "$SID_STEER" &
+OLD=$!
+sleep 0.3
+FAKE_WRAPPER_ARGV="$T/argv-local-steer.txt" \
+  "$LAUNCH" --host local --backend claude --name steer-local --resume "$SID_STEER" --prompt-file "$PROMPT" >/dev/null 2>"$T/err16.txt"
+grep -q "steer: stopping pid $OLD" "$T/err16.txt" || fail "local steer did not stop the older wrapper: $(cat "$T/err16.txt")"
+sleep 0.3
+! kill -0 "$OLD" 2>/dev/null || fail "older local wrapper still alive"
+pass "local steer stops the older wrapper"
+
+# 17) durable prompt dir.
+[[ "$("$LAUNCH" --prompt-dir)" == "$CSTACK_PROMPTS_DIR" && -d "$CSTACK_PROMPTS_DIR" ]] || fail "--prompt-dir must mkdir and print the dir"
+set +e
+"$LAUNCH" --host local --backend claude --name gone --prompt-file "$T/vanished/x.md" >/dev/null 2>"$T/err17.txt"
+rc=$?
+set -e
+[[ $rc -eq 2 ]] && grep -q "$CSTACK_PROMPTS_DIR" "$T/err17.txt" || fail "missing prompt must point at the prompt dir"
+pass "durable prompt dir"
 
 echo "sume-bg-launch host tests: all ok"

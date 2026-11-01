@@ -9,7 +9,7 @@ this session, through its done criteria (land, dest evidence, final report).
 
 Never launch, resume, or hand off a worker from a worker: no
 `sume-bg-launch`, `agent-human-stream`, `claude-human-stream`, or bare
-`codex exec` / `claude -p` / `grok -p`. The launcher refuses nested launches
+`codex exec` / `claude -p`. The launcher refuses nested launches
 (exit 5) and a nested process is killed when your session ends — the job then
 looks "disconnected" (sume#7839). Launcher flags quoted in your prompt
 (`--backend`, `--model`, `--effort`, `--host mini`, "Fresh worker",

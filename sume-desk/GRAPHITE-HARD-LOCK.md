@@ -6,8 +6,7 @@ The file keeps its old name; Graphite is retired for `sume` since
 queue. The queue step **is the binary** — do not write a sleep/grep loop.
 
 **Chase lock 2026-09-06:** the worker who authored the PR **owns land
-through `origin/main` `(#N)`**. Do **not** hand the queue babysit to Grok.
-`HANDOFF: grok-land` is forbidden on the default path.
+through `origin/main` `(#N)`**. Do **not** hand land to another worker.
 
 After `gh stack submit --auto --open`, run `cstack-gt-wait-merge`. It
 links the PR chain into one GitHub stack, waits for `validate` on every
@@ -25,7 +24,7 @@ Required skill: read ~/.agents/skills/sume-gt-mq/SKILL.md before gh stack submit
 
 STACKS (hard lock) — Chase 2026-10-30: GitHub stacks + GitHub merge queue; author owns land to origin/main:
 - Isolated clone only: `CLONE="$(cstack-clone <job-slug>)"` then `cd "$CLONE"`.
-  Forbidden: `git worktree` under the shared Cursor checkout (#2383).
+  Forbidden: `git worktree` under a shared checkout (#2383).
   Forbidden: `gh pr create`, `gt`, the `merge-queue` label, `gh pr merge --admin`.
 - Author: `gh stack init <branch>` → commit → `gh stack add <branch>` per layer
   → `gh stack submit --auto --open`.
@@ -34,7 +33,7 @@ STACKS (hard lock) — Chase 2026-10-30: GitHub stacks + GitHub merge queue; aut
 - Then **stay until** `git fetch origin main && git log origin/main --oneline --fixed-strings --grep='(#N)'`
   shows every layer. Queue removal → fix → `gh stack sync` → helper again.
   Repo CI flake: ≤2 `gh run rerun --failed`, then minimal CI unblock.
-  Forbidden: endless rerun. Forbidden: `HANDOFF: grok-land`.
+  Forbidden: endless rerun. Forbidden: handing land to another worker.
 - Forbidden: ScheduleWakeup then exit before the main tip.
   Queueing is not 완료. Done report only after main-tip proof:
   clone path + GitHub PR URL(s) + SHA(s) + `LANDED: yes`.
