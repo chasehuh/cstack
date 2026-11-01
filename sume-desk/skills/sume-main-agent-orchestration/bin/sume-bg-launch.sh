@@ -1,19 +1,15 @@
 #!/usr/bin/env bash
-# Cursor background-worker launcher. Reads the prompt from a file (no $(cat)
+# Background-worker launcher. Reads the prompt from a file (no $(cat)
 # race) and, on --resume without --fork-session, stops older wrappers holding that session.
 #
-#   sume-bg-launch --backend grok --name job-slug --resume <uuid> \
-#     --prompt-file /tmp/sume-grok-prompts/job.md -- --effort high
-#   sume-bg-launch --backend codex --name job-slug \
-#     --prompt-file /tmp/sume-codex-prompts/job.md -- --model gpt-5.5
-#   sume-bg-launch --backend claude --name job-slug \
-#     --prompt-file /tmp/sume-opus-prompts/job.md -- --model claude-sonnet-5-5
-#   (Claude picks: claude-opus-5-5 / opus-5.5, claude-sonnet-5-5 / sonnet-5.5;
-#    no --model keeps the desk default.)
+#   sume-bg-launch --host mini --backend claude --name job-slug \
+#     --prompt-file ~/.cstack/state/prompts/job.md -- --model claude-opus-5-5 --effort high
+#   sume-bg-launch --host mini --backend claude --name job-slug --resume <uuid> \
+#     --prompt-file ~/.cstack/state/prompts/job-steer.md
 #
 # Worker host (cstack#10):
 #   --host local   run the wrapper here (default when CSTACK_WORKER_HOST unset)
-#   --host mini    scp the prompt to the Mac Mini, start the wrapper DETACHED
+#   --host mini    scp the prompt to the M5 Mac Mini, start the wrapper DETACHED
 #                  there (sume-bg-remote), then attach: stream its log into
 #                  the local replica ~/.cstack/state/opus-live/<job>.log.
 #                  SSH is control plane only; laptop sleep / SSH drop does
@@ -36,8 +32,7 @@
 # (the flag also reaches the Mini). --print-prompt prints the final prompt
 # (preamble + task + tail) and launches nothing; it also works inside a worker.
 #
-# Shell: description = "Grok : <job-slug> (#N)" (or "Codex : …"), block_until_ms = 0.
-# After spawn: read the terminal once for 📎 session_id= or exit_code.
+# After spawn: read the output once for 📎 session_id= or exit_code.
 set -euo pipefail
 
 SOURCE=${BASH_SOURCE[0]}
@@ -48,7 +43,7 @@ while [[ -L "$SOURCE" ]]; do
 done
 ROOT="$(cd "$(dirname "$SOURCE")" && pwd)"
 
-BACKEND="grok"
+BACKEND="claude"
 NAME=""
 RESUME=""
 FORK=0
@@ -68,8 +63,25 @@ CSTACK_STATE="${CSTACK_STATE:-$HOME/.cstack/state}"
 REGISTRY="${AGENT_HUMAN_STREAM_REGISTRY:-${CLAUDE_HUMAN_STREAM_REGISTRY:-$CSTACK_STATE/opus-sessions.jsonl}}"
 LIVE_DIR="${AGENT_HUMAN_STREAM_LIVE_DIR:-${CLAUDE_HUMAN_STREAM_LIVE_DIR:-$CSTACK_STATE/opus-live}}"
 
-# Mini host SoT: Tailscale name (ssh alias ok), never only .local Bonjour.
+PROMPTS_DIR="${CSTACK_PROMPTS_DIR:-$CSTACK_STATE/prompts}"
+HOSTS_ENV="${CSTACK_HOSTS_ENV:-$ROOT/../../../hosts.env}"
+MINI_SSH_FILE="${CSTACK_MINI_SSH_FILE:-$HOME/.cstack/mini-ssh.env}"
+
+env_value() {
+  local file="$1" key="$2"
+  [[ -f "$file" ]] || return 0
+  sed -n "s/^[[:space:]]*\(export[[:space:]]\{1,\}\)\{0,1\}${key}=//p" "$file" | tail -n 1 | tr -d "\"'"
+}
+
+MINI_SSH_M5=$(env_value "$HOSTS_ENV" CSTACK_MINI_SSH_M5)
+MINI_SSH_M4=$(env_value "$HOSTS_ENV" CSTACK_MINI_SSH_M4)
 MINI_SSH="${CSTACK_MINI_SSH:-}"
+if [[ -z "$MINI_SSH" ]]; then
+  MINI_SSH=$(env_value "$MINI_SSH_FILE" CSTACK_MINI_SSH)
+fi
+if [[ -z "$MINI_SSH" ]]; then
+  MINI_SSH="$MINI_SSH_M5"
+fi
 MINI_REMOTE_BIN="${CSTACK_MINI_REMOTE_BIN:-.local/bin/sume-bg-remote}"
 MINI_CONNECT_TIMEOUT="${CSTACK_MINI_CONNECT_TIMEOUT:-10}"
 SSH_BIN="${SUME_BG_SSH:-ssh}"
@@ -77,8 +89,8 @@ SCP_BIN="${SUME_BG_SCP:-scp}"
 
 usage() {
   cat <<'EOF'
-sume-bg-launch --backend grok|claude|codex --name <slug> --prompt-file <path> \
-  [--host local|mini] [--cwd <remote dir>] \
+sume-bg-launch --backend claude|codex|grok --name <slug> --prompt-file <path> \
+  [--host mini|m4|local] [--cwd <remote dir>] \
   [--resume <uuid> [--fork-session]] [--no-slack-report] [--print-prompt] -- [backend flags…]
 
   --no-slack-report   do not append the completion-report tail (also CSTACK_SLACK_REPORT=0)
@@ -90,7 +102,11 @@ Mini control plane (--host mini):
   sume-bg-launch --host mini --kill <job>       # kill the detached worker on the Mini
   sume-bg-launch --host mini --jobs             # list Mini jobs
 
+  sume-bg-launch --prompt-dir                   # mkdir + print the durable prompt dir
+
+Hosts: --host mini = the M5 (sume-desk/hosts.env). --host m4 = the M4, only on Chase's word.
 Env: CSTACK_WORKER_HOST=mini|local (default local), CSTACK_MINI_SSH=<user@tailscale-name>
+     (else ~/.cstack/mini-ssh.env, else hosts.env CSTACK_MINI_SSH_M5)
 EOF
 }
 
@@ -155,6 +171,11 @@ while [[ $# -gt 0 ]]; do
       ACTION=jobs
       shift
       ;;
+    --prompt-dir)
+      mkdir -p "$PROMPTS_DIR"
+      printf '%s\n' "$PROMPTS_DIR"
+      exit 0
+      ;;
     --)
       shift
       EXTRA=("$@")
@@ -170,9 +191,28 @@ done
 
 HOST=$(printf '%s' "$HOST" | tr '[:upper:]' '[:lower:]')
 case "$HOST" in
-  local|mini) ;;
+  local) ;;
+  mini)
+    if [[ -n "$MINI_SSH_M4" && -n "$MINI_SSH_M5" && "$MINI_SSH" == "$MINI_SSH_M4" ]]; then
+      echo "note: CSTACK_MINI_SSH points at the M4; --host mini is the M5 → $MINI_SSH_M5 (M4 only with --host m4)" >&2
+      MINI_SSH="$MINI_SSH_M5"
+    fi
+    ;;
+  m5)
+    HOST=mini
+    MINI_SSH="${MINI_SSH_M5:-$MINI_SSH}"
+    ;;
+  m4)
+    if [[ -z "$MINI_SSH_M4" ]]; then
+      echo "error: --host m4 needs CSTACK_MINI_SSH_M4 in $HOSTS_ENV" >&2
+      exit 2
+    fi
+    HOST=mini
+    MINI_SSH="$MINI_SSH_M4"
+    echo "note: --host m4 → $MINI_SSH (the M4 runs jobs only on Chase's word; the default Mini is the M5)" >&2
+    ;;
   *)
-    echo "error: --host must be local or mini (got: $HOST; CSTACK_WORKER_HOST=${CSTACK_WORKER_HOST:-})" >&2
+    echo "error: --host must be local, mini (M5) or m4 (got: $HOST; CSTACK_WORKER_HOST=${CSTACK_WORKER_HOST:-})" >&2
     exit 2
     ;;
 esac
@@ -418,7 +458,7 @@ PY
         REMOTE_CWD=$(printf '%s' "$_row" | cut -f3)
         REMOTE_PID=$(printf '%s' "$_row" | cut -f4)
       fi
-      BACKEND=${BACKEND:-grok}
+      BACKEND=${BACKEND:-claude}
       mini_attach
       ;;
   esac
@@ -445,7 +485,9 @@ if [[ -z "$PROMPT_FILE" ]]; then
   exit 2
 fi
 if [[ ! -f "$PROMPT_FILE" ]]; then
+  mkdir -p "$PROMPTS_DIR" 2>/dev/null || true
   echo "error: --prompt-file not found: $PROMPT_FILE" >&2
+  echo "       Write prompts under $PROMPTS_DIR (sume-bg-launch --prompt-dir prints it); /tmp dirs can vanish." >&2
   exit 2
 fi
 if [[ ! -s "$PROMPT_FILE" ]]; then
@@ -629,6 +671,32 @@ fi
 # --host local (unchanged behaviour)
 # ---------------------------------------------------------------------------
 
+steer_holders() {
+  local sid="$1" pid
+  ps -axo pid=,command= | STEER_SID="$sid" awk 'index($0, ENVIRON["STEER_SID"]) && /agent-human-stream|\/grok |grok -p|codex exec|claude -p/ {print $1, $0}'
+  [[ -f "$REGISTRY" ]] || return 0
+  while read -r pid; do
+    [[ -n "$pid" ]] || continue
+    case "$(ps -o command= -p "$pid" 2>/dev/null)" in
+      *agent-human-stream*) printf '%s registry-session %s\n' "$pid" "$sid" ;;
+    esac
+  done < <(python3 -c '
+import json, sys
+path, sid = sys.argv[1], sys.argv[2]
+pids = []
+with open(path, encoding="utf-8") as f:
+    for line in f:
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        if rec.get("session_id") == sid and rec.get("pid") and (rec.get("host") or "local") == "local":
+            pids.append(int(rec["pid"]))
+for p in dict.fromkeys(pids):
+    print(p)
+' "$REGISTRY" "$sid" 2>/dev/null)
+}
+
 # Steer: one live wrapper per session. Fork leaves the parent running.
 if [[ -n "$RESUME" && "$FORK" -eq 0 ]]; then
   _self=$$
@@ -638,9 +706,10 @@ if [[ -n "$RESUME" && "$FORK" -eq 0 ]]; then
     case "$_rest" in
       *gt\ merge*|*gt\ submit*) continue ;;
     esac
-    echo "steer: stopping pid ${_pid} (same --resume ${RESUME})" >&2
+    echo "steer: stopping pid ${_pid} (same session ${RESUME})" >&2
+    pkill -TERM -P "$_pid" 2>/dev/null || true
     kill "$_pid" 2>/dev/null || true
-  done < <(pgrep -af -- "$RESUME" | awk '/agent-human-stream|\/grok |grok -p|codex exec|claude -p/{print $1, $0}')
+  done < <(steer_holders "$RESUME")
   sleep 0.2
 fi
 

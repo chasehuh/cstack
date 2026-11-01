@@ -7,8 +7,8 @@
 #                         [--resume <uuid>] [--fork-session] [--no-slack-report] \
 #                         [-- backend flags…]
 #   sume-bg-remote attach --job <id>                 # stream worker.log until the job ends
-#   sume-bg-remote status --job <id>                 # alive=yes|no (real pid, not a file)
-#   sume-bg-remote kill   --job <id>                 # TERM then KILL the job's process group
+#   sume-bg-remote status --job <id>                 # alive=yes|no state=… (pid + recorded start time)
+#   sume-bg-remote kill   --job <id>                 # TERM then KILL the job's process group (exit 6 on a reused pid)
 #   sume-bg-remote jobs                              # one status line per job
 #
 # `start` returns immediately. The worker runs DETACHED: `nohup` in its own
@@ -50,22 +50,99 @@ job_dir() {
   printf '%s/%s' "$JOBS_DIR" "$id"
 }
 
-job_alive() {
-  # alive = no exit_code yet AND the run pid still exists.
-  local dir="$1" pid
-  [[ -f "$dir/exit_code" ]] && return 1
+proc_start() {
+  ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//;s/ *$//'
+}
+
+proc_cmd() {
+  ps -o command= -p "$1" 2>/dev/null || true
+}
+
+pid_state() {
+  local dir="$1" id pid want now
+  id=$(basename "$dir")
+  [[ -f "$dir/exit_code" ]] && { echo exited; return; }
   pid=$(cat "$dir/pid" 2>/dev/null || true)
-  [[ -n "$pid" ]] || return 1
-  kill -0 "$pid" 2>/dev/null
+  [[ -n "$pid" ]] || { echo lost; return; }
+  kill -0 "$pid" 2>/dev/null || { echo lost; return; }
+  want=$(cat "$dir/pid_start" 2>/dev/null || true)
+  if [[ -n "$want" ]]; then
+    now=$(proc_start "$pid")
+    [[ "$now" == "$want" ]] && { echo running; return; }
+    echo pid-reused
+    return
+  fi
+  case "$(proc_cmd "$pid")" in
+    *"--job $id"*) echo running ;;
+    *) echo pid-reused ;;
+  esac
+}
+
+job_alive() {
+  [[ "$(pid_state "$1")" == "running" ]]
 }
 
 status_line() {
-  local dir="$1" id pid rc alive
+  local dir="$1" id pid rc alive state
   id=$(basename "$dir")
   pid=$(cat "$dir/pid" 2>/dev/null || echo -)
   rc=$(cat "$dir/exit_code" 2>/dev/null || echo -)
-  if job_alive "$dir"; then alive=yes; else alive=no; fi
-  printf 'job=%s alive=%s pid=%s exit_code=%s host=%s\n' "$id" "$alive" "$pid" "$rc" "$HOSTNAME_SHORT"
+  state=$(pid_state "$dir")
+  if [[ "$state" == "running" ]]; then alive=yes; else alive=no; fi
+  printf 'job=%s alive=%s state=%s pid=%s exit_code=%s host=%s\n' "$id" "$alive" "$state" "$pid" "$rc" "$HOSTNAME_SHORT"
+}
+
+kill_job() {
+  local dir="$1" id state pid pgid
+  id=$(basename "$dir")
+  state=$(pid_state "$dir")
+  pid=$(cat "$dir/pid" 2>/dev/null || true)
+  case "$state" in
+    running) ;;
+    pid-reused)
+      echo "sume-bg-remote: refusing to kill job $id: pid $pid now belongs to another process: $(proc_cmd "$pid" | cut -c1-160)" >&2
+      status_line "$dir"
+      return 6
+      ;;
+    *)
+      echo "job $id is not running"
+      status_line "$dir"
+      return 0
+      ;;
+  esac
+  pgid=$(cat "$dir/pgid" 2>/dev/null || true)
+  if [[ -n "$pgid" ]]; then kill -TERM -- "-$pgid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+  else kill -TERM "$pid" 2>/dev/null || true; fi
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    job_alive "$dir" || break
+    sleep 0.5
+  done
+  if job_alive "$dir"; then
+    if [[ -n "$pgid" ]]; then kill -KILL -- "-$pgid" 2>/dev/null || true; fi
+    kill -KILL "$pid" 2>/dev/null || true
+    sleep 0.5
+  fi
+  [[ -f "$dir/exit_code" ]] || echo 143 >"$dir/exit_code"
+  echo "killed job $id"
+  status_line "$dir"
+}
+
+stop_session_holders() {
+  local uuid="$1" self="$2" d id resumed forked
+  [[ -d "$JOBS_DIR" ]] || return 0
+  for d in "$JOBS_DIR"/*/; do
+    d=${d%/}
+    id=$(basename "$d")
+    [[ "$id" == "$self" ]] && continue
+    job_alive "$d" || continue
+    resumed=$(sed -n 's/^RESUME=//p' "$d/job.env" 2>/dev/null | tail -n 1)
+    forked=$(sed -n 's/^FORK=//p' "$d/job.env" 2>/dev/null | tail -n 1)
+    if { [[ "$resumed" == "$uuid" && "$forked" != "1" ]]; } \
+      || grep -Eq "^📎 session_id=${uuid}( |\$)" "$d/worker.log" 2>/dev/null; then
+      echo "steer: stopping older job $id (same session $uuid)"
+      kill_job "$d" >/dev/null || true
+    fi
+  done
 }
 
 # PATH as the Mini desk sees it (tokenmaxxing claude/codex first, gh/gt/grok
@@ -95,7 +172,7 @@ CMD="${1:-}"
 shift
 
 JOB=""
-BACKEND="grok"
+BACKEND="claude"
 NAME=""
 CWD=""
 RESUME=""
@@ -135,6 +212,9 @@ case "$CMD" in
     CWD="${CWD:-$HOME}"
     [[ -d "$CWD" ]] || die "cwd not found on $HOSTNAME_SHORT: $CWD"
     launcher_bin >/dev/null
+    if [[ -n "$RESUME" && "$FORK" -eq 0 ]]; then
+      stop_session_holders "$RESUME" "$JOB"
+    fi
     {
       printf 'JOB=%q\nBACKEND=%q\nNAME=%q\nCWD=%q\nRESUME=%q\nFORK=%q\nSLACK_REPORT=%q\n' \
         "$JOB" "$BACKEND" "$NAME" "$CWD" "$RESUME" "$FORK" "$SLACK_REPORT"
@@ -153,6 +233,7 @@ case "$CMD" in
     set +m
     disown "$PID" 2>/dev/null || true
     echo "$PID" >"$DIR/pid"
+    proc_start "$PID" >"$DIR/pid_start"
     PGID=$(ps -o pgid= -p "$PID" 2>/dev/null | tr -d ' ' || true)
     echo "${PGID:-$PID}" >"$DIR/pgid"
     printf 'sume-bg-remote: started job=%s host=%s pid=%s cwd=%s\n' "$JOB" "$HOSTNAME_SHORT" "$PID" "$CWD"
@@ -227,27 +308,7 @@ case "$CMD" in
     [[ -n "$JOB" ]] || die "kill needs --job"
     DIR=$(job_dir "$JOB")
     [[ -d "$DIR" ]] || die "unknown job $JOB"
-    if ! job_alive "$DIR"; then
-      echo "job $JOB is not running"
-      status_line "$DIR"
-      exit 0
-    fi
-    PGID=$(cat "$DIR/pgid" 2>/dev/null || true)
-    PID=$(cat "$DIR/pid")
-    if [[ -n "$PGID" ]]; then kill -TERM -- "-$PGID" 2>/dev/null || kill -TERM "$PID" 2>/dev/null || true
-    else kill -TERM "$PID" 2>/dev/null || true; fi
-    for _ in 1 2 3 4 5 6 7 8 9 10; do
-      job_alive "$DIR" || break
-      sleep 0.5
-    done
-    if job_alive "$DIR"; then
-      if [[ -n "$PGID" ]]; then kill -KILL -- "-$PGID" 2>/dev/null || true; fi
-      kill -KILL "$PID" 2>/dev/null || true
-      sleep 0.5
-    fi
-    [[ -f "$DIR/exit_code" ]] || echo 143 >"$DIR/exit_code"
-    echo "killed job $JOB"
-    status_line "$DIR"
+    kill_job "$DIR"
     ;;
 
   jobs)

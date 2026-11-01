@@ -48,10 +48,8 @@ it. Read the Job issue and the issues it links.
 For a large area, give each angle to a read-only in-process subagent
 (Claude Code Explore or Agent) and keep only its findings. A worker never
 launches nested workers: no `sume-bg-launch`, `agent-human-stream`,
-`claude-human-stream`, or bare `claude -p` / `codex exec` / `grok -p`
-(sume#7839). A Cursor main agent explores with Composer `Task` only, never
-`Task` with `claude-opus-*` or `cursor-grok-*`, and hands the design itself
-to the author worker.
+`claude-human-stream`, or bare `claude -p` / `codex exec`
+(sume#7839). The main agent hands the design itself to the author worker.
 
 Skip this phase only for greenfield code with nothing to integrate.
 

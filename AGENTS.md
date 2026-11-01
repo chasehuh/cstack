@@ -2,12 +2,11 @@
 
 You are on **Chase’s agent desk**. This repo (`chasehuh/cstack`) is the
 **installable source of truth** for how Sume work is run: discuss → lock →
-GitHub issue → Opus (Fable only if named) through `gh stack` and GitHub's
-merge queue (`cstack-clone`, not a Cursor worktree) → the author lands →
-`cstack-clone-rm`.
+GitHub issue → an Opus worker on the **M5** Mac Mini
+(`sume-bg-launch --host mini`) → `gh stack` + GitHub's merge queue
+(`cstack-clone`) → the author lands on `origin/main` → `cstack-clone-rm`.
 
-Old `merge` / `audit` / `propose` copies that used to live here are
-**deprecated**. Ignore them. Use `sume-desk/` only.
+What was removed and why: `docs/CHANGELOG.md`.
 
 ## After clone (human or agent)
 
@@ -24,7 +23,7 @@ git clone git@github.com:chasehuh/cstack.git ~/.cstack/src
 Then **read**, in this order:
 
 1. `~/.agents/skills/sume-main-agent-orchestration/SKILL.md` (policy SoT)
-2. `~/.agents/skills/sume-gt-mq/SKILL.md` before any `gt submit` / `gt merge`
+2. `~/.agents/skills/sume-gt-mq/SKILL.md` before any `gh stack submit`
 3. `docs/FLOW.md` (this pack’s map of files → when to apply)
 4. `docs/TOKENMAXXING.md` — this machine’s `claude` is a **tokenmaxxing**
    supervisor (pooled Max 20x accounts), not a single login and not an API key
@@ -44,35 +43,30 @@ and re-run `./install.sh`.
   session; never launch, resume, or hand off another worker (the launcher
   refuses nested launches, exit 5; a nested process dies with your session —
   sume#7839). Skip the rest of this section.
-- Reply to the user in **their language** (Korean in → Korean out).
-- **Chat work report is SoT.** Slack `#coding-agents` is a team mirror.
-  Chase must understand the turn without opening Slack. End every
-  Cursor main-agent turn with the status board tables after that report
-  (`end-of-turn-worker-brief.mdc`).
-- Workers / Task / `agent-human-stream` / `claude-human-stream` always work
-  in **English**.
-- Do not silently implement what Chase expected on the Opus/Fable loop.
-- Cursor main agent: Opus/Fable = `claude-human-stream` (=
-  `agent-human-stream --backend claude`) in a **background**
-  Shell (`block_until_ms: 0`). Grok land / Grok author =
-  `agent-human-stream --backend grok` (same Shell recipe). Codex worker
-  (only if Chase named Codex) = `agent-human-stream --backend codex`
-  (same Shell recipe; tokenmaxxing Codex pool — `docs/TOKENMAXXING.md`).
-  Never Cursor `Task` + `claude-opus-*` or `cursor-grok-*`.
-  Composer explore stays Cursor `Task`.
-  That wrapper must hit **tokenmaxxing’s** `claude` (`~/.config/tokenmaxxing/bin`
-  ahead of the real CLI). Quota swap is automatic; a parked account whose
-  refresh is rejected is not — `tokenmaxxing doctor`, `docs/TOKENMAXXING.md`.
-- Terminal title / board Job = `Opus : <job-slug> (#N)` or `Fable : …`.
+- Reply to Chase in **his language** (Korean in → Korean out). Workers
+  always work in **English**.
+- Main agent = Claude Code on the laptop. Workers = Opus
+  (`--model claude-opus-5-5`, Chase names `--effort`) through
+  `sume-bg-launch --host mini`: fresh, fork (`--resume <uuid>
+  --fork-session`) or steer (`--resume <uuid>`, prompt opens with
+  `STEERING UPDATE`). Prompts live in `~/.cstack/state/prompts/`.
+  Recipes: the orchestration skill.
+- Do not silently implement what Chase expected a worker to do.
+- `claude` on every desk Mac is the **tokenmaxxing** supervisor
+  (`docs/TOKENMAXXING.md`); do not set `ANTHROPIC_API_KEY` to bypass it.
+- Job title = `Opus : <job-slug> (#N)` (Fable only if Chase named it).
 - `sume-com` PRs: `cstack-clone` + `gh stack init` / `gh stack add` +
   `gh stack submit --auto --open`. **Forbidden:** `gh pr create`, `gt`, the
   `merge-queue` label. After submit: **`cstack-gt-wait-merge`** (validate
   green → the whole stack enters GitHub's merge queue) → **stay until
   `origin/main` `(#N)`** for every layer. The author owns land. Skill:
   `sume-gt-mq`.
-- Same SoT for **Cursor, Claude Code, Codex, and Grok Build**. Edit files
-  in this repo (`chasehuh/cstack`) and re-run `./install.sh`. Do not fork
-  into `~/.agents/skills` copies — those are symlinks into this tree.
+- Edit files in this repo (`chasehuh/cstack`) and re-run `./install.sh`.
+  `~/.agents/skills` entries are symlinks into this tree, not copies.
+- Release only on Chase's word for that release, by a release-only job
+  (`docs/RELEASE-LOCK.md`).
+- Every worker posts one Korean report to Slack `#coding-agents`, a new
+  thread per ask (`docs/SLACK-REPORT.md`).
 - Dev-only until Chase says otherwise. Prod test = Sumelabs + desk SoT key
   only (never paste keys).
 - Stay in the opened workspace; operate on worktrees/clones via paths.

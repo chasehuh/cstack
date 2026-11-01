@@ -6,7 +6,7 @@ description: >-
   `gh stack submit`, queueing with `cstack-gt-wait-merge`, or unsticking a
   PR the queue removed. The author session stays until origin/main. Hard
   rules against gh pr create, shared-checkout worktrees, admin bypass,
-  HANDOFF: grok-land, and exiting before the main tip.
+  handing land to another worker, and exiting before the main tip.
 ---
 
 # Sume stacks and GitHub merge queue (`sume-gt-mq`)
@@ -44,16 +44,17 @@ finished to Chase):
 - PR opened / `gh stack view` lists it open
 - PR-branch CI green / `CLEAN`
 - Queued (`cstack-gt-wait-merge` exited 0, the queue page lists it)
-- `HANDOFF: grok-land` / author STOP after queueing (forbidden default)
+- Author STOP after queueing
 - Worker process exited
 
 **Chase lock 2026-09-06:** the **author session owns land**. Do not STOP
 after queueing. Stay until `origin/main` has every `(#N)`. Queue removal →
-fix → re-queue **same session**. Forbidden: `HANDOFF: grok-land`.
+fix → re-queue **same session**. Never hand land to another worker.
 
 Main agent: never translate queueing / green checks into “완료됐습니다”
-to Chase. If the author exited early, **resume that same session** — do
-not launch Grok land.
+to Chase. If the author exited early, **steer that same session**
+(`sume-bg-launch --host mini --resume <uuid>`); never launch a second land
+worker.
 
 ---
 
@@ -65,8 +66,8 @@ Read this file **before** any of:
 - `cstack-gt-wait-merge` (queueing), land babysit
 - Restack / sync after a lower layer lands or review edits
 - Unsticking a PR the queue removed
-- Writing `HANDOFF: grok-land` (forbidden) or exiting before main tip
-- Main agent launching Opus/Fable/Grok **author** trains
+- Exiting before the main tip
+- Main agent launching Opus **author** trains
 
 Main-agent author prompts on `sume-com` must say:
 
@@ -80,8 +81,8 @@ Required skill: read ~/.agents/skills/sume-gt-mq/SKILL.md before gh stack submit
 
 | Role | Owns | Must not |
 |------|------|----------|
-| **Author** (Opus / Fable / Grok-if-named) | `cstack-clone` → code → `gh stack submit` → **`cstack-gt-wait-merge`** → queue runs → **`origin/main` `(#N)` for every layer** → then `cstack-clone-rm` | STOP at queueing; `HANDOFF: grok-land`; say 완료 before main tip; other trains |
-| **Main agent** | Launch / steer / board; resume **same** author if they exited early; **완료 to Chase only after main tip** | Launch Grok land by default; tell Chase 완료 on queueing/green CI |
+| **Author** (Opus; Fable if named) | `cstack-clone` → code → `gh stack submit` → **`cstack-gt-wait-merge`** → queue runs → **`origin/main` `(#N)` for every layer** → then `cstack-clone-rm` | STOP at queueing; hand land to another worker; say 완료 before main tip; other trains |
+| **Main agent** | Launch / fork / steer; steer the **same** author if they exited early; **완료 to Chase only after main tip** | Launch a separate land worker; tell Chase 완료 on queueing/green CI |
 
 **Ownership rule:** one job slug ↔ one PR stack. Parallel trains = parallel
 owners. Never two workers queue / push / restack the same head.
@@ -138,7 +139,7 @@ These are **failed handoffs**, not “still waiting”:
 |-----|-----|----------|
 | Arm `Monitor` / `ScheduleWakeup` then **end the session** with “I’ll queue when green” | Wrapper exits; nothing queues | **Stay in-session**; `cstack-gt-wait-merge` waits for `validate` itself |
 | Done report without queue evidence | Looks green, nothing queued | Evidence = the helper's `QUEUED` line or the queue page |
-| `HANDOFF: grok-land` | Wrong split (2026-09-06) | Author queues + stays until main |
+| Handing land to another worker | Wrong split (2026-09-06) | Author queues + stays until main |
 
 ---
 
@@ -286,7 +287,7 @@ PR forever.”
 - Large suite rewrites / unrelated refactors as “CI fix”
 
 If you still cannot land after a minimal unblock: stay, report flake
-evidence to main, do **not** `HANDOFF: grok-land`.
+evidence to main; do not hand land to another worker.
 
 ---
 
@@ -312,7 +313,7 @@ Required skill: read ~/.agents/skills/sume-gt-mq/SKILL.md before gh stack submit
 
 STACKS (hard lock) — Chase 2026-10-30: GitHub stacks + GitHub merge queue; author owns land to origin/main:
 - Isolated clone only: `CLONE="$(cstack-clone <job-slug>)"` then `cd "$CLONE"`.
-  Forbidden: `git worktree` under the shared Cursor checkout (#2383).
+  Forbidden: `git worktree` under a shared checkout (#2383).
   Forbidden: `gh pr create`, `gt`, the `merge-queue` label, `gh pr merge --admin`.
 - Author: `gh stack init <branch>` → commit → `gh stack add <branch>` per layer
   → `gh stack submit --auto --open`.
@@ -321,7 +322,7 @@ STACKS (hard lock) — Chase 2026-10-30: GitHub stacks + GitHub merge queue; aut
 - Then **stay until** `git fetch origin main && git log origin/main --oneline --fixed-strings --grep='(#N)'`
   shows every layer. Queue removal → fix → `gh stack sync` → helper again.
   Repo CI flake: ≤2 `gh run rerun --failed`, then minimal CI unblock.
-  Forbidden: endless rerun. Forbidden: `HANDOFF: grok-land`.
+  Forbidden: endless rerun. Forbidden: handing land to another worker.
 - Forbidden: ScheduleWakeup then exit before the main tip.
   Queueing is not 완료. Done report only after main-tip proof:
   clone path + GitHub PR URL(s) + SHA(s) + `LANDED: yes`.
@@ -332,7 +333,4 @@ STACKS (hard lock) — Chase 2026-10-30: GitHub stacks + GitHub merge queue; aut
 
 ## Pointers
 
-- Orchestration (routing, Chase loop): `sume-main-agent-orchestration`
-- Cursor queue rule: `~/.cursor/rules/graphite-ci-ready.mdc`
-- Opus Shell cookbook: `~/.cursor/rules/opus-background-terminal.mdc`
-- Chase loop: `~/.cursor/rules/sume-chase-work-loop.mdc`
+- Orchestration (launch, fork, steer, Chase loop): `sume-main-agent-orchestration`

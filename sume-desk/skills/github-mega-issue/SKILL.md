@@ -70,16 +70,12 @@ wants "엄청 해상도 높게", "가능한 최대한 많은 컨텍스트", "sou
 
 ## Model Routing (Sume main-agent flow)
 
-When this skill runs inside the Sume main-agent orchestration flow, follow
-`sume-main-agent-orchestration` § "Coding Worker Model Routing":
+When this skill runs inside the Sume main-agent orchestration flow:
 
-- Heavy / ambiguous work: **Opus** drafts this mega-issue (design + RCA)
-  via `claude-human-stream` (not Cursor `Task` Opus) and implements through
-  MQ enqueue. After enqueue, **Grok Build** lands via
-  `agent-human-stream --backend grok` (not Cursor `Task`).
-- Clear / well-scoped work Chase assigned to Grok: **Grok Build**
-  (`agent-human-stream --backend grok`) may write the mega-issue and implement.
-- Composer must not write issues (exploration only).
+- Heavy / ambiguous work: an **Opus** worker on the M5
+  (`sume-bg-launch --host mini`) drafts this mega-issue (design + RCA) and
+  implements it through `origin/main` in the same session.
+- Clear / small work: the main agent may write the issue, then launch Opus.
 - Full routing/transport SoT:
   `~/.agents/skills/sume-main-agent-orchestration/SKILL.md`
 

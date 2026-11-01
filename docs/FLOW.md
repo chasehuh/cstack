@@ -1,226 +1,109 @@
 # Sume desk flow — file map
 
-This is the catalog. **Policy text lives in the skills**, not here.
-If this file and a skill disagree, the skill wins; fix this map.
+This is the catalog. **Policy text lives in the skills**, not here. If this
+file and a skill disagree, the skill wins; fix this map.
 
 ## The loop (Chase, always)
 
-Discuss (same language as Chase) → lock nouns/defaults/non-goals →
-**GitHub mega-issue** (`github-mega-issue` skill) → **Opus** (Fable only
-if Chase named Fable; `claude-human-stream` =
-`agent-human-stream --backend claude`, job slug 2–4 kebab tokens) →
-`cstack-clone <slug>` (`/tmp/sume-com-<slug>` from the bare mirror) →
-`gh stack init` / `gh stack add` → `gh stack submit --auto --open` →
-**`cstack-gt-wait-merge`** (validate green → GitHub merge queue) → the
-author stays until `main` tip `(#N)`.
+Discuss (Chase's language) → lock nouns / defaults / non-goals →
+**GitHub mega-issue** (`github-mega-issue`) when a context-free worker needs
+it → **Opus** on the M5 (`sume-bg-launch --host mini`; Fable only if Chase
+named it) → `cstack-clone <slug>` → `gh stack init` / `gh stack add` →
+`gh stack submit --auto --open` → **`cstack-gt-wait-merge`** → the author
+stays until `origin/main` `(#N)` → Korean report in `#coding-agents`.
 
 Triggers: “그렇게 가보자”, “mega-issue → opus”, “플로우 타자”.
 
-Stage: the author lands through `main` (Chase lock 2026-09-06).
+## Who runs what (2026-11-01)
 
-## Layer 0 — SoT skills (symlink into `~/.agents/skills/` → this repo)
-
-| Path in this repo | Installs as | When |
+| Role | Runs on | How |
 |---|---|---|
-| `sume-desk/skills/sume-main-agent-orchestration/` | `sume-main-agent-orchestration` | Any main-agent turn: roles, language, Opus vs Grok vs Composer, stacks hard lock, Cursor-only monitoring |
-| `sume-desk/skills/sume-gt-mq/` | `sume-gt-mq` | **Before** every `gt submit` / `gt merge` / MQ unstick / land handoff |
-| `sume-desk/skills/github-mega-issue/` | `github-mega-issue` | Filing the durable issue the worker will execute without the chat |
-| `sume-desk/skills/mobidoo-live-commerce-update/` | `mobidoo-live-commerce-update` | **Formats SoT** — LC package pull/push, catalog pin vs execute, dest fire. UI chrome stays mega-issue + `gt`. |
-| `sume-desk/skills/sume-architect/` | `sume-architect` | Before code that crosses a module boundary or adds an API / data model: usage → types → design twice → rationale on the Job issue |
-| `sume-desk/skills/sume-blast-radius/` | `sume-blast-radius` | Before submitting a risky diff: what else breaks, with the one safety fact proven by running code (`## Blast radius` in the PR body) |
-| `sume-desk/skills/sume-principles/` | `sume-principles` | 24 engineering principles (vendored, `references/`) — steering names (“apply prove it works”) and the vocabulary the two above cite |
-| `sume-desk/skills/sume-automate-me/` | `sume-automate-me` | Only when Chase asks: draft / refresh `chase-mode` from his corrections across harnesses, landed in this repo |
-| `sume-desk/skills/sume-ste/` | `sume-ste` | Only when asked: Simplified Technical English for English technical docs in a codebase (procedures, runbooks, warnings, error sentences). Not comments, chat, handoffs, marketing, Korean. `docs/STE.md` |
+| Main agent | Laptop, Claude Code | orchestration skill; prompts in `~/.cstack/state/prompts/` |
+| Worker | M5 Mac Mini | `sume-bg-launch --host mini … -- --model claude-opus-5-5 --effort <Chase's pick>` |
+| Fork | M5 | `--resume <uuid> --fork-session` (parent keeps running) |
+| Steer | M5 | `--resume <uuid>`, prompt opens `STEERING UPDATE`; the older job on that session is stopped first |
+| Land | worker | `gh stack` + `cstack-gt-wait-merge` → `origin/main` |
+| Release | release-only job | only on Chase's word for that release |
 
-`sume-architect`, `sume-blast-radius`, `sume-principles`, and
-`sume-automate-me` are adapted from pstack (MIT): what was taken, what was
-skipped and why, and how to resync are in `docs/PSTACK.md`. `sume-ste` is
-vendored from 0xpili/simplified-technical-english: `docs/STE.md`. They shape *how* code
-is built; routing, effort, stacks, land, and dest evidence stay in the
-skills above.
+## Layer 0 — SoT skills (symlinked into `~/.agents/skills/`)
 
-Runtime logs live at **`~/.cstack/state/`** (not inside the git skill tree).
-The wrapper recreates that dir.
-
-Formats policy lives **only** in that skill. Do not fork it into FLOW.
-
-## Code comments: none (every harness)
-
-`docs/CODE-COMMENTS.md` is the SoT: do not write code comments; rules, locks
-and reasons live in the repo docs. `install.sh` appends
-`sume-desk/code-comments-snippet.md` to `~/.codex/AGENTS.md` (Claude Code
-imports it) and `~/.grok/AGENTS.md`; Cursor gets `no-code-comments.mdc`
-(below). `check-wiring.sh` checks the Codex entry.
-
-## Feature flags: none (every harness)
-
-`docs/FEATURE-FLAGS.md` is the SoT: no binary feature flags; a flag needed to
-land a change is removed within one week; removing one keeps dev's behaviour
-and adds no env variable. `install.sh` appends
-`sume-desk/feature-flags-snippet.md` to `~/.codex/AGENTS.md` (Claude Code
-imports it) and `~/.grok/AGENTS.md`; Cursor gets `no-feature-flags.mdc`.
-`check-wiring.sh` checks the Codex entry.
-
-## Releases: release agent only (every harness)
-
-`docs/RELEASE-LOCK.md` is the SoT: staging → prod only when Chase allows that
-release, and only a dedicated release subagent tags, approves Production, or
-dispatches the prod release. Product workers stop at `origin/main` and a
-staging candidate. The worker preamble in `agent-human-stream.sh` carries the
-rule into every wrapper-launched job; `install.sh` appends
-`sume-desk/release-lock-snippet.md` to `~/.codex/AGENTS.md` (Claude Code
-imports it) and `~/.grok/AGENTS.md`; Cursor gets `release-lock.mdc`;
-`GRAPHITE-HARD-LOCK.md` repeats it in the author paste block.
-`check-wiring.sh` checks the Codex entry.
-
-## Layer 1 — user-global Cursor rules (`~/.cursor/rules/`)
-
-Pointers + cookbooks. They must stay **pointers** where noted — do not
-duplicate the full SKILL into the `.mdc`.
-
-| File | Role |
+| Path in this repo | When |
 |---|---|
-| `main-agent-orchestration.mdc` | Pointer at orchestration SKILL |
-| `sume-chase-work-loop.mdc` | Discuss → issue → author through origin/main |
-| `opus-background-terminal.mdc` | `claude-human-stream` recipe: prompt file, `cd` not `--cwd`, `block_until_ms: 0`, title = Job |
-| `graphite-ci-ready.mdc` | After `gh stack submit`, `cstack-gt-wait-merge` queues the whole stack (file keeps its old name) |
-| `status-board.mdc` | Status board: `지금` / `스테이징` / `백로그` (24h). `지금` includes **진행** (one-shot live-log step). Confirm = resolve (drop; do not show `확인됨`) |
-| `active-workers-canvas.mdc` | Canvas surface of the status board |
-| `end-of-turn-worker-brief.mdc` | Chat work report is SoT (Slack-optional to read); every turn ends with the status board |
-| `slack-coding-agents.mdc` | `#coding-agents` team mirror. Not every turn: 4–5 turns / ~30m / Chase-asked. Not a substitute for the chat report. Workers post their own completion report (`docs/SLACK-REPORT.md`) |
-| `canvas-user-language.mdc` | Canvas visible copy = Chase’s chat language (Korean thread → Korean) |
-| `chat-title-folder-prefix.mdc` | Rename chats `[workspace-folder] …` |
-| `origin-main-sot.mdc` | Code Q&A reads `origin/main`, not dirty local main |
-| `worker-reasoning-effort.mdc` | Code default: opus medium / fable high / grok xhigh / codex high. Named Claude `max`/`xhigh` pass through. Grok and Codex `max` → xhigh. Research: grok medium (opus+fable low) |
-| `aside-browser-verify.mdc` | Browser verification: `ego-browser` TaskSpace (preferred) or `aside repl`; own tab; dev/prod under sumelabs; dest Auto; evidence = one issue comment w/ 2–4 shots (`SHOTS:` URL required, #7110); local first, then dest |
-| `no-code-comments.mdc` | No code comments; docs are the SoT (`docs/CODE-COMMENTS.md`) |
+| `sume-desk/skills/sume-main-agent-orchestration/` | Any main-agent turn: launch / fork / steer, model + effort, status, Slack, dest evidence |
+| `sume-desk/skills/sume-gt-mq/` | **Before** every `gh stack submit` / queue unstick / land |
+| `sume-desk/skills/github-mega-issue/` | Filing the durable issue a worker executes without the chat |
+| `sume-desk/skills/mobidoo-live-commerce-update/` | **Formats SoT**: LC package pull/push, catalog pin vs execute, dest fire |
+| `sume-desk/skills/sume-architect/` | Before code that crosses a module boundary or adds an API / data model |
+| `sume-desk/skills/sume-blast-radius/` | Before submitting a risky diff (`## Blast radius` in the PR body) |
+| `sume-desk/skills/sume-principles/` | 24 engineering principles (vendored) |
+| `sume-desk/skills/sume-automate-me/` | Only when Chase asks: refresh `chase-mode` from his corrections |
+| `sume-desk/skills/sume-ste/` | Only when asked: Simplified Technical English for English technical docs (`docs/STE.md`) |
 
-## Layer 2 — `sume-com` repo rules (install into `<sume-com>/.cursor/rules/`)
+`sume-architect`, `sume-blast-radius`, `sume-principles` and
+`sume-automate-me` are adapted from pstack (MIT, `docs/PSTACK.md`).
 
-| File | Role |
-|---|---|
-| `stay-in-workspace.mdc` | Do not `move_agent_to_root` to a worktree |
-| `dev-only-until-release.mdc` | Default `www.dev` / Railway development |
-| `formats-api-dev-mobidoo.mdc` | Pointer → Formats SoT dest-fire section |
-| `canvas-user-language.mdc` | Same as user rule; also lives in the sume-com checkout |
-| `prod-testing-sumelabs-only.mdc` | Prod smoke: Sumelabs + `chase@sume.com` + local env file only |
-| `ci-local-preflight.mdc` | Changed-gate scripts before claiming CI-ready |
-| `agents-ui-taste.mdc` | Agents chrome: sentence case, `/images` hover icons |
-| `chat-title-prefix.mdc` | `[sume-com] …` |
-| `opus-via-claude-cli.mdc` | Pointer: Opus transport = shared SoT |
-| `aside-browser-verify.mdc` | Browser verification: `ego-browser` TaskSpace (preferred) or `aside repl`; own tab; dev/prod under sumelabs; dest Auto; evidence = one issue comment w/ 2–4 shots (`SHOTS:` URL required, #7110); local first, then dest |
+## Always-on rules (every harness)
 
-## Layer 3 — local Claude + Codex (tokenmaxxing)
+| Rule | SoT | Where install.sh puts it |
+|---|---|---|
+| No code comments | `docs/CODE-COMMENTS.md` | `~/.codex/AGENTS.md` section (Claude Code imports it), Cursor `no-code-comments.mdc` |
+| No feature flags | `docs/FEATURE-FLAGS.md` | same, `no-feature-flags.mdc` |
+| Release lock | `docs/RELEASE-LOCK.md` | same, `release-lock.mdc`, the worker preamble, `GRAPHITE-HARD-LOCK.md` |
+| Worker mode (no nested launches) | `docs/MINI-WORKER-HOST.md` § Nested | `~/.codex/AGENTS.md` section, the worker preamble |
+| Author completion (stay until main) | `sume-gt-mq` | `~/.claude/CLAUDE.md` section |
+| Slack report | `docs/SLACK-REPORT.md` | the launcher appends the tail to every prompt |
 
-`claude` and `codex` on this desk are **[tokenmaxxing](https://github.com/anaclumos/tokenmaxxing)**
-supervisors: shims in front of Claude Code / Codex CLI that pool
-subscription accounts and swap near quota limits. `claude-human-stream` /
-`agent-human-stream --backend claude` uses that `claude`;
-`agent-human-stream --backend codex` uses that `codex`.
-Local Grok Build (`grok` CLI, no pool) uses `agent-human-stream --backend grok`.
+`check-wiring.sh` checks the Codex and Claude entries.
 
-SoT: **`docs/TOKENMAXXING.md`**. Short version:
+## Cursor rules (editor only)
 
-- PATH: `~/.config/tokenmaxxing/bin` **before** the real CLIs
-- Claude pool: several Max 20x accounts (`tokenmaxxing ls`); desk build =
-  upstream 1.10.0 pinned + `sume-desk/tokenmaxxing/` patch
-- Codex pool (separate): active `dev@dooilabs.com` (Pro); swaps apply on
-  the **next** `codex` start, not mid-turn
+Cursor is not the main agent now. `cursor-rules/user/` keeps rules that
+still hold when Cursor is used as an editor: `no-code-comments`,
+`no-feature-flags`, `release-lock`, `origin-main-sot`,
+`aside-browser-verify`, `canvas-user-language`, `chat-title-folder-prefix`.
+`cursor-rules/sume-com/` holds repo rules (`stay-in-workspace`,
+`dev-only-until-release`, `formats-api-dev-mobidoo`,
+`prod-testing-sumelabs-only`, `ci-local-preflight`, `agents-ui-taste`,
+`chat-title-prefix`, `aside-browser-verify`, `canvas-user-language`).
+
+## Local Claude (tokenmaxxing)
+
+`claude` on the laptop and the M5 is the
+[tokenmaxxing](https://github.com/anaclumos/tokenmaxxing) supervisor: pooled
+Max 20x accounts, swapped near quota. SoT: **`docs/TOKENMAXXING.md`**.
+
+- PATH: `~/.config/tokenmaxxing/bin` **before** the real CLI
 - `tokenmaxxing doctor` / `status` before blaming the wrapper
-- Do not commit tokens or paste `accounts.json`
-- `./install.sh` does **not** install tokenmaxxing; it re-applies the desk
-  patch when 1.10.0 is present and runs `doctor`
-- Mac Mini SSH workers read `~/.claude/.credentials.json` (keychain locked
-  over SSH); the live file mirror keeps it in step (`--mirror`)
+- The M5 reads `~/.claude/.credentials.json` (keychain locked over ssh);
+  the live file mirror keeps it in step (`--mirror`)
 
-### Agent stream — one wrapper, three backends
+### Agent stream
 
-```bash
-agent-human-stream --name <job-slug> "…" --model opus            # auto → claude
-agent-human-stream --backend grok  --name <job-slug> "…"         # Grok Build
-agent-human-stream --backend codex --name <job-slug> "…"         # Codex (codex exec --json)
-sume-bg-launch --backend codex --name <job-slug> --prompt-file /tmp/job.md --
-agent-human-stream --resume <id> "Follow-up …"                   # backend from registry
-```
-
-Auto backend: `grok*` → grok, `gpt-*|o3*|o4*|codex*` → codex, Claude names
-→ claude. Every backend prints `📎 session_id=<id>  backend=<…>`, tees to
-`~/.cstack/state/opus-live/`, and appends to the same registry.
+`sume-bg-launch` runs `agent-human-stream --backend claude` (on the M5 under
+`sume-bg-remote run`). Every launch prints `📎 session_id=<id>`, tees to
+`~/.cstack/state/opus-live/`, and appends to `opus-sessions.jsonl`. The
+wrapper still has `--backend grok|codex`; the desk does not use them now.
 
 **Completion report (default on):** the wrapper appends the slack-report
-tail, so every worker posts one Korean report to `#coding-agents` when it
-finishes (`cstack-slack-post`; `SLACK_TEXT:` in the final block if it
-cannot). `--resume` steers get a one-line reminder, forks get the full tail,
-`sume-cron-job` is off. Opt out: `--no-slack-report`, `CSTACK_SLACK_REPORT=0`,
-or `<!-- slack-report:off -->` in the prompt. Dry run:
-`sume-bg-launch --print-prompt …`. SoT: `docs/SLACK-REPORT.md`.
-
-Mac Mini host: `sume-bg-launch --host mini …` (or `CSTACK_WORKER_HOST=mini`)
-runs the same wrapper **detached on the Mini** and mirrors its log into the
-local `opus-live` replica. Fail closed if unreachable; `--resume` same host
-only. **Mini ego / dest shots are allowed** (Chase 2026-09-13).
-When dest/prod browser verification is in scope, stay until dest `/api/build`
-reports the land commit or a descendant SHA, then verify (sumelabs, Auto)
-and post one Job issue comment with 2–4 shots + host/workspace/Auto/SHA/
-pass-fail/thread URL. Final: **`SHOTS: <comment URL>`**; no URL ⇒ no
-`DEST: pass`. A background dest-watch is not completion; do not exit while
-dest builds. Prod requires Chase authorization. Page: `docs/MINI-WORKER-HOST.md`;
-recipe: [references/dest-verify-issue-shots.md](../sume-desk/skills/sume-main-agent-orchestration/references/dest-verify-issue-shots.md).
-
-## Transport (Cursor main agent)
-
-```text
-cat > /tmp/sume-opus-prompts/<job-slug>.md <<'EOF'
-Work in English.
-…
-Required skill: read ~/.agents/skills/sume-gt-mq/SKILL.md
-GRAPHITE hard lock (cstack-clone, no gh pr create, cstack-gt-wait-merge → stay to origin/main)
-EOF
-cd /path/to/sume-com && claude-human-stream --name <job-slug> \
-  "$(cat /tmp/sume-opus-prompts/<job-slug>.md)" --model opus
-```
-
-Shell tool: `block_until_ms: 0`, `description`: `Opus : <job-slug> (#N)`
-(or `Fable : …` only if Chase named Fable).
-One smoke for `📎 session_id=`. Then stop waiting. Completion notification
-is the monitor.
+tail (forks and fresh jobs get the full tail, steers a one-line reminder,
+`sume-cron-job` none). Opt out: `--no-slack-report`, `CSTACK_SLACK_REPORT=0`,
+or `<!-- slack-report:off -->`. Dry run: `sume-bg-launch --print-prompt …`.
 
 ## Stacks and the merge queue (sume-com only)
 
-Graphite is retired for `sume` since 2026-10-30: GitHub stacks
-(`gh stack`) and GitHub's merge queue (ruleset `main-merge-queue`, squash).
+Graphite is retired for `sume` since 2026-10-30: GitHub stacks (`gh stack`)
+and GitHub's merge queue (ruleset `main-merge-queue`, squash).
 
-- Isolated clone: **`cstack-clone <slug>`** → `/tmp/sume-com-<slug>` from
-  `~/.cstack/mirrors/sume-com.git`. **Not** `git worktree` under the
-  Cursor checkout (`#2383`). After land: `cstack-clone-rm <slug>`.
-- Host binaries: `cstack-clone` / `cstack-clone-rm` / `cstack-mirror-sync`
-  / **`cstack-gt-wait-merge`** on `~/.local/bin` (install.sh), plus the
-  `gh stack` extension.
-- Never `gh pr create` on `sumelabs/sume` / `sume-com`.
+- Isolated clone: `cstack-clone <slug>` → `/tmp/sume-com-<slug>` from
+  `~/.cstack/mirrors/sume-com.git`; after land `cstack-clone-rm <slug>`.
+- Never `gh pr create` on `sumelabs/sume`.
 - Queue run red → fix, `gh stack sync`, run the helper again; ≤2 reruns for
   a flake.
-- Landed = `main` commit `(#N)` for every layer (a squash per PR).
+- Landed = `main` commit `(#N)` for every layer.
 
 ## What is not in this pack (on purpose)
 
 - API keys, Code Storage PEMs, Clerk cookies, Railway tokens
-- `~/.sume/ops/*` secrets — policy files may name the **path**, never the value
-- Live `opus-live` logs / session registries
+- `~/.sume/ops/*` secrets (policy may name the **path**, never the value)
+- Live `opus-live` logs / session registries / prompts
 - Product code (`sume-com` stays its own repo)
-
-## Host binaries the flow assumes
-
-- `gh` (with `gh stack`), `git`, `pnpm`, `cstack-clone`, `cstack-gt-wait-merge`
-- Claude Code CLI via **tokenmaxxing** (`claude` supervisor on PATH) for
-  `claude-human-stream` / `agent-human-stream --backend claude` —
-  see `docs/TOKENMAXXING.md`
-- Grok Build CLI (`grok` on PATH) for `agent-human-stream --backend grok`
-- Codex CLI via **tokenmaxxing** (`codex` supervisor on PATH, Codex pool)
-  for `agent-human-stream --backend codex`
-- Cursor `Task` = Composer explore only
-- Grok land / Grok author = `agent-human-stream --backend grok` (not Task)
-
-`./install.sh` links `agent-human-stream`, `claude-human-stream`,
-`sume-bg-launch`, `sume-bg-remote` (Mini side of `--host mini`),
-`cstack-slack-post`, `cstack-clone`, and `cstack-gt-wait-merge` to `~/.local/bin`.
-Skills also land in `~/.grok/skills` for Grok Build.

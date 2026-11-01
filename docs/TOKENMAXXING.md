@@ -319,7 +319,7 @@ Differences from the Claude pool:
 cd /path/to/repo && agent-human-stream --backend codex --name <job-slug> "…" --model gpt-5.5
 # or the launcher (prompt file, steer-safe):
 cd /path/to/repo && sume-bg-launch --backend codex --name <job-slug> \
-  --prompt-file /tmp/sume-codex-prompts/<job-slug>.md -- --effort high
+  --prompt-file ~/.cstack/state/prompts/<job-slug>.md -- --effort high
 # resume / steer
 agent-human-stream --backend codex --resume <thread_id> "Follow-up …"
 ```

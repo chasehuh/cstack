@@ -89,9 +89,7 @@ like this:
 - `guard-the-context-window`. From a worker, a subagent means an
   in-process one (Claude Code Agent or Explore). Never `sume-bg-launch`,
   `agent-human-stream`, `claude-human-stream`, or a bare `claude -p` /
-  `codex exec` / `grok -p` from a worker (sume#7839). From a Cursor main
-  agent, in-process means Composer `Task` explore only, never `Task` with
-  `claude-opus-*` or `cursor-grok-*`.
+  `codex exec` from a worker (sume#7839).
 - `separate-before-serializing-shared-state`. One `cstack-clone` per job.
   Never `git worktree` under a shared checkout (#2383).
 - `outcome-oriented-execution`. Planned breakage stays inside a branch or a

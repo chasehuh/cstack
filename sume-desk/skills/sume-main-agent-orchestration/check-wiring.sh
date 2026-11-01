@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Verify Cursor, Claude Code, Codex, and Grok Build all resolve to the
-# same cstack SoT tree (chasehuh/cstack), not a forked rsync copy.
+# Verify Claude Code and Codex resolve to the same cstack SoT tree
+# (chasehuh/cstack), not a forked rsync copy, and the M5 is the Mini.
 set -uo pipefail
 
 realpath_py() {
@@ -46,13 +46,18 @@ else
   bad "missing ~/.cstack/src git checkout"
 fi
 
-grep -q "Harness Scope" "$SOT" \
-  && ok "SoT has Harness Scope" \
-  || bad "SoT missing Harness Scope section"
+grep -q "## The desk today" "$SOT" \
+  && ok "SoT has The desk today" \
+  || bad "SoT missing The desk today section"
 
-grep -q "Cursor-only — Opus / background-worker monitoring" "$SOT" \
-  && ok "SoT has Cursor-only Opus monitoring" \
-  || bad "SoT missing Cursor-only Opus monitoring section"
+HOSTS_ENV="$SRC_REAL/sume-desk/hosts.env"
+m5=$(sed -n 's/^CSTACK_MINI_SSH_M5=//p' "$HOSTS_ENV" 2>/dev/null | tail -n 1)
+have=$(sed -n 's/^[[:space:]]*\(export[[:space:]]\{1,\}\)\{0,1\}CSTACK_MINI_SSH=//p' "$HOME/.cstack/mini-ssh.env" 2>/dev/null | tail -n 1 | tr -d "\"'")
+if [ -n "$m5" ] && [ "$have" = "$m5" ]; then
+  ok "~/.cstack/mini-ssh.env → M5 ($m5)"
+else
+  bad "~/.cstack/mini-ssh.env CSTACK_MINI_SSH=${have:-missing}, want M5 ${m5:-?} (re-run install.sh)"
+fi
 
 GT_SKILL="$GT_LINK/SKILL.md"
 if [ -f "$GT_SKILL" ]; then
@@ -83,8 +88,7 @@ else
 fi
 
 # Skill discovery per harness — compare realpaths (hub may be a symlink).
-for dir in "$HOME/.codex/skills" "$HOME/.claude/skills" \
-           "$HOME/.cursor/skills" "$HOME/.grok/skills"; do
+for dir in "$HOME/.codex/skills" "$HOME/.claude/skills"; do
   link="$dir/sume-main-agent-orchestration"
   if [ -e "$link" ] || [ -L "$link" ]; then
     target="$(realpath_py "$link")"
@@ -103,9 +107,6 @@ grep -q "sume-main-agent-orchestration/SKILL.md" "$HOME/.codex/AGENTS.md" \
   && ok "codex entry point references SoT" \
   || bad "codex entry point missing SoT reference: ~/.codex/AGENTS.md"
 
-grep -q "Cursor-only" "$HOME/.codex/AGENTS.md" \
-  && ok "codex entry notes Cursor-only ignore" \
-  || bad "codex entry missing Cursor-only ignore note"
 
 grep -q "Sume worker mode (always on)" "$HOME/.codex/AGENTS.md" \
   && ok "codex entry has the worker-mode lock (sume#7839)" \
@@ -126,37 +127,5 @@ grep -q "Sume release lock (always on)" "$HOME/.codex/AGENTS.md" \
 grep -q "codex/AGENTS.md" "$HOME/.claude/CLAUDE.md" \
   && ok "claude imports codex entry point" \
   || bad "claude entry point does not import ~/.codex/AGENTS.md"
-
-if [ -f "$HOME/.grok/AGENTS.md" ] && grep -q "sume-main-agent-orchestration/SKILL.md" "$HOME/.grok/AGENTS.md"; then
-  ok "grok entry point references SoT"
-else
-  bad "grok entry point missing SoT reference: ~/.grok/AGENTS.md"
-fi
-
-# Cursor pointer rules must stay pointers, not forked copies.
-check_pointer() {
-  local rule="$1"
-  if [ ! -f "$rule" ]; then
-    bad "cursor pointer missing: $rule"
-    return
-  fi
-  if ! grep -q "sume-main-agent-orchestration/SKILL.md" "$rule"; then
-    bad "cursor rule does not point at SoT: $rule"
-    return
-  fi
-  if grep -qE "Pipeline 1|Opus owns PR authoring|Never use Opus 5 for code" "$rule"; then
-    bad "cursor rule forked SoT content: $rule"
-  else
-    ok "cursor pointer rule: $rule"
-  fi
-}
-
-check_pointer "$HOME/.cursor/rules/main-agent-orchestration.mdc"
-
-while IFS= read -r rule; do
-  check_pointer "$rule"
-done < <(find "$HOME/sume" "$HOME/chase" "$HOME/dooi" -maxdepth 4 \
-  -path "*/.cursor/rules/main-agent-orchestration.mdc" \
-  -not -path "*/node_modules/*" -not -path "*worktree*" -not -path "*PURGE*" 2>/dev/null)
 
 exit $fail

@@ -1,972 +1,279 @@
 ---
 name: sume-main-agent-orchestration
-description: Sume-specific main-agent orchestration workflow. Use when the user wants the current thread to coordinate workers/subagents (Claude Code, Grok Build via agent-human-stream, Composer Task, or Codex), track their status, delegate tasks, compact finished workers, create Linear/GitHub issues, or summarize what main_agent and workers are doing instead of directly implementing code. Includes Fable / Opus / Grok Build routing for mega-issue → implement → PR → merge.
+description: Sume main-agent orchestration. Use when the current thread coordinates Opus workers on the M5 Mac Mini (sume-bg-launch --host mini), writes their prompts, forks or steers them, tracks their status, files GitHub mega-issues, or reports to Chase instead of implementing code itself. Covers model/effort picks, fork vs steer, land through origin/main, release lock, Slack reports and dest evidence.
 ---
 
 # Sume Main Agent Orchestration
 
 ## Purpose
 
-Use this skill when the current thread is acting as the Sume main agent:
+The main agent is Chase's communication, planning and coordination layer.
+Workers own scoped execution: investigation, implementation, PR and land,
+experiments, monitoring. The main agent keeps Chase oriented, delegates with
+clear prompts, reads worker results and decides the next step.
 
-- The main agent is the user's communication, planning, and coordination layer.
-- Workers / subagents own scoped execution — implementation, investigation, PR,
-  merge, experiment, or monitoring (Cursor Task subagents, Claude workers, or
-  Codex worker threads — same role split).
-- The main agent should keep the user oriented, delegate clearly, inspect worker outputs, and decide next routing.
+**SoT:** this file (`~/.agents/skills/sume-main-agent-orchestration/`, a
+symlink into `chasehuh/cstack`). Do not copy these rules elsewhere; point
+here. How the desk got to this shape and what was removed:
+`~/.cstack/src/docs/CHANGELOG.md`.
 
-**SoT location:** `~/.agents/skills/sume-main-agent-orchestration/`.
-This file is the single source of truth for Codex, Cursor, and Claude Code.
-Never copy these rules into another file; point at this file instead.
-See "Harness Wiring" at the end for how each harness reaches this file.
+## The desk today (2026-11-01)
 
-This is the default Sume collaboration style for the "main agent / worker"
-pattern (including legacy names like `worker2`…`worker7`, `exp9`, `cc-worker-*`).
+| Piece | What runs it |
+|---|---|
+| Main agent | Claude Code on Chase's laptop (Codex can play the same role; same rules) |
+| Workers | Claude **Opus** (`claude-opus-5-5`) through `agent-human-stream`, started with `sume-bg-launch --host mini` |
+| Worker host | The **M5** Mac Mini (`sume-desk/hosts.env` → `CSTACK_MINI_SSH_M5`). The M4 runs jobs only when Chase says M4 (`--host m4`) |
+| Land | `gh stack submit --auto --open` → `cstack-gt-wait-merge` → the author stays until `origin/main` has `(#N)` (`sume-gt-mq`) |
+| Report | The worker posts one Korean report to Slack `#coding-agents` as a new thread (`docs/SLACK-REPORT.md`) |
+| Release | Only a release-only job, only on Chase's word for that release (`docs/RELEASE-LOCK.md`) |
 
-## Harness Scope
+Not used now: Grok workers (Chase: "grok 은 일단 필요 없고"), Cursor as the
+main agent, Graphite (`gt`) as a land path, Fable unless Chase names it.
 
-Most of this skill is **shared** across Cursor, Codex, and Claude Code when
-they act as the Sume main agent.
+**When this harness is the worker** (env `SUME_WORKER_SESSION` or a
+`[sume worker session]` preamble): ignore every main-agent rule here. Do the
+task in this session and end with the final report. Never launch, resume or
+hand off another worker; the launcher refuses nested launches (exit 5) and a
+nested process dies with the session (sume#7839).
 
-Sections and bullets marked **Cursor-only** apply **only** when the main agent
-is Cursor (Shell `block_until_ms`, completion notifications, Cursor `Task`
-slugs, `AwaitShell`, etc.).
+## Main agent
 
-When the main agent is **Codex or Claude Code**:
+- Talk to Chase in his language (Korean in → Korean out). Workers always
+  work and report in **English**.
+- Restate the goal, constraints and current state; pick fork vs fresh vs
+  steer; send a precise prompt with done criteria.
+- Launch in the background and return control. Do not block on a worker
+  unless Chase's next request depends on that exact result. The completion
+  notification is the monitor; no sleep/poll loops.
+- Read only the worker's `—— final ——` block and `📎 session_id=`; translate
+  it into a short update.
+- Do not silently implement what Chase expected a worker to do. Tiny
+  coordination (reading a log, filing an issue, a status check) is fine.
+- Code questions read `origin/main` (`git show origin/main:<path>`), not a
+  dirty local checkout.
 
-- **Ignore every Cursor-only rule.** Do not invent Cursor `Task` /
-  `AwaitShell` / `notify_on_output` / custom sleep-watchers for Opus.
-- Still use this skill for role split, language, pipelines, and the shared
-  Opus path (`claude-human-stream` when you need a Claude Code Opus worker
-  from another harness that can shell out).
-- Use that harness's native background / subagent completion model instead
-  of Cursor notification semantics.
-
-When this harness **is** the worker (Claude Code, Codex, or Grok Build
-started by `agent-human-stream` / `sume-bg-launch`; env `SUME_WORKER_SESSION`
-or a `[sume worker session]` prompt preamble): ignore all main-agent rules;
-do the delegated task in this session and emit the final report. Never
-launch, resume, or hand off another worker from a worker — the launcher
-refuses nested launches (exit 5) and a nested process is killed when the
-session ends, which is the "Astra disconnect" ghost pattern (sume#7839).
-
-**Completion report (default on, `docs/SLACK-REPORT.md`):** the wrapper
-appends the slack-report tail to every fresh or forked worker prompt, so
-the worker posts one Korean report to `#coding-agents` in the Job thread
-when it finishes (`cstack-slack-post`). Do not paste Slack-report steps into
-job prompts. A final block with `SLACK_TEXT:` means the worker could not post:
-the main agent posts that text. Opt out per job: `--no-slack-report`,
-`CSTACK_SLACK_REPORT=0`, or `<!-- slack-report:off -->` in the prompt.
-Check the final prompt with `sume-bg-launch --print-prompt …`.
-
-**Release lock (Chase 2026-10-18, `docs/RELEASE-LOCK.md`):** staging → prod
-is forbidden unless Chase explicitly allows **that** release. "Do it on prod"
-/ "hide it on prod" is not permission to tag. The only agent that may tag,
-approve Production, or dispatch the prod release is a dedicated release
-subagent, and that agent does **only** the release. Product workers stop at
-`origin/main` and a staging candidate. Never write "land and ship a
-production release" (or any tag / release step) into a product job prompt;
-deliver on dev, ask Chase, and launch a release-only job only after he allows
-that release, quoting his words and the exact SHA. Incident: `v1.0.4`
-(2026-10-18) shipped every commit since `v1.0.3` because a "hide Brand OS on
-prod" job was told to release.
-
-## Core Role Split
-
-### Main Agent
-
-The main agent should:
-
-- Talk to the user in the same language the user is using (match the latest
-  user message unless they explicitly ask for a different language).
-- Understand and restate the goal, constraints, and current system state.
-- Pick the right worker thread for each task based on current load and task type.
-- Send precise delegation prompts with context, constraints, expected output, and done criteria.
-- Read worker thread summaries/statuses and translate them into concise user-facing updates.
-- Track which workers are active, idle, blocked, complete, merged, or awaiting review.
-- Ask workers to compact after completed or stale tasks.
-- Create Linear issues when the user wants product/work tracking.
-- Avoid doing implementation directly when the user explicitly says to delegate.
-
-Default execution mode for workers/subagents:
-
-- Launch workers in the background by default.
-- Do **not** `wait`/block on a worker just because it was spawned. Waiting turns
-  the main agent into an idle state and stalls the user conversation.
-- After spawn, either continue useful main-agent work or return control to the
-  user with a short "running in background" update.
-- Wait only when the user's next requested action is blocked on that exact
-  worker result, or when the user explicitly asks to wait/check now.
-- Prefer completion notifications / later status checks over polling loops.
-
-The main agent may directly execute tiny coordination tasks such as reading a
-thread, creating a Linear issue, or checking a command result. It should not
-silently take over a code implementation that the user expected to be delegated.
-
-### Code SoT when answering (Chase lock 2026-08-24)
-
-Shared Cursor / local `main` is **usually dirty**. When the user **asks a
-question** about shipped product code (not “what’s in this dirty tree?”):
-
-- Read **`origin/main`** (`git fetch` if needed, then
-  `git show origin/main:<path>` / `git grep … origin/main --`).
-- Do not treat the chat workspace working tree as current trunk.
-- Implementation still uses a fresh worktree/clone. Cursor user rule:
-  `~/.cursor/rules/origin-main-sot.mdc`.
-
-### Workers / Subagents
-
-Workers (Cursor Task subagents, Claude/Codex worker threads) should:
-
-- Always work and report in English (thinking, tools, status, commits, PRs,
-  final reports), unless the user explicitly overrides that for a specific task.
-- Own a scoped execution unit: investigation, implementation, PR/merge, log audit,
-  provider experiment, or research report.
-- Use fresh worktrees for repo code changes.
-- Follow repo instructions, especially `AGENTS.md`, DB safety, deploy safety, and
-  the Sume worktree/PR/merge flow.
-- Report exact files changed, PRs, merge commits, validation, caveats, and blockers.
-- Not mutate production data, deploy, or trigger paid provider calls unless the
-  delegation explicitly authorizes that exact action.
-- Not write code comments (Chase lock 2026-10-17). Docs are the only source of
-  truth: a rule, product lock, "dev only" gate, history or reason goes in the
-  doc that owns the surface, never in a comment; keep only shebangs, license
-  headers and compiler/linter directives. A comment in the code is not a lock.
-  SoT: `~/.cstack/src/docs/CODE-COMMENTS.md`.
-
-**Chase lock (2026-08-26) — 완료 to Chase only after `origin/main` `(#N)`.**
-
-Subagents / workers / this main agent must **check that the change is
-fully in** before telling Chase it is done.
+### 완료 only after `origin/main` (Chase lock 2026-08-26, 2026-09-06)
 
 ```bash
 git fetch origin main
-git log origin/main --oneline --grep='(#N)'
+git log origin/main --oneline --fixed-strings --grep='(#N)'
 ```
 
-No log line → **not 완료**. Forbidden words to Chase until that proof:
-완료 / done / completed / landed / “들어갔습니다.”
+No line → not 완료. Not proof: PR open, green PR checks, queued, a queue run
+in progress, worker exited. The author session owns land; if it exited
+early, steer **that same session** (`--resume`) to finish. Never launch a
+second land worker.
 
-**Not proof:** PR open, PR-branch CI green, queued in the merge queue,
-a queue run in progress, `HANDOFF: grok-land`, worker process exited.
+### Release lock (Chase 2026-10-18, `docs/RELEASE-LOCK.md`)
 
-**Chase lock 2026-09-06:** the author session **owns land**. Do not STOP
-after enqueue. Stay until the main-tip grep hits; MQ eject → re-enqueue
-same session; forbidden `HANDOFF: grok-land`. Main agent resumes **that
-same worker** if they exited early and does **not** translate enqueue
-into 완료. Leftover “Your changes” = still open.
+Staging → prod only when Chase allows **that** release. "Do it on prod" /
+"hide it on prod" is not permission to tag. Product workers stop at
+`origin/main` and a staging candidate and write `RELEASE: needs Chase`.
+Never put a tag or release step in a product prompt. After Chase allows a
+release, launch a release-only job that quotes his words and the exact SHA.
 
-## Delegation Template
+### Dev only
 
-When sending a task to a worker, include:
+Dev (`www.dev.sume.com`, Railway development) unless Chase says otherwise.
+Prod tests: sumelabs workspace and the desk key only; never paste keys.
+
+## Launching workers
+
+### Prompt file (durable dir)
+
+Write prompts under `~/.cstack/state/prompts/`, not `/tmp` (a `/tmp` dir
+vanished mid-day on 2026-11-01 and a launch failed with
+`--prompt-file not found`). `sume-bg-launch --prompt-dir` creates and prints
+the dir.
+
+```bash
+P="$(sume-bg-launch --prompt-dir)/<job-slug>.md"
+cat > "$P" <<'EOF'
+# Opus: <what, one line>
+
+Work in **English**. <fresh / fork of <uuid> / steer>. Do not stop other jobs (<names>).
+
+## Facts so far
+- …
+
+## Task
+1. …
+
+## Done
+- … (land through origin/main, SHOTS if dest verify, no release)
+EOF
+```
+
+Prompt body = task, facts, locks, done criteria. Do not quote launcher flags
+in the body; the worker reads them as instructions (sume#7839). The launcher
+adds the worker preamble, release lock and Slack-report tail itself.
+
+### Fresh job
+
+```bash
+sume-bg-launch --host mini --backend claude --name <job-slug> \
+  --prompt-file "$P" -- --model claude-opus-5-5 --effort high
+```
+
+Run it as a background command. Smoke once for `📎 session_id=` (dead =
+an `exit_code` in seconds), tell Chase the job slug and session id, then
+return control. The attach streams the M5 log into
+`~/.cstack/state/opus-live/<job>.log` (+ `LATEST.log`); laptop sleep ends
+only the attach, never the job.
+
+### Fork (new session that keeps a parent's context)
+
+```bash
+sume-bg-launch --host mini --backend claude --name <new-slug> \
+  --resume <parent-uuid> --fork-session --prompt-file "$P" -- --model claude-opus-5-5 --effort high
+```
+
+Use a fork when the new ask needs what an earlier worker learned. The parent
+keeps running. Most desk jobs are forks or steers (86% of starts since
+2026-10-18).
+
+### Steer (same session, follow-up)
+
+```bash
+sume-bg-launch --host mini --backend claude --name <same-slug> \
+  --resume <session-uuid> --prompt-file "$P"
+```
+
+Open the prompt with `STEERING UPDATE` and say what changed. On the M5 the
+start step stops the older job holding that session first (the job that
+printed `📎 session_id=<uuid>` or resumed it), so one session never has two
+wrappers. `--resume` is same-host only: a Mini session resumed with
+`--host local` exits 4 and prints the host.
+
+### Model and effort
+
+- Model: `--model claude-opus-5-5` (alias `opus-5.5`). Fable
+  (`--model fable`) or Sonnet 5.5 only when Chase names them.
+- Effort: Chase usually names it; pass it through:
+  `--effort low|medium|high|xhigh|max` (`mid` → `medium`, `maximum` → `max`,
+  `x-high` → `xhigh`). Since 2026-10-18 the mix is high 48%, medium 27%,
+  xhigh 19%, max 5%, low 1%.
+- Chase silent: code lane `medium`, research `low` (lock 2026-08-24). The
+  wrapper injects `medium` for Opus when `--effort` is omitted.
+
+### Job slug and title
+
+`--name` = 2–4 lowercase kebab tokens that say what the job is
+(`gh-stack-not-enabled`, `heygen-ticket-button`), never an issue number
+alone. Title everywhere (board, Slack parent): `Opus : <job-slug> (#N)`.
+
+### Control plane
+
+```bash
+sume-bg-launch --host mini --jobs              # alive / state per job
+sume-bg-launch --host mini --status <job>      # truth = M5 pid + recorded start time
+sume-bg-launch --host mini --attach <job>      # re-attach; rewrites the replica log
+sume-bg-launch --host mini --kill <job>        # TERM → KILL the job's process group
+```
+
+`state=pid-reused` means the recorded pid now belongs to another process
+(pids repeat after a reboot); the job is dead and `--kill` refuses it
+(exit 6). Never count the replica log as liveness. Details:
+`docs/MINI-WORKER-HOST.md`.
+
+## Delegation template
 
 ```text
-You are workerN. Work in English.
+# Opus: <what>
+Work in **English**. <fresh | fork of <uuid> | STEERING UPDATE>.
+Do not stop other jobs (<running job slugs>).
 
-Context:
-- Repo/thread/environment.
-- Relevant recent PRs, incidents, decisions, or constraints.
-- What the user wants and why.
-
-Task:
-1. ...
-2. ...
-3. ...
-
+Context: repo, issue URL, recent PRs/incidents, what Chase wants and why.
+Task: numbered steps.
 Constraints:
-- No deploys / no DB mutation / no provider calls unless explicitly authorized.
-- No secrets or private data in output.
-- Use fresh worktree -> validation -> PR -> merge when code changes are requested.
-- No code comments: rules, locks and reasons go in the repo docs, not in code
-  (`~/.cstack/src/docs/CODE-COMMENTS.md`).
-
-Final report:
-- Root cause / findings.
-- Implementation or recommendation.
-- PR/merge/deploy status if applicable.
-- Tests/validation.
-- Dest/prod browser verify: `SHOTS: <gh issue comment URL>` (2–4 shots +
-  host/workspace/Auto/SHA/pass-fail). No URL ⇒ no `DEST: pass`.
-- Caveats/follow-ups.
-- (Slack: the launcher appends the completion-report tail; nothing to add.)
+- No deploys / DB mutation / paid provider calls unless authorized here.
+- No secrets in output. No code comments (docs are the SoT).
+- sume-com code: read ~/.agents/skills/sume-gt-mq/SKILL.md; paste the
+  STACKS block from ~/.cstack/src/sume-desk/GRAPHITE-HARD-LOCK.md.
+Done:
+- Land through origin/main (LANDED: yes + PR URL + main SHA), or "research only".
+- Dest/prod browser verify: SHOTS: <issue comment URL>.
+- No release (RELEASE: needs Chase if prod needs it).
 ```
 
-For research-only tasks, state "research only; no code changes." For production
-mutations, state the exact authorized scope and require a dry run first unless
-the user already approved the precise mutation.
-
-After sending the delegation, keep the worker in background mode by default.
-Do not immediately wait on it unless the current user turn is blocked on that
-result.
-
-## Coding Worker Model Routing (Fable / Opus / Grok)
-
-This section is the source of truth for which model runs which stage of the
-GitHub mega-issue → implement → PR → merge flow in Sume repos. Every coding
-delegation must pick the model and **transport** explicitly according to these
-rules.
-
-**Chase lock (2026-08-23) — default author is Opus.** Coding models are only
-**Fable / Opus / Grok**. If Chase does **not** name a model, launch **Opus**
-(`claude-human-stream`, default `--model opus`). Use **Fable** only when Chase
-says Fable / `--model fable`. **Grok** is land/ops (and explicit Grok author
-asks). Composer remains explore-only.
-
-| Role | Model | Transport (from a Cursor main agent) |
-|------|-------|--------------------------------------|
-| Opus (default author: design / RCA / mega-issue / **code → MQ enqueue**) | Claude Opus via Claude Code subscription | **`claude-human-stream`**. Do **not** use Cursor `Task` with `claude-opus-*`. |
-| Fable (author only if Chase named Fable) | Claude Fable via same wrapper | **`claude-human-stream --model fable`**. Same stack + queue path as Opus. |
-| Opus 5.5 (author when Chase names Opus 5.5) | Claude Opus 5.5 (`claude-opus-5-5`, sume#8221) via same wrapper | **`agent-human-stream --model claude-opus-5-5`** (desk alias `--model opus-5.5`). Same stack + queue path as Opus. |
-| Sonnet 5.5 (author only if Chase named Sonnet 5.5) | Claude Sonnet 5.5 (`claude-sonnet-5-5`) via same wrapper | **`agent-human-stream --model claude-sonnet-5-5`** (desk alias `--model sonnet-5.5`; bare `sonnet` is the Claude CLI's own alias, not rewritten). Same stack + queue path as Opus. |
-| GPT-6 Sol (author only if Chase named GPT-6 Sol / Codex) | OpenAI GPT-6 Sol (`gpt-6-sol`, sume#8221) via Codex | **`agent-human-stream --model gpt-6-sol`** (auto → codex). |
-| Grok (**MQ land babysit / deploy / ops**; author only if Chase said Grok) | Grok Build CLI (`grok` on PATH) | **`agent-human-stream --backend grok`**. Do **not** use Cursor `Task` with `cursor-grok-*`. |
-| Composer (explore only) | Composer | Cursor `Task` with `composer-*` / `explore` |
-
-**MQ babysit is always Grok** after **Opus or Fable** enqueue. Do **not** leave
-Opus/Fable watching MQ draft CI / `main` tip / restack-while-merging unless
-Chase explicitly said that session owns land (`merge까지` / `landing까지`).
-
-### Worker reasoning effort (Chase lock 2026-08-24)
-
-Pass `--effort` from the **job lane**. Cursor rule:
-`~/.cursor/rules/worker-reasoning-effort.mdc`.
-
-| Lane | Opus | Fable | Grok |
-|------|------|-------|------|
-| **Code** (implement, PR, land, deploy, RCA that edits) | `medium` | `high` | `xhigh` |
-| **Research** (조사 / open-source scan / no code change) | `low` | `low` | `medium` |
-
-**Default research owner is Grok.** Most 조사 goes to
-`agent-human-stream --backend grok … --effort medium`. Opus/Fable research
-only when Chase names them — still `--effort low`.
-
-Claude Code CLI enum is `low|medium|high|xhigh|max` (Fable / Opus 4.7+).
-When Chase names **max** or **xhigh**, pass that string through —
-**do not** remap Fable `max` → `high`. Wrapper aliases: `maximum` → `max`,
-`mid` → `medium`, `x-high` → `xhigh`.
-
-Grok CLI enum is `xhigh|high|medium|low` (no `max` / `mid`). The wrapper
-maps `mid` → `medium` and `max`/`maximum` → `xhigh` (Grok ceiling).
-Codex has no `--effort` flag; the wrapper writes `-c model_reasoning_effort`
-(`none|minimal|low|medium|high|xhigh`, same alias mapping, default `high`).
-
-Wrapper default when `--effort` is omitted = **code lane** (Opus
-`medium`, Fable `high`, Grok `xhigh`, Codex `high`). Named `max` is not that default.
-Research **must** pass `--effort`. Mixed research-then-implement in one
-worker → code lane.
-
-**Default split (Chase lock, 2026-08-05 + 2026-09-06 + 2026-10-30):** The
-author (Opus, or Fable if named) owns PR authoring **through `origin/main`**
-(**fresh clone** → code → local green → `gh stack init` / `gh stack add` →
-**`gh stack submit --auto --open`** → **`cstack-gt-wait-merge`** queues the
-whole stack once `validate` is green — **never** `gh pr create` on
-`sume-com`) and stays until every layer is on `main`.
-
-### Opus transport — Claude Code CLI (required)
-
-When the main agent needs an **Opus** worker/subagent:
-
-1. Run **Claude Code CLI** on the local machine (`claude` on PATH). On the
-   Sume desk that binary is the **tokenmaxxing supervisor**
-   (`~/.config/tokenmaxxing/bin/claude`), which wraps npm
-   `@anthropic-ai/claude-code` and swaps Chase/dev Max accounts near quota.
-   Desk write-up: `chasehuh/cstack` → `docs/TOKENMAXXING.md`.
-   `tokenmaxxing doctor` must keep the supervisor ahead of the real CLI.
-   Do not set `ANTHROPIC_API_KEY` to bypass the pool.
-   Default local config already targets Opus
-   (`~/.claude/settings.json` → `"model": "opus[1m]"`, `"effortLevel": "medium"`).
-   `claude-human-stream` / `agent-human-stream --backend claude` injects
-   `--effort` when omitted: **Opus → medium**, **Fable → high**
-   (code lane). Named `--effort max` / `xhigh` pass through to Claude
-   Code (do not remap to `high`). Research → pass `--effort low`. See
-   § "Worker reasoning effort".
-2. Prefer the human-readable wrapper (stream-json under the hood, printable lines).
-   Canonical launcher: `agent-human-stream` (Claude + Grok Build).
-   Opus/Fable alias: `claude-human-stream` → `--backend claude`.
-   Path: `~/.agents/skills/sume-main-agent-orchestration/bin/agent-human-stream.sh`
-   PATH: `~/.local/bin/agent-human-stream` and `claude-human-stream`.
-   Optional: `--name <slug>` before the prompt (shown in Claude `/resume`
-   picker). **Required naming:** 2–4 kebab tokens that describe the *job*,
-   not just the issue number — see § "Worker slug naming" below. Pass extra
-   `claude` flags **after** the prompt if needed (e.g. `--model opus`).
-   On completion, parse only the `—— final ——` block for the user summary —
-   do not dump the whole progress log into main-agent context.
-   Also capture `📎 session_id=<uuid>` (printed early and again just above
-   `—— final ——`) so the session can be resumed later — same ergonomics as
-   Cursor `Task` `resume` + `agent_id`.
-   Do **not** expose bare `--output-format stream-json` to user-watched
-   terminals, and do not default long Opus workers to plain `--output-format text`.
-3. **Resume (shared):** to continue a prior Opus Claude session with a
-   follow-up prompt (not a fresh worker), use:
-   `claude-human-stream --resume <session_id> "<follow-up prompt>"`
-   or `CLAUDE_RESUME_SESSION=<uuid> claude-human-stream "<follow-up>"`.
-   Prefer explicit `--resume <uuid>` over `--continue` (continue = most
-   recent session in **this cwd** only — easy to grab the wrong one).
-   Use `--fork-session` with resume/continue when you want a new session id
-   that copies history (parallel branch) instead of appending to the original.
-   All backends accept `--resume <uuid> --fork-session`; `sume-bg-launch`
-   passes it through and leaves parent wrappers running.
-   Wrong cwd / project slug → Claude cannot find the session; resume from the
-   same working directory (or project) the original worker used.
-4. **Cursor-only launch + monitor** (see next subsection). Other harnesses:
-   background the process with that harness's native mechanism; do not poll.
-   Resume recipe above still applies whenever you shell out via the wrapper.
-5. Worker prompts stay in **English**; include context, constraints, and done
-   criteria exactly as for other workers.
-6. Do **not** route Opus work through Cursor `Task` / `claude-opus-5-thinking-high`
-   anymore — that burns Cursor-side Opus routing; Claude Code subscription is
-   the Opus path.
-
-### Agent human stream — Claude + Grok Build + Codex
-
-Canonical wrapper for **headless** Claude Code, **Grok Build** (`grok` CLI)
-and **Codex** (`codex exec --json`):
-
-```bash
-agent-human-stream --name <job-slug> "…" --model opus          # auto → claude
-agent-human-stream --backend grok --name <job-slug> "…"        # Grok Build
-agent-human-stream --backend codex --name <job-slug> "…"       # Codex (only if Chase named Codex)
-agent-human-stream --name <job-slug> "…" --model claude-opus-5-5   # Opus 5.5 (alias --model opus-5.5)
-agent-human-stream --name <job-slug> "…" --model claude-sonnet-5-5 # Sonnet 5.5 (alias --model sonnet-5.5)
-agent-human-stream --name <job-slug> "…" --model gpt-6-sol         # GPT-6 Sol (auto → codex)
-agent-human-stream --resume <uuid> "Follow-up …"               # backend from registry
-```
-
-- `claude-human-stream` stays the Opus/Fable command. It execs
-  `agent-human-stream --backend claude`. Do not break existing recipes.
-- `--backend auto` (default): `grok*` model → grok; `gpt-*`/`o3*`/`o4*`/`codex*`
-  → codex; opus/fable/sonnet/haiku → claude; `--resume` uses the last
-  `backend` recorded for that session.
-- Claude: `stream-json` + tokenmaxxing `claude`. Grok: `streaming-messages-json`
-  (`--permission-mode bypassPermissions --always-approve`). The formatter also
-  reads Grok native ACP `streaming-json`.
-- Codex: `codex exec --json --skip-git-repo-check
-  --dangerously-bypass-approvals-and-sandbox "<prompt>" </dev/null` via the
-  tokenmaxxing `codex` shim (**Codex pool**, separate from the Claude pool —
-  `docs/TOKENMAXXING.md` § Codex pool). Resume id = Codex `thread_id`;
-  `--resume <id>` → `codex exec resume <id> "…"`; `--continue` →
-  `resume --last`; `--resume <id> --fork-session` → `exec fork <id>`
-  (Codex requires an explicit id, not `--continue`). `--effort` → `-c
-  model_reasoning_effort="…"` (`mid` → medium, `max` → xhigh; omitted →
-  `high`). Claude-only `--verbose` / `--permission-mode` / `--output-format`
-  are dropped with a note. Account swaps apply on the next `codex` start.
-- Forks emit the new child `session_id`; registry `resume_from` records the
-  parent id. Grok passes `--resume` + `--fork-session` to its CLI; backend
-  errors propagate without falling back to resume.
-- Same live log dir (`~/.cstack/state/opus-live/`) and registry (`~/.cstack/state/opus-sessions.jsonl`)
-  with a `backend` field. Resume hint prints `agent-human-stream --backend …`.
-- **Land and explicit Grok author use this wrapper.** Do **not** launch
-  Cursor `Task` / `cursor-grok-*` for land babysit or Grok-authored trains.
-  Composer explore stays Cursor `Task`.
-
-### Grok transport — Grok Build CLI (required)
-
-When the main agent needs a **Grok** worker (default **land babysit**, or
-author only if Chase named Grok):
-
-1. Run **Grok Build** on the local machine (`grok` on PATH, currently
-   `~/.grok/bin/grok` via `~/.local/bin/grok`). Not Cursor `Task`.
-2. Launch with the same human-stream wrapper:
-   `agent-human-stream --backend grok --name <job-slug> "<prompt>"`
-   Extra `grok` flags go **after** the prompt (`--model grok-4.6`, `--effort`,
-   `--max-turns`, …). Omitted `--effort` → **`xhigh`** (code/land).
-   Research → **`--effort medium`**.
-3. **Cursor-only:** same monitor as Opus — Shell `block_until_ms: 0`,
-   `description`: `Grok : <job-slug> (#N)`, capture `📎 session_id=`, read
-   only `—— final ——`. Resume:
-   `agent-human-stream --backend grok --resume <uuid> "…"`.
-4. Prompt file: write it **in the same Shell** as the launch (heredoc).
-   Do **not** `Write` the file and `$(cat)` it from a parallel Shell — that
-   exits 2 (`missing prompt`) before Grok starts. Pass `--prompt-file`.
-   Same job slug stem as the Opus train when this is land babysit.
-5. Do **not** route Grok land/author through Cursor `Task` / `cursor-grok-*`.
-6. Steer / second `--resume`: use `sume-bg-launch` so the previous wrapper
-   on that uuid is stopped first (two `grok -p --resume` = empty live log).
-
-Copy-paste:
-
-```bash
-mkdir -p /tmp/sume-grok-prompts
-cat > /tmp/sume-grok-prompts/<job-slug>.md <<'EOF'
-# Grok Build: author #<issue> through origin/main
-Work in **English**.
-Issue: <url>
-Required skill: read ~/.agents/skills/sume-gt-mq/SKILL.md
-Stay until origin/main has (#N). Forbidden: HANDOFF: grok-land.
-EOF
-# Shell description: Grok : <job-slug> (#N)
-cd /path/to/repo && sume-bg-launch --backend grok --name <job-slug> \
-  --prompt-file /tmp/sume-grok-prompts/<job-slug>.md -- --effort xhigh
-```
-
-### Worker host — Mac Mini (`sume-bg-launch --host mini`, cstack#10)
-
-Chase lock 2026-09-13 (cstack#14): run `sume-bg-launch` (and thus
-`agent-human-stream`) workers and **ego-browser / dest shots on the Mini**.
-Mini has ego. Keep main chat, board, Slack, and Composer `Task` local.
-Full page: `chasehuh/cstack` → `docs/MINI-WORKER-HOST.md`.
-
-- `--host local|mini`; default = `CSTACK_WORKER_HOST` (laptop sets `mini`
-  once the Mini is configured). `--host local` is the escape hatch.
-- Host SoT: `CSTACK_MINI_SSH=<user@tailscale-name>`. Mini unreachable →
-  **exit 3, nothing runs locally** (fail closed, never a silent fallback).
-- Prompt: write locally → **scp** → Mini reads. Never prompt text or tokens
-  on ssh argv. The Mini has its own `gh` / `gt` / Claude / Grok / Codex logins.
-- The Mini worker is **detached** (`nohup` + own process group +
-  `caffeinate -i`). ssh is a control plane: `--jobs`, `--status <job>`,
-  `--attach <job>`, `--kill <job>`. Laptop sleep / lid / ssh drop ends only
-  the attach; the Job continues.
-- Mini **writes** its own `~/.cstack/state/opus-live` + `opus-sessions.jsonl`.
-  The laptop attach writes a **replica** `~/.cstack/state/opus-live/<job>.log`
-  (+ `LATEST.log`) and `host: "mini"` registry rows, so the smoke
-  (`📎 session_id=`), `tail -f LATEST.log`, and the completion notification
-  (`—— final ——`) keep working. Liveness truth = `--status` (Mini pid), never
-  the replica file. No bidirectional sync of state or `cstack-clone` trees.
-- **`--resume` is same-host only.** Local resume of a Mini session (or the
-  reverse) → exit 4 and the host is printed. Steer/kill of older wrappers
-  happens on the session's host.
-- Terminal title stays the local Shell `description`
-  (`Fable : <slug> (#N)`) even though the child is an ssh attach.
-- **Mini dest/ego is allowed.** When dest/prod browser verify is in scope,
-  stay until dest `/api/build` reports the land commit or a descendant SHA,
-  then use ego-browser (sumelabs, Auto; prod only if Chase authorized).
-  Post one Job issue comment with 2–4 shots + host/workspace/Auto/SHA/
-  pass-fail/thread URL. Final: `SHOTS: <comment URL>`; no URL ⇒ no `DEST: pass`.
-  Do not exit while dest builds or because a background dest-watch exists.
-  Recipe: [references/dest-verify-issue-shots.md](references/dest-verify-issue-shots.md).
-
-### Cursor-only — Opus / background-worker monitoring
-
-Applies only when the **main agent is Cursor**. Codex / Claude Code main
-agents: skip this whole subsection (but may still use the shared resume
-recipe in "Opus transport" above).
-
-Goal: Opus (and other long workers) stay visible to the user without turning
-main into a polling loop. Resume should feel like Cursor `Task` `resume`,
-and humans must be able to **watch live progress** (especially on resume).
-
-Cursor also installs a detailed always-apply cookbook at
-`~/.cursor/rules/opus-background-terminal.mdc` — keep that file in sync when
-this recipe changes. Active workers board policy lives at
-`~/.cursor/rules/active-workers-canvas.mdc` (see subsection below).
-Status board (lanes + confirm + 24h backlog):
-`~/.cursor/rules/status-board.mdc`. Chat reprint:
-`~/.cursor/rules/end-of-turn-worker-brief.mdc`.
-
-#### Copy-paste Cursor Shell recipe
-
-```bash
-# 1) Prompt file IN THIS SHELL (English). Do not Write + parallel $(cat).
-mkdir -p /tmp/sume-opus-prompts
-cat > /tmp/sume-opus-prompts/<job>.md <<'EOF'
-# Opus: …
-Work in **English**. Context, constraints, done criteria…
-EOF
-
-# 2) Background Shell: block_until_ms MUST be 0.
-#    Shell tool `description` (terminal title) REQUIRED:
-#      Opus : <job-slug> (#<issue>)
-#    Same string as Active workers board Job column. Resume/steer: identical.
-#    There is NO --cwd flag — cd first. Same cd path required for --resume.
-cd /path/to/repo && sume-bg-launch --backend claude --name <job-slug> \
-  --prompt-file /tmp/sume-opus-prompts/<job>.md
-
-# Resume / steer (kills older wrappers on this uuid first):
-# description = same "Opus : <job-slug> (#N)" as the live job
-cd /path/to/repo && sume-bg-launch --backend claude --name <job-slug> \
-  --resume <session_uuid> \
-  --prompt-file /tmp/sume-opus-prompts/<follow-up>.md
-```
-
-`<job-slug>` = § "Worker slug naming" (e.g. `format-uifix-pdp`, not `2000`).
-Terminal/board title = `Opus : <job-slug> (#N)` — see § "Worker slug naming".
-
-After spawn: **required one-shot** read of the terminal file. Alive =
-`📎 session_id=`. Dead = `exit_code` in ~1s (`missing prompt` / not found).
-Dead → fix and relaunch this turn; do not tell Chase it is up. Then
-**return control**. Do **not** poll.
-
-On Cursor **completion notification** for that Shell: read only
-`📎 session_id=` + `—— final ——`, brief user update, then run any standing
-follow-up already authorized (do not re-ask).
-
-#### Checklist
-
-1. **Launch:** Shell with `block_until_ms: 0` for `claude-human-stream`.
-   `--name` must be a descriptive job slug (§ "Worker slug naming"), e.g.
-   `--name format-uifix-pdp` — never issue-only like `--name 2000`.
-   Shell tool **`description`** (Cursor terminal title) must be
-   `Opus : <job-slug> (#<issue>)` — same string as the Active workers board
-   Job column. Grok Build Shell uses `Grok : <job-slug> (#N)`. Composer
-   `Task` uses `Explore : <job-slug>` the same way.
-2. **After spawn — make progress human-visible:** briefly tell the user what
-   started **and** where to watch. The wrapper tees the human stream to
-   `~/.cstack/state/opus-live/<stamp>-<name>.log`
-   and updates `…/opus-live/LATEST.log`. Always surface in chat:
-   - `session_id` (when printed)
-   - `live_log` path (wrapper stderr banner + registry `live_log` field)
-   - watch hint: `tail -f …/opus-live/LATEST.log`
-   As soon as the terminal shows `📎 session_id=<uuid>`, **remember that id**
-   in-thread (analogous to Task `agent_id`) for later "resume that Opus".
-   Then **return control** — continue other useful work or idle. Do **not**
-   `AwaitShell`-poll, do **not** write custom `sleep`/tail watchers, do **not**
-   block the user turn "just to watch." The live log is for **humans** (and
-   for a one-shot status peek when the user asks).
-3. **On completion notification:** that is the monitor. Open the finished
-   shell/task output, read `📎 session_id=…` (near the top and again above
-   `—— final ——`) plus only the `—— final ——` block (or the Task final
-   report), give the user a short status, and **immediately run any standing
-   follow-up** the user already authorized in this thread (e.g. "when the
-   mega-issue is filed, attach Grok → PR → merge"). Do not re-ask for that
-   permission. **Same turn:** refresh the Active workers Canvas (see
-   § "Cursor-only — Active workers Canvas" and
-   `~/.cursor/rules/active-workers-canvas.mdc`).
-4. **Resume that Opus:** when the user (or a standing follow-up) says to
-   continue the same Claude session — e.g. "resume the Opus that audited
-   #1708" — do **not** start a new `claude-human-stream` without `--resume`.
-   Launch background Shell again with:
-   `claude-human-stream --resume <session_id> --name <label> "<follow-up in English>"`
-   Same cwd as the original worker when possible. Again tell the user the
-   **new** `live_log` / `tail -f LATEST.log` path (each launch gets a fresh
-   live file; Claude session history is what resume continues).
-5. **User asks "how's it going?" / status:** one-shot `tail` of the live log
-   (or the background terminal file) — ~20–40 lines — and summarize. Do not
-   start a polling loop.
-6. **Recover a forgotten session_id** (in order):
-   - Finished terminal log: grep `📎 session_id=`
-   - Wrapper registry (prompt_head + cwd + live_log, no secrets):
-     `claude-human-stream --sessions`
-     or `~/.cstack/state/opus-sessions.jsonl`
-   - On-disk Claude transcripts under
-     `~/.claude/projects/<cwd-slug>/*.jsonl` — filename / `sessionId` field;
-     match by mtime + first user `prompt` text (e.g. rg `1708` / `Audit`).
-   - Weaker: `claude-human-stream --continue "…"` only if you are in the same
-     cwd and that session is still the most recent there.
-   - Interactive listing: `claude -r` (picker) or named sessions via `-n/--name`
-     (also visible in `/resume`). `--bg` / `claude agents --json` is for
-     background agents, not a full history of every `-p` print session.
-7. **Wait only when:** the user's next requested action is blocked on that
-   exact result, or the user explicitly says to wait / check now.
-8. **Bad patterns (forbidden):**
-   - Cursor `Task` + `claude-opus-*` for Opus work
-   - Cursor `Task` + `cursor-grok-*` for Grok land / Grok author
-   - Shell with default/long `block_until_ms` (job looks stuck / times out)
-   - `claude-human-stream --cwd …` (flag does not exist — `cd` first)
-   - inventing a second watcher / `AwaitShell` poll loop / `sleep` until done
-   - dumping the full Opus tool log into chat
-   - claiming completion before the notification / final block exists
-   - spawning a **new** Opus session when the user asked to resume an existing one
-   - hiding the `live_log` path so the human cannot watch a resume
-
-### Cursor-only — Status board
-
-Applies only when the **main agent is Cursor**. One board, three surfaces:
-
-- **Definition:** `~/.cursor/rules/status-board.mdc`
-- **Canvas:** `canvases/active-workers-board.canvas.tsx`
-  (`~/.cursor/rules/active-workers-canvas.mdc`)
-- **Chat:** self-contained **work report** + board reprint
-  (`~/.cursor/rules/end-of-turn-worker-brief.mdc`). Chase must
-  understand the turn without Slack.
-- **Slack:** `#coding-agents` (`~/.cursor/rules/slack-coding-agents.mdc`)
-  — team mirror only. **Chase lock 2026-09-08:** Slack MCP is **not**
-  every turn. Allowed only every **4–5 user turns**, or **~30 min**
-  since the last Slack write, or when Chase **asks**. Then one burst
-  (parents / one digest reply / lane reactions). Chat + canvas stay
-  every turn.
-
-Lanes: `지금` → **`스테이징`** → **`백로그`** (≥24h). Chase confirm =
-resolve (Job drops off chat/canvas; Slack gets the check). Never
-auto-resolve.
-
-`지금` rows must include **`진행`**: one-shot from the Job’s
-`opus-live` tail / last tool / in-progress todo (≤12 words, a noun).
-Not a poll. Do not print live Jobs as session_id-only. Definition:
-`status-board.mdc` § 진행 (Chase lock 2026-08-28).
-
-Refresh canvas the same turn the set changes. Link the `.canvas.tsx`
-path. Read `~/.cursor/skills-cursor/canvas/SKILL.md` before create/edit.
-One-shot reconcile — no poll loops.
-
-### Chase work loop — discuss → lock → mega-issue → author → main
-
-**Chase lock (2026-08):** Default product/engineering session shape when this
-chat is the Sume **main agent** talking to Chase.
-
-Cursor also installs a detailed always-apply cookbook at
-`~/.cursor/rules/sume-chase-work-loop.mdc` — keep that file in sync when this
-loop changes.
-
-#### Worker slug naming (Chase lock)
-
-When launching Opus (`--name`), Grok/Composer `Task` slug stems, or prompt
-filenames under `/tmp/sume-opus-prompts/`, use a **short kebab slug that says
-what the job is** — not the issue number alone.
-
-| Rule | Detail |
-|------|--------|
-| Shape | **2–4** lowercase kebab tokens (aim for **3**), ASCII `[a-z0-9-]+` |
-| Content | Area + intent + surface/outcome, e.g. `format-uifix-pdp`, `format-float-request`, `sched-rename-merge` |
-| Issue id | Optional **suffix** only: `format-uifix-pdp-2000` — never `2000` / `issue-2000` alone |
-| Prompt file | Same stem: `/tmp/sume-opus-prompts/format-uifix-pdp.md` |
-| Uniqueness | If two jobs share a stem, add a 4th token (`-merge`, `-smoke`) or the issue suffix |
-
-**Good:** `format-uifix-pdp`, `format-float-request`, `format-thumb-video`, `agent-completions-api`  
-**Bad:** `2000`, `issue-2000`, `opus`, `work`, `fix` (number/role alone — no area+intent)
-
-##### Terminal title = board Job (Chase lock 2026-08-07)
-
-Cursor’s “N Terminals Running” list shows the Shell tool **`description`**
-(terminal `title`), **not** `--name`. The Active workers board Job column
-must use the **same string** so Chase can map UI ↔ board without a lookup
-table.
-
-| Kind | Exact title |
-|------|-------------|
-| Opus Shell | `Opus : <job-slug> (#<issue>)` |
-| Opus, no issue yet | `Opus : <job-slug>` |
-| Grok Build Shell | `Grok : <job-slug> (#<issue>)` |
-| Composer explore | `Explore : <job-slug>` |
-
-Examples: `Opus : dashboard-ui-chrome (#2819)`,
-`Grok : dashboard-ui-chrome (#2819)`.
-
-**Forbidden:** prose titles (“Create arch mega-issue…”, “Relaunch dead…”),
-command-comment leaks that become `Cursor (# Reopen…)`. Resume/steer keeps
-the **identical** title as the live job.
-
-#### Roles in the loop
-
-| Who | Does |
-|-----|------|
-| **Chase (user)** | Product intent, locks, approvals ("그렇게 가자", merge 여부) |
-| **Main agent** (usually Cursor Grok) | Discuss in Chase’s language; survey code; draft/file issues; launch workers; status; never silently steal Opus’s implementation |
-| **Opus** (`claude-human-stream`) | BP when needed; implement in **fresh clone**; **`gh stack submit` → `cstack-gt-wait-merge` → stay until `origin/main` `(#N)`**. Never `gh pr create`. Never `HANDOFF: grok-land`. Never tell Chase 완료 before main tip. |
-| **Grok** (`agent-human-stream --backend grok`) | Author **only** if Chase named Grok. Same land-to-main path. Not the default queue babysit. |
-| **Composer** | Explore only |
-
-#### Canonical steps
-
-1. **Discuss** — Main clarifies goal with Chase (Korean in ↔ Korean out unless asked otherwise). Peek code/docs as needed; do not jump to a giant silent implement.
-2. **Lock** — Restate Chase locks in the issue / BP (nouns, defaults, non-goals, stage boundary: stop-at-MQ-enqueue vs Opus owns land). Uncertain items → "Needs verification", not invented product.
-3. **Mega-issue** — Prefer `/github-mega-issue` (or equivalent) so a context-free worker can execute. Clear/small: main may write the issue. Heavy/ambiguous design: Opus may draft the issue (Pipeline 1), then implement.
-4. **Opus handoff** — English prompt file → background `claude-human-stream` (`block_until_ms: 0`). Include issue URL, locks, GRAPHITE hard lock (author stays to main). See `opus-background-terminal.mdc`.
-5. **Brief user** — job slug (`--name`), `session_id`, issue/PR links. Do not
-   poll Opus.
-6. **On Opus completion** — Read `—— final ——` only. If they exited at enqueue, **resume the same session**. Do **not** launch Grok land. **Do not tell Chase 완료** until `origin/main` `(#N)`.
-7. **Close the loop** — Short status in Chase’s language. Say **완료** only after `origin/main` has `(#N)`. Leave residuals explicit (smoke, docs defer, etc.).
-
-#### Triggers (treat as this loop)
-
-- "mega-issue → opus", "/github-mega-issue", "BP → PR", "그렇게 가보자", "플로우 타자"
-- Product naming / defaults / API tone decisions that need a durable issue before code
-
-#### Anti-patterns
-
-- Main implements the full feature while Chase expected Opus
-- Opening PRs with no issue/locks when the ask was the mega-issue flow
-- Using MCP as a diagnostic substitute for `curl`/api.dev when Chase forbade it
-- Author STOP after queueing / `HANDOFF: grok-land`
-- Launching Grok land after queueing
-- Telling Chase 완료 on queueing or green PR checks
-
-### Pipeline 1 — heavy / ambiguous work
-
-Use when the task is difficult, ambiguous, cross-surface, or design-sensitive:
-incidents/RCA, product-direction changes, multi-surface refactors, risky
-migrations, "figure out why and design the fix" asks.
-
-1. **Opus 5** — design **and** implementation **through `origin/main`**
-   (**via Claude Code CLI**):
-   - investigate / RCA; write the GitHub mega-issue when needed
-     (`github-mega-issue` skill);
-   - when the change crosses a module boundary or adds an API / data
-     model, shape it first with `sume-architect` (usage → types → design
-     twice; rationale in the mega-issue or a Job issue comment). Before
-     `gh stack submit` on a risky diff, `sume-blast-radius` proves the one
-     safety fact by running code (`## Blast radius` in the PR body);
-   - then (same session) **`cstack-clone`** → code → local green →
-     **`gh stack init` / `gh stack add` → `gh stack submit --auto --open`**
-     (single or stack) → **`cstack-gt-wait-merge`** (waits for `validate`,
-     queues the whole stack) → **stay until `origin/main` `(#N)`**;
-   - **never** fall back to `gh pr create`; **never** `HANDOFF: grok-land`.
-2. Main agent does **not** launch a second land worker. Resume Opus if it
-   exited after queueing. Confirm land via `main` tip `(#N)`.
-
-### PR trains and GitHub stacks — default for *all* PR authoring
-
-Mechanics SoT: `~/.agents/skills/sume-gt-mq/SKILL.md` (queue/land) and
-sume-com `docs/operations/pr-stack-and-merge-queue.md`. Graphite (`gt`,
-the `merge-queue` label, Graphite's queue) is retired for `sume` since
-2026-10-30 (Chase, during Graphite's merge-queue outage). Authors stack with
-GitHub's `gh stack` and land through GitHub's merge queue (ruleset
-`main-merge-queue`, squash, one commit per PR).
-
-**One session builds the whole train.** Same mega-issue, B depends on A, or
-the same package path sequence → one stack in one fresh clone, every layer
-in the same session, one `gh stack submit`. Not "open A → babysit merge →
-resume for B".
-
-```text
-CLONE="$(cstack-clone <job-slug>)" && cd "$CLONE"
-gh stack init <branch-1> → commit → gh stack add <branch-2> → commit …
-gh stack submit --auto --open
-cstack-gt-wait-merge --rm <job-slug>   # validate green → whole stack queued
-→ author stays until origin/main has (#N) for every layer
-```
-
-- **Forbidden:** `gh pr create`, `gt`, the `merge-queue` label,
-  `gh pr merge --admin` / queue bypass without Chase's word for that PR,
-  `git worktree add` under a shared checkout (#2383).
-- **No prophylactic rebase.** `main` moved is not a reason; restack
-  (`gh stack sync`) only for a real conflict, review edits, or after a lower
-  layer lands.
-- **Queue behavior** (probe #17991–#17995): every layer gets its own
-  `merge_group` run (Typecheck and Format, Test 1–4, Build) built on the
-  layer below; a red layer leaves the queue with every layer above it,
-  and the layers below it still land.
-- **Proof of land:** `git log origin/main --oneline --fixed-strings --grep='(#N)'`
-  for every layer; PRs show `MERGED`.
-- Workflow file updates under `.github/workflows/` need a credential with
-  the `workflow` scope (SSH or refreshed `gh` token).
-
-#### Delegation checklist (paste the block from `GRAPHITE-HARD-LOCK.md`)
-
-- Job slug, issue URL, locks, stage boundary (author lands through main).
-- `Required skill: read ~/.agents/skills/sume-gt-mq/SKILL.md before gh stack submit.`
-- The STACKS hard-lock block (`~/.cstack/src/sume-desk/GRAPHITE-HARD-LOCK.md`).
-- Report GitHub PR URLs for every layer and the stack URL.
-
-### Pipeline 2 — clear / well-scoped work
-
-Use when the work is already clear: obvious bug fix, small feature, mechanical
-change, well-understood follow-up.
-
-Default still follows the same split when a PR is expected:
-
-1. **Named author** — implement → `gh stack submit` → `cstack-gt-wait-merge` →
-   **`origin/main` `(#N)`**.
-2. Tiny / mechanical one-file follow-ups may stay **Grok end-to-end**
-   when Chase named Grok (or the ask is noise). When unsure, prefer Opus
-   through main tip.
-
-### Hard model rules
-
-- **Opus workers run via `claude-human-stream`, not Cursor Task.** From a Cursor
-  main agent, never spawn Opus via `Task`/`claude-opus-*`; use the wrapper
-  (not bare `stream-json` / not plain `text` for long jobs).
-- **Grok workers run via `agent-human-stream --backend grok`, not Cursor Task.**
-  From a Cursor main agent, never spawn land/author Grok via `Task` /
-  `cursor-grok-*`. Composer explore stays `Task`.
-- **Opus owns PR authoring through `origin/main` by default** (design/RCA
-  when needed, then code through **fresh-clone `gh stack submit` →
-  `cstack-gt-wait-merge`**, then the queue runs until every layer is on
-  `main`).
-- **Grok owns post-land ops by default:** deploy/flag babysit, release
-  watches (watch only; tagging and Production approval are the release
-  agent's, `docs/RELEASE-LOCK.md`), and other mainly non-coding ops. If a
-  land needs a real code fix, either push a tiny fix **or** bounce
-  implementation back to Opus — do not silently start a parallel redesign.
-- **Composer is exploration-only.** Composer may be used only for read-only
-  codebase exploration / search / survey (e.g. `explore`-type subagents:
-  "where is X handled", "map this flow"). Composer must NOT write issues,
-  implement code, open/merge PRs, mutate ops state, or babysit releases.
-- When unsure whether a task is "heavy" or "clear", ask: would a context-free
-  implementer need a design document to avoid building the wrong thing? If
-  yes → Pipeline 1 (Opus designs, then Opus implements through main).
-  If tiny/mechanical → Pipeline 2 exception (Grok e2e OK).
-- The delegation prompt must state the model choice and the stage boundary
-  (e.g. "Opus: gh stack submit → cstack-gt-wait-merge → stay until main"
-  vs "Grok: deploy babysit → close issue").
-
-## Worker Status Checks
-
-When the user asks for status:
-
-1. Read active worker threads in parallel when possible.
-2. Group results by worker.
-3. Distinguish:
-   - `active`: currently running.
-   - `idle/completed`: worker final report exists. This is **not**
-     Chase 완료 unless `origin/main` has `(#N)`.
-   - `blocked`: needs user input or external access.
-   - `merged`: `origin/main` has `(#N)` and, if relevant, production
-     workflow status. Enqueue / green checks / “Your changes” ≠ merged.
-   - `bad state`: final report drifted, wrong task, or thread context mixed.
-4. State the next action for each worker.
-
-For **active** Jobs, also state **진행** (same rule as the status
-board): last real step, not “still running.”
-
-Keep user-facing status concise. Do not paste long worker logs unless requested.
-
-## Compacting Workers
-
-Ask a worker to compact when:
-
-- Its task is done and final report should be preserved.
-- Its context got long or mixed.
-- The main agent is about to reuse the thread for a new task.
-- The user explicitly says to compact finished workers.
-
-The compact prompt should say what to preserve and whether the worker should stay
-idle after compacting.
-
-## Linear Issues
-
-When the user asks to add work to Linear:
-
-- Use the Linear connector/skill directly from the main agent.
-- Read team, status, and assignee identifiers before creating/updating.
-- Create implementation-ready descriptions when the issue will seed future agents.
-- Put status and assignee exactly as requested when possible.
-
-## Browser verification — ego-browser TaskSpace (preferred) or Aside (Chase lock 2026-09-09; ego alt 2026-09-11 #7099)
-
-Every worker that ships user-visible product verifies in a real browser
-**after its own work**: locally first when not yet verified locally, then
-the same flow on dev after the dev deploy. Two allowed verifiers:
-
-1. **`ego-browser` TaskSpace (preferred).** Skill: `~/.agents/skills/ego-browser`
-   (one tree at `~/.local/share/ego/ego-skills`, symlinked into
-   `~/.cursor/skills`, `~/.claude/skills`, `~/.codex/skills`). Run
-   `ego-browser nodejs <<'EOF' … EOF` heredocs. One `taskSpace("<job>")` per
-   job, print `spaceId`, resume with `taskSpace(<id>)`. The space opens its
-   **own** tab (`p1`); never adopt or drive Chase’s live Chrome / Ego tab.
-   `page.snapshot()` → act with `@ref` / `loc=css:` / raw CSS → fresh
-   snapshot → `page.screenshot({ path })` for issue shots. `task.finish({ keep: [] })`
-   when done. Ego uses its own logged-in profile; do **not** import full
-   Chrome to pull customer cookies.
-2. **`aside repl`** (fallback when Ego is not installed / not logged in).
-   Rules in "Tabs + dest Auto" below.
-
-**Forbidden for verification:** bare Playwright, Cursor `browser_*` MCP,
-any other automation harness, and `aside exec` (that is task delegation,
-not deterministic verification).
-
-### Tabs + dest Auto (Chase lock 2026-09-09 late)
-
-Window targeting is **not** reliable. **Chase’s window is OK.** **The
-same tab as Chase is OK.** Do not hunt a spare OS window. Tab title
-changes are **optional**. If you rename at all, use **`[Agent]`** — never
-`[Astra]` / `[Opus]` / `[Fable]` / worker model names.
-
-**Dest compose model is Auto. Always.** The worker’s coding model (Astra
-implementing, Fable dest-retest, …) is **not** the Agents picker. Do
-**not** select GPT-6 Astra (or any pinned model) on
-`www.dev.sume.com` unless Chase explicitly locked a model-pin test.
-Default dest verify = **Sume Auto** so the **auto router** is what we
-prove. Picking Astra in the UI is a mistake.
-
-- `openTab(url)` in the current window **or** reuse Chase’s tab.
-- Do **not** `chrome.windows.create`. Do **not** `page.context().newPage()`
-  or `page.close()` (they leak memory).
-- Optional title only: `document.title = "[Agent] …"` — skip if noisy.
-
-- Read with `snapshot(page, { interactive: true })` first; take a fresh
-  snapshot after each action (refs invalidate). Click with the latest ref
-  only (`page.locator('<ref>').click()`). Return values via `console.log()`.
-
-Workspace / environment:
-
-- Dev (`www.dev.sume.com`) or prod (`www.sume.com`) verification runs under
-  the **sumelabs workspace only**. If the active workspace is not sumelabs,
-  **STOP** and switch before testing. Never verify dev/prod in customer
-  workspaces (e.g. mobidoo).
-- Do **not** confuse the Aside CLI account (`aside account list`, e.g. `u0`
-  `chase@sume.com`) with the Sume workspace or the browser profile.
-- Destructive verification (send / delete / pay / ops-setting changes)
-  needs Chase approval first.
-
-### Dest issue screenshots — HARD LOCK (Chase 2026-09-11, #7110)
-
-Chase checks work **on the GitHub issue**. After **any** browser verify on
-dest (`www.dev.sume.com`, sumelabs) or Chase-authorized prod
-(`www.sume.com`, sumelabs + chase@sume.com), the verify is **incomplete**
-until **one** `gh issue comment` on the Job’s issue carries **all**
-evidence: **2–4 screenshots** + host, workspace `sumelabs`, **Auto** (not
-Astra), `/api/build` or SHA, pass/fail, thread/URL (proved
-[#6860](https://github.com/sumelabs/sume/issues/6860#issuecomment-5602167174)).
-
-- Final report **must** include `SHOTS: <gh comment URL>`. No URL ⇒ do
-  **not** write `DEST: pass` and do **not** tell Chase dest is done.
-- When dest/prod browser verify is in scope, stay after `origin/main`
-  `(#N)` until dest `/api/build` reports the land commit or a descendant
-  SHA, then verify and post the comment. Mini ego is allowed (Chase
-  2026-09-13). Do **not** exit while dest builds or because a background
-  dest-watch exists; `Waiting on dest deploy poll` is not a final result.
-  Resume the same session if it exited early. `#7104` (exited mid-Vercel
-  wait) and `#7103` (landed, no shots) are the failure modes.
-- One comment per Job verify burst, not one per PNG. Not an exhaustive
-  tour. No secrets.
-- RCA / research / no-UI Jobs: no forced tour. If the worker **did** open
-  dest/prod to verify, the comment + shots rule still applies.
-- Chat report + board stay required; Slack is not the evidence store.
-
-Full recipe: `references/dest-verify-issue-shots.md` in this skill dir
-(also shipped from `chasehuh/cstack`
-`sume-desk/skills/sume-main-agent-orchestration/`). Ego trial proof +
-local inventory: `~/.sume/ops/ego-aside-alt.md` (#7099).
-
-## Safety Rules
-
-- Never delegate secrets. If env/log access is needed, instruct the worker to
-  sanitize output.
-- Do not let workers perform broad production mutations without explicit scoped
-  authorization.
-- Do not manually deploy `sume_so`; production rollout should follow repo rules.
-- Do not override user work in dirty worktrees.
-- If a worker thread produces a result for the wrong task, mark that thread as
-  mixed/bad state, compact it, and reassign the task to an idle worker.
-
-## Final Updates To User
-
-Summaries should answer:
-
-- What was delegated or completed.
-- Which worker owns it.
-- Current state and next action.
-- Any PR/Linear/thread links or IDs.
-
-Avoid pretending a worker completed a task when it only started, explored, or
-produced a mismatched final answer. Never relay dest/prod verify as done
-without the worker’s `SHOTS: <gh issue comment URL>` (#7110).
-
-## Harness Wiring
-
-All three harnesses read *this* file. Only the entry point differs.
-**Cursor-only** sections above are ignored when Codex or Claude Code is main.
-
-| Harness | Entry point | Mechanism |
-|---------|-------------|-----------|
-| Codex | `~/.codex/AGENTS.md` | "Sume Orchestration" section points here; skill dir symlinked into `~/.codex/skills/` |
-| Claude Code | `~/.claude/CLAUDE.md` | imports `~/.codex/AGENTS.md`; skill dir symlinked into `~/.claude/skills/` |
-| Cursor | Pointer rule(s) below | `alwaysApply` pointer only; skill dir symlinked into `~/.cursor/skills/` |
-
-### Cursor pointer locations
-
-1. **User-global (preferred):** `~/.cursor/rules/main-agent-orchestration.mdc`
-   — applies across projects when Cursor loads user-level `.cursor/rules`
-   (Agents Window / newer Cursor builds). Also keep a one-line **User Rules**
-   (Settings → Rules) pointer if a given Cursor build ignores that folder:
-   `Sume main-agent SoT: ~/.agents/skills/sume-main-agent-orchestration/SKILL.md (ignore Cursor-only sections unless main agent is Cursor).`
-2. **Per-repo fallback:** `<repo>/.cursor/rules/main-agent-orchestration.mdc`
-   — still required for Editor Agent when user-global rules are not loaded.
-
-Install or refresh pointers with:
-
-```bash
-# user-global + one or more repos
-~/.agents/skills/sume-main-agent-orchestration/install-cursor-rule.sh --user
-~/.agents/skills/sume-main-agent-orchestration/install-cursor-rule.sh <repo-path>...
-```
-
-The pointer template is `cursor-rule-template.mdc` in this directory. It must
-stay a pointer: role split, language, model routing, and monitoring policy
-belong in this SKILL.md only (never fork into the `.mdc`).
-
-To verify the wiring end to end:
-
-```bash
-~/.agents/skills/sume-main-agent-orchestration/check-wiring.sh
-```
+Research-only tasks say "research only; no code changes". Prod mutations
+name the exact authorized scope and require a dry run first.
+
+## Chase work loop
+
+Discuss (Chase's language) → lock nouns, defaults, non-goals, stage
+boundary → GitHub mega-issue (`github-mega-issue`) when a context-free
+worker needs it → Opus prompt → the worker lands through `origin/main` →
+short report in Chase's language. Triggers: "그렇게 가보자", "플로우 타자",
+"mega-issue → opus".
+
+- **Heavy / ambiguous** (RCA, cross-surface, risky migration): one Opus
+  session designs (`sume-architect` for a new API or data model,
+  `sume-blast-radius` before a risky submit) and implements through main.
+- **Clear / small**: one Opus session, implement → land.
+- **One train, one session:** dependent layers go in one stack, one
+  `gh stack submit`, not "land A, then resume for B".
+
+## Landing (sume-com)
+
+Mechanics: `~/.agents/skills/sume-gt-mq/SKILL.md`. Short version:
+`cstack-clone <slug>` → `gh stack init` / `gh stack add` →
+`gh stack submit --auto --open` → `cstack-gt-wait-merge --rm <slug>` → stay
+until every layer is on `origin/main`. Forbidden: `gh pr create`, `gt`, the
+`merge-queue` label, `gh pr merge --admin`, `git worktree add` under a
+shared checkout. Queue removal → fix → `gh stack sync` → helper again, same
+session.
+
+## Status checks
+
+When Chase asks for status: one-shot read of each live job (`--jobs`, then a
+`tail` of its replica log), grouped by job: `running` (with 진행 = last real
+step), `final report` (not 완료 unless main has `(#N)`), `blocked`,
+`landed`, `bad state`. Chat shows the live (`지금`) jobs only; finished work
+is in Slack `#coding-agents` (Chase lock 2026-10-17). No polling loops.
+
+## Slack `#coding-agents`
+
+Every worker posts its own Korean completion report (`docs/SLACK-REPORT.md`):
+a new ask is a **new channel message** `<short what> — \`Opus : <slug> (#N)\``
+with the report in that message (Chase lock 2026-10-13); a reply only for a
+second note on the same ask. The launcher appends this rule; do not paste it
+into prompts. A final block with `SLACK_TEXT:` means the worker could not
+post; the main agent posts that text as a new channel message.
+
+## Browser verification and dest evidence
+
+Workers that ship user-visible product verify in a real browser after their
+own work: locally first, then dev after the dev deploy. Use the
+`ego-browser` skill (own TaskSpace and tab; never drive Chase's live tab),
+or `aside repl` only when ego is unavailable. M5 ego is allowed.
+
+- Dev or prod under the **sumelabs** workspace only; compose model **Auto**.
+- Destructive steps (send, delete, pay, ops settings) need Chase first.
+- Hard lock (#7110): after any dest/prod verify, post **one** `gh issue
+  comment` on the Job issue with 2–4 screenshots + host, sumelabs, Auto,
+  deployed SHA, pass/fail, URL. Final report carries `SHOTS: <comment URL>`;
+  no URL ⇒ no `DEST: pass`. Stay until dest `/api/build` reports the land
+  SHA or a descendant; a background watch is not completion.
+- Recipe: [references/dest-verify-issue-shots.md](references/dest-verify-issue-shots.md).
+
+## Safety
+
+- Never put secrets in prompts (the launcher refuses prompts that look like
+  credentials) or in reports.
+- No broad production mutation without explicit, scoped authorization.
+- Do not override work in someone else's dirty checkout or clone.
+- Do not stop or restart other jobs' wrappers unless Chase asks.
+- A worker that answered the wrong task is `bad state`: say so and relaunch
+  with a corrected prompt.
+
+## Harness wiring
+
+| Harness | Entry point |
+|---|---|
+| Claude Code | `~/.claude/CLAUDE.md` imports `~/.codex/AGENTS.md`; skills in `~/.claude/skills/` |
+| Codex | `~/.codex/AGENTS.md` "Sume Orchestration" section; skills in `~/.codex/skills/` |
+
+`install.sh` writes those sections from `sume-desk/*-snippet.md` and links
+the skills. `check-wiring.sh` verifies the result.

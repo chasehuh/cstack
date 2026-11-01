@@ -30,7 +30,7 @@ if [ ! -d "$DESK/skills/sume-main-agent-orchestration" ]; then
   exit 1
 fi
 
-mkdir -p "$HOME/.cstack/state"
+mkdir -p "$HOME/.cstack/state" "$HOME/.cstack/state/prompts"
 # Machine SoT: prefer a real clone at ~/.cstack/src. Never ln -sfn a
 # directory onto itself (that replaces the clone with a broken symlink).
 CANON="$HOME/.cstack/src"
@@ -68,8 +68,8 @@ link_skill() {
     ln -sfn "$src" "$dest"
   fi
   echo "skill SoT: $dest → $src"
-  for harness in "$HOME/.cursor/skills" "$HOME/.claude/skills" \
-                 "$HOME/.codex/skills" "$HOME/.grok/skills"; do
+  for harness in "$HOME/.claude/skills" "$HOME/.codex/skills" \
+                 "$HOME/.cursor/skills"; do
     mkdir -p "$harness"
     ln -sfn "$src" "$harness/$name"
     echo "linked: $harness/$name"
@@ -96,9 +96,6 @@ if command -v rsync >/dev/null 2>&1; then
 else
   cp -a "$DESK/cursor-rules/user/." "$HOME/.cursor/rules/"
 fi
-if [ -x "$HOME/.agents/skills/sume-main-agent-orchestration/install-cursor-rule.sh" ]; then
-  "$HOME/.agents/skills/sume-main-agent-orchestration/install-cursor-rule.sh" --user
-fi
 
 if [ -n "$SUME_COM" ]; then
   echo "== sume-com repo rules → $SUME_COM =="
@@ -108,16 +105,6 @@ if [ -n "$SUME_COM" ]; then
   else
     cp -a "$DESK/cursor-rules/sume-com/." "$SUME_COM/.cursor/rules/"
   fi
-  # Refresh pointer copies that already live in the product checkout.
-  # sume-com is not SoT — these stay in sync with cstack when present.
-  for f in graphite-ci-ready.mdc sume-chase-work-loop.mdc \
-           opus-background-terminal.mdc main-agent-orchestration.mdc \
-           slack-coding-agents.mdc; do
-    if [ -f "$SUME_COM/.cursor/rules/$f" ] && [ -f "$DESK/cursor-rules/user/$f" ]; then
-      cp "$DESK/cursor-rules/user/$f" "$SUME_COM/.cursor/rules/$f"
-    fi
-  done
-  "$HOME/.agents/skills/sume-main-agent-orchestration/install-cursor-rule.sh" "$SUME_COM"
 fi
 
 echo "== host bins on PATH =="
@@ -191,34 +178,16 @@ append_entry "$HOME/.claude/CLAUDE.md" \
 append_entry "$HOME/.claude/CLAUDE.md" \
   "$ROOT/sume-desk/claude-author-snippet.md" \
   "## Sume author completion (always on)"
-append_entry "$HOME/.grok/AGENTS.md" \
-  "$ROOT/sume-desk/grok-agents-snippet.md" \
-  "sume-main-agent-orchestration/SKILL.md"
-# Worker-mode lock (sume#7839): a wrapper-started session is the worker and
-# must never spawn a nested worker. Codex + Grok entry points; Claude Code
-# inherits it through the ~/.codex/AGENTS.md import.
 append_entry "$HOME/.codex/AGENTS.md" \
-  "$ROOT/sume-desk/worker-mode-snippet.md" \
-  "## Sume worker mode (always on)"
-append_entry "$HOME/.grok/AGENTS.md" \
   "$ROOT/sume-desk/worker-mode-snippet.md" \
   "## Sume worker mode (always on)"
 append_entry "$HOME/.codex/AGENTS.md" \
   "$ROOT/sume-desk/code-comments-snippet.md" \
   "## Sume code comments (always on)"
-append_entry "$HOME/.grok/AGENTS.md" \
-  "$ROOT/sume-desk/code-comments-snippet.md" \
-  "## Sume code comments (always on)"
 append_entry "$HOME/.codex/AGENTS.md" \
   "$ROOT/sume-desk/feature-flags-snippet.md" \
   "## Sume feature flags (always on)"
-append_entry "$HOME/.grok/AGENTS.md" \
-  "$ROOT/sume-desk/feature-flags-snippet.md" \
-  "## Sume feature flags (always on)"
 append_entry "$HOME/.codex/AGENTS.md" \
-  "$ROOT/sume-desk/release-lock-snippet.md" \
-  "## Sume release lock (always on)"
-append_entry "$HOME/.grok/AGENTS.md" \
   "$ROOT/sume-desk/release-lock-snippet.md" \
   "## Sume release lock (always on)"
 
@@ -249,7 +218,7 @@ PY
 }
 refresh_section "$HOME/.codex/AGENTS.md" "$ROOT/sume-desk/codex-agents-snippet.md"
 refresh_section "$HOME/.claude/CLAUDE.md" "$ROOT/sume-desk/claude-author-snippet.md"
-refresh_section "$HOME/.grok/AGENTS.md" "$ROOT/sume-desk/grok-agents-snippet.md"
+refresh_section "$HOME/.codex/AGENTS.md" "$ROOT/sume-desk/worker-mode-snippet.md"
 
 # Existing snippets keep the old marker, so append the wait cook if missing.
 ensure_wait_hint() {
@@ -262,7 +231,45 @@ ensure_wait_hint() {
 }
 ensure_wait_hint "$HOME/.codex/AGENTS.md"
 ensure_wait_hint "$HOME/.claude/CLAUDE.md"
-ensure_wait_hint "$HOME/.grok/AGENTS.md"
+
+python3 - "$ROOT/sume-desk/hosts.env" "$HOME/.cstack/mini-ssh.env" <<'PY'
+import os, re, sys, time
+
+hosts, target = sys.argv[1], sys.argv[2]
+want = None
+with open(hosts, encoding="utf-8") as fh:
+    for line in fh:
+        m = re.match(r"\s*CSTACK_MINI_SSH_M5=(\S+)", line)
+        if m:
+            want = m.group(1).strip("'\"")
+if not want:
+    raise SystemExit(0)
+new_line = f"export CSTACK_MINI_SSH={want}\n"
+old = open(target, encoding="utf-8").read() if os.path.exists(target) else ""
+lines = old.splitlines(keepends=True)
+pat = re.compile(r"\s*(export\s+)?CSTACK_MINI_SSH=")
+out, seen = [], False
+for line in lines:
+    if pat.match(line):
+        if not seen:
+            out.append(new_line)
+            seen = True
+        continue
+    out.append(line if line.endswith("\n") else line + "\n")
+if not seen:
+    out.append(new_line)
+new = "".join(out)
+if new != old:
+    if old:
+        bak = f"{target}.bak.{time.strftime('%Y%m%dT%H%M%S')}"
+        with open(bak, "w", encoding="utf-8") as fh:
+            fh.write(old)
+        print(f"mini host: {target} → {want} (old file kept as {bak})")
+    else:
+        print(f"mini host: wrote {target} → {want}")
+    with open(target, "w", encoding="utf-8") as fh:
+        fh.write(new)
+PY
 
 if [ -x "$GTBIN/cstack-gt-wait-merge.test.sh" ]; then
   echo "== cstack-gt-wait-merge matcher =="
@@ -307,16 +314,16 @@ echo ""
 echo "Installed. SoT is chasehuh/cstack (this checkout), not a rsync fork."
 echo "pointer: ~/.cstack/src"
 echo "policy:  ~/.agents/skills/sume-main-agent-orchestration/SKILL.md"
-echo "gt:      ~/.agents/skills/sume-gt-mq/SKILL.md"
+echo "land:    ~/.agents/skills/sume-gt-mq/SKILL.md"
 echo "land:    cstack-gt-wait-merge  (after gh stack submit: validate green → GitHub merge queue)"
 echo "clone:   cstack-clone / cstack-clone-rm / cstack-mirror-sync"
 echo "state:   ~/.cstack/state/opus-live"
 echo "slack:   workers post one Korean report to #coding-agents at completion (opt out: --no-slack-report / CSTACK_SLACK_REPORT=0) — docs/SLACK-REPORT.md"
-echo "mini:    sume-bg-launch --host mini (CSTACK_WORKER_HOST / CSTACK_MINI_SSH) — docs/MINI-WORKER-HOST.md"
-echo "harness: Cursor + Claude Code + Codex + Grok Build (~/.grok/skills)"
+echo "mini:    sume-bg-launch --host mini = the M5 (sume-desk/hosts.env → ~/.cstack/mini-ssh.env) — docs/MINI-WORKER-HOST.md"
+echo "prompts: ~/.cstack/state/prompts (sume-bg-launch --prompt-dir)"
+echo "harness: Claude Code main agent + Opus workers on the M5 (Codex reads the same entry)"
 echo "LC:      ~/.agents/skills/mobidoo-live-commerce-update/SKILL.md"
 echo "eng:     sume-architect / sume-blast-radius / sume-principles / sume-automate-me (pstack-derived, docs/PSTACK.md)"
 echo "ste:     sume-ste (English technical docs only, docs/STE.md)"
 echo "Claude:  docs/TOKENMAXXING.md (tokenmaxxing pool, not a single login)"
-echo "Codex:   agent-human-stream --backend codex (tokenmaxxing Codex pool, same doc)"
 echo "Do not copy API keys / PEMs / tokenmaxxing accounts.json into this repo."

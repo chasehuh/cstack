@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Post a worker's completion report to Slack #coding-agents as ONE thread reply
+# Post a worker's completion report to Slack #coding-agents
 # (docs/SLACK-REPORT.md). Runs through the ego-browser Slack web client that
 # is signed in as Chase on desk Macs; there is no bot token on the desk.
 #
 #   cstack-slack-post --job <slug> --text-file <path> [--issue N] [--title "<short what>"] \
-#                     [--file <clip-or-image>]… [--lane Opus] [--dry-run]
+#                     [--file <clip-or-image>]… [--lane Opus] [--new-thread] [--dry-run]
 #
-# Thread: the newest #coding-agents parent that names the job slug, the
-# issue (#N), or starts with --title. None → a new parent
-# "<title> — `<Lane> : <slug> (#N)`", then the report as its first reply.
-# Files (10 at most) go on that same reply. --dry-run finds the thread and
-# posts nothing. Prints `SLACK: <permalink>` (exit 0) or
+# --new-thread (a new ask): ONE new channel message
+# "<title> — `<Lane> : <slug> (#N)`" with the report under it, files on it.
+# Without it (a second note on the same ask): a reply in the newest parent
+# that names the job slug, the issue (#N), or starts with --title.
+# --dry-run posts nothing. Prints `SLACK: <permalink>` (exit 0) or
 # `SLACK: not posted — <reason>` (exit 1; exit 2 for a bad text or argument).
 # The Slack token stays inside the page; it is never printed.
 set -euo pipefail
@@ -34,6 +34,7 @@ ISSUE=""
 TITLE=""
 LANE=""
 DRY_RUN=0
+NEW_THREAD=0
 FILES=()
 
 usage() { sed -n '2,15p' "$SOURCE" | sed 's/^# \{0,1\}//'; }
@@ -48,6 +49,7 @@ while [[ $# -gt 0 ]]; do
     --lane) LANE=${2:-}; shift 2 ;;
     --file) FILES+=("${2:-}"); shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
+    --new-thread) NEW_THREAD=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) bad "unknown option $1" ;;
   esac
@@ -89,14 +91,14 @@ command -v "$EGO" >/dev/null 2>&1 || { echo "SLACK: not posted — $EGO not on P
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 # The page script gets its config as a JSON literal (ego's node does not see this env).
-python3 - "$TMP/script.mjs" "$TEXT_FILE" "$JOB" "$ISSUE" "$TITLE" "$LANE" "$CHANNEL" "$TEAM" "$EXPECT_USER" "$DRY_RUN" "${ABS_FILES[@]+"${ABS_FILES[@]}"}" <<'PY'
+python3 - "$TMP/script.mjs" "$TEXT_FILE" "$JOB" "$ISSUE" "$TITLE" "$LANE" "$CHANNEL" "$TEAM" "$EXPECT_USER" "$DRY_RUN" "$NEW_THREAD" "${ABS_FILES[@]+"${ABS_FILES[@]}"}" <<'PY'
 import json, sys
-out, text_file, job, issue, title, lane, channel, team, user, dry, *files = sys.argv[1:]
+out, text_file, job, issue, title, lane, channel, team, user, dry, new_thread, *files = sys.argv[1:]
 cfg = {
     "text": open(text_file, encoding="utf-8").read().strip(),
     "job": job, "issue": issue, "title": title, "lane": lane,
     "channel": channel, "team": team, "user": user,
-    "dryRun": dry == "1", "files": files,
+    "dryRun": dry == "1", "newThread": new_thread == "1", "files": files,
 }
 js = r"""
 const cfg = __CFG__;
@@ -136,6 +138,7 @@ const r = await page.evaluate(async (cfg) => {
       (title && (t === title || t.startsWith(`${title} `)));
   };
   let thread = null;
+  if (!cfg.newThread) {
   let cursor = "";
   for (let i = 0; i < 3 && !thread; i++) {
     const h = await call("conversations.history", { channel: cfg.channel, limit: "200", ...(cursor ? { cursor } : {}) });
@@ -150,11 +153,44 @@ const r = await page.evaluate(async (cfg) => {
     const hit = (s.messages?.matches || []).find((m) => names(m.text));
     if (hit) thread = (hit.permalink || "").match(/thread_ts=([\d.]+)/)?.[1] || hit.ts;
   }
+  }
   const parentText = `${cfg.title || cfg.job} — \`${cfg.lane} : ${cfg.job}${cfg.issue ? ` (#${cfg.issue})` : ""}\``;
   const link = async (ts) => (await call("chat.getPermalink", { channel: cfg.channel, message_ts: ts })).permalink || null;
   if (cfg.dryRun) {
     return { ok: true, dryRun: true, user: me.user, thread: thread ? await link(thread) : null,
-             newParent: thread ? null : parentText, chars: cfg.text.length };
+             newParent: thread ? null : parentText, chars: cfg.text.length, newThread: cfg.newThread };
+  }
+  if (cfg.newThread) {
+    const text = `${parentText}\n${cfg.text}`;
+    const input = document.getElementById("cstack-slack-files");
+    const files = input ? [...input.files] : [];
+    if (!files.length) {
+      const p = await call("chat.postMessage", { channel: cfg.channel, text });
+      if (!p.ok) return { ok: false, error: `chat.postMessage: ${p.error}` };
+      return { ok: true, created: true, inParent: true, link: await link(p.ts) };
+    }
+    const ids = [];
+    for (const file of files) {
+      const u = await call("files.getUploadURLExternal", { filename: file.name, length: String(file.size) });
+      if (!u.ok) return { ok: false, error: `files.getUploadURLExternal: ${u.error}` };
+      const form = new FormData();
+      form.append("file", file);
+      const up = await fetch(u.upload_url, { method: "POST", body: form });
+      if (!up.ok) return { ok: false, error: `upload ${file.name}: HTTP ${up.status}` };
+      ids.push({ id: u.file_id, title: file.name });
+    }
+    const c = await call("files.completeUploadExternal", {
+      files: JSON.stringify(ids), channel_id: cfg.channel, initial_comment: text,
+    });
+    if (!c.ok) return { ok: false, error: `files.completeUploadExternal: ${c.error}` };
+    const want = new Set(ids.map((f) => f.id));
+    for (let i = 0; i < 10; i++) {
+      await new Promise((res) => setTimeout(res, 1500));
+      const h = await call("conversations.history", { channel: cfg.channel, limit: "20" });
+      const msg = (h.messages || []).find((m) => (m.files || []).some((f) => want.has(f.id)));
+      if (msg) return { ok: true, created: true, inParent: true, link: await link(msg.ts) };
+    }
+    return { ok: true, created: true, inParent: true, link: null, note: "files posted; message link not found yet" };
   }
   let created = false;
   if (!thread) {
@@ -215,6 +251,9 @@ if not r.get("ok"):
     print(f"SLACK: not posted — {r.get('error')}" + (f" (thread: {r['thread']})" if r.get("thread") else ""))
     sys.exit(1)
 if r.get("dryRun"):
+    if r.get("newThread"):
+        print(f"dry run ({chars} chars, signed in as {r.get('user')}): would post a new parent with the report: {r.get('newParent') or 'new parent'}")
+        sys.exit(0)
     where = r.get("thread") or f"new parent: {r.get('newParent')}"
     print(f"dry run ({chars} chars, signed in as {r.get('user')}): would reply in {where}")
     sys.exit(0)

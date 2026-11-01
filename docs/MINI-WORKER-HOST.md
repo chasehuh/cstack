@@ -1,211 +1,211 @@
 # Mac Mini worker host — `sume-bg-launch --host mini`
 
-One page for Chase. Locks: `chasehuh/cstack#10` (desk 2026-09-12),
-`chasehuh/cstack#14` (Mini ego + dest evidence, 2026-09-13).
+Locks: `chasehuh/cstack#10` (desk 2026-09-12), `chasehuh/cstack#14` (Mini
+ego + dest evidence, 2026-09-13), Chase 2026-10-08 (the M5 is the default
+Mini; the M4 only on Chase's word).
 
-The **subagent handoff** and **ego-browser / dest shots** can run on the
-Mini. Cursor main chat, canvas board, Slack burst, and Composer `Task` /
-explore stay on the laptop.
+Workers (Opus through `agent-human-stream`) and ego-browser / dest shots run
+on the **M5** Mac Mini. The main agent (Claude Code), Chase's chat and the
+prompt files stay on the laptop.
+
+## Hosts (single SoT: `sume-desk/hosts.env`)
+
+| Name | ssh target | Use |
+|---|---|---|
+| M5 | `CSTACK_MINI_SSH_M5` (`chasehuh@chases-mac-mini-m5`) | default: `--host mini` |
+| M4 | `CSTACK_MINI_SSH_M4` | only when Chase says M4: `--host m4` |
+
+`sume-bg-launch` resolves `--host mini` in this order: `CSTACK_MINI_SSH` in
+the environment, then `~/.cstack/mini-ssh.env`, then `hosts.env`
+`CSTACK_MINI_SSH_M5`. If that value is the M4, the launcher prints a note
+and uses the M5 instead. `install.sh` rewrites the `CSTACK_MINI_SSH` line of
+`~/.cstack/mini-ssh.env` from `hosts.env` (the old file is kept as
+`mini-ssh.env.bak.<stamp>`), so a laptop that sources that file follows the
+repo.
 
 ## What runs where
 
-| Piece | Laptop | Mini |
+| Piece | Laptop | M5 |
 | --- | --- | --- |
-| Cursor main chat / board / Slack | yes | never |
+| Main agent chat, prompts (`~/.cstack/state/prompts/`) | yes | — |
 | `sume-bg-launch` (control plane) | yes | — |
-| `agent-human-stream` worker (Claude / Grok / Codex) | `--host local` | `--host mini` (detached) |
+| `agent-human-stream` worker | `--host local` (escape hatch) | `--host mini` (detached) |
 | `~/.cstack/state/opus-live/`, `opus-sessions.jsonl` | **replica** (attach writes) | **writer** |
 | `cstack-clone` trees | own | own (never synced back; code SoT = `origin/main`) |
-| ego-browser / dest shots | yes | **allowed** (Chase 2026-09-13) |
-| `gh` / `gt` / Claude / Grok / Codex / Vercel / Railway logins | own | own (never passed over ssh) |
+| ego-browser / dest shots | yes | **allowed** |
+| `gh` / Claude / Vercel / Railway logins | own | own (never passed over ssh) |
 
 ## One-time setup
 
-**Mini**
+**M5**
 
 ```bash
-# same pack as the laptop; the launcher + sume-bg-remote come from this checkout
 git clone git@github.com:chasehuh/cstack.git ~/.cstack/src && ~/.cstack/src/install.sh
-# log in once, on the Mini itself: gh auth login, gt auth, tokenmaxxing init (claude/codex), grok
-# SSH workers read ~/.claude/.credentials.json, not the keychain: turn on the live file mirror
+# log in on the M5 itself: gh auth login, tokenmaxxing init
 ~/.cstack/src/sume-desk/tokenmaxxing/install-tokenmaxxing-desk.sh --mirror   # docs/TOKENMAXXING.md
-# Remote Login on (System Settings → General → Sharing) — key auth, no password
+# Remote Login on (System Settings → General → Sharing), key auth only
 ```
 
-The worker inherits the Mini's **zsh login PATH** (`sume-bg-remote` captures
+The worker inherits the M5's zsh login PATH (`sume-bg-remote` captures
 `$SHELL -lic 'echo $PATH'` and puts `~/.config/tokenmaxxing/bin` and
-`~/.local/bin` first). Put `brew`, `grok`, node on the login PATH there.
+`~/.local/bin` first).
 
-**Laptop** (`~/.zshrc`)
+**Laptop**: `~/.cstack/src/install.sh` (writes `~/.cstack/mini-ssh.env`),
+then in `~/.zshrc`:
 
 ```bash
-export CSTACK_MINI_SSH=chase@<mini-tailscale-name>   # Tailscale name, not only .local
-export CSTACK_WORKER_HOST=mini                        # default host once the Mini is configured
-# optional: export CSTACK_MINI_CWD=/Users/chase       # where new Mini jobs start (default $HOME there)
+source ~/.cstack/mini-ssh.env
+export CSTACK_WORKER_HOST=mini
 ```
 
 `ssh $CSTACK_MINI_SSH true` must work in BatchMode (key only). The launcher
 uses `ConnectTimeout=10` + `ServerAliveInterval=15`.
 
-## Launch (Cursor Shell recipe, unchanged title)
+## Launch
 
 ```bash
-# Shell tool: description = "Fable : <job-slug> (#N)"   ← stays the LOCAL Shell title
-#             block_until_ms = 0
-cat > /tmp/sume-opus-prompts/<job-slug>.md <<'EOF'
-…English prompt: issue URL + locks only. No tokens.…
+P="$(sume-bg-launch --prompt-dir)/<job-slug>.md"     # ~/.cstack/state/prompts/
+cat > "$P" <<'EOF'
+…English prompt: issue URL, facts, locks, done criteria. No tokens.…
 EOF
 sume-bg-launch --host mini --backend claude --name <job-slug> \
-  --prompt-file /tmp/sume-opus-prompts/<job-slug>.md -- --model fable --effort high
+  --prompt-file "$P" -- --model claude-opus-5-5 --effort high
 ```
 
-Other Claude picks go after `--` the same way: `--model claude-opus-5-5`
-(alias `opus-5.5`) or `--model claude-sonnet-5-5` (alias `sonnet-5.5`).
-With no `--model`, a Claude launch stays on the desk default (Opus).
+Prompts live in `~/.cstack/state/prompts/`: a `/tmp/sume-*-prompts` dir
+vanished mid-day on 2026-11-01 and the next launch failed with
+`--prompt-file not found`. A missing prompt file now prints the durable dir.
 
 What happens:
 
 1. `ssh mini sume-bg-remote prep` — reachability probe + job dir. Unreachable
-   → **exit 3, nothing runs locally** (fail closed). Escape hatch on purpose:
-   `--host local`.
-2. `scp` the prompt file → `~/.cstack/state/remote-jobs/<job>/prompt.md` on
-   the Mini. Prompt text is **never** on the ssh command line.
-3. `ssh mini sume-bg-remote start …` — starts
-   `caffeinate -i sume-bg-launch --host local …` under `nohup` in its **own
-   process group** and returns at once. sshd is not the parent.
-   `caffeinate -i` = the chosen idle-sleep guard: the Mini cannot idle-sleep
-   while any worker is alive; it releases when the worker exits.
-4. `ssh mini sume-bg-remote attach` streams the Mini's `worker.log` into the
-   local **replica** `~/.cstack/state/opus-live/<job>.log` (+ `LATEST.log`)
-   and appends `host: "mini"` rows to the local `opus-sessions.jsonl`
-   (`start` / `session` on `📎 session_id=` / `end` with `exit_code`).
-   The Cursor terminal shows the same lines, so the one-shot smoke
-   (`📎 session_id=`) and the completion notification (`—— final ——`) work
-   exactly as for local jobs.
+   → **exit 3, nothing runs locally** (fail closed). `--host local` is the
+   deliberate escape hatch.
+2. `scp` the prompt → `~/.cstack/state/remote-jobs/<job>/prompt.md` on the
+   M5. Prompt text is **never** on the ssh command line.
+3. `ssh mini sume-bg-remote start …` — starts `caffeinate -i sume-bg-launch
+   --host local …` under `nohup` in its **own process group** and returns at
+   once. It records `pid`, `pgid` and `pid_start` (the process start time).
+4. `ssh mini sume-bg-remote attach` streams the M5's `worker.log` into the
+   local replica `~/.cstack/state/opus-live/<job>.log` (+ `LATEST.log`) and
+   appends `host: "mini"` rows to the local `opus-sessions.jsonl`
+   (`start` / `session` / `end`).
 
-Laptop sleep, lid close, or ssh drop end **only the attach** (exit 255,
-registry row `attach-lost`). The Mini job keeps running.
+Laptop sleep, lid close or an ssh drop end **only the attach** (exit 255,
+registry row `attach-lost`). The job keeps running.
 
 ## Control plane
 
 ```bash
-sume-bg-launch --host mini --jobs                 # every Mini job: alive=yes|no pid exit_code
-sume-bg-launch --host mini --status <job>         # liveness truth = Mini pid, not the replica file
+sume-bg-launch --host mini --jobs                 # job=… alive=yes|no state=… pid exit_code
+sume-bg-launch --host mini --status <job>
 sume-bg-launch --host mini --attach <job>         # re-attach; rewrites the replica from line 1
-sume-bg-launch --host mini --kill <job>           # TERM → KILL the job's process group on the Mini
+sume-bg-launch --host mini --kill <job>           # TERM → KILL the job's process group
 ```
 
-`<job>` = `<utc-stamp>-<name>` printed as `job:` in the launcher banner and
-stored in the registry rows. The replica file can lag or stop when the
-laptop sleeps — **never** count a replica file as liveness; use `--status`.
+`state`:
 
-## Resume / steer — same host only
+| state | meaning |
+|---|---|
+| `running` | no `exit_code`, the pid is alive **and** still has the start time recorded in `pid_start` (jobs from before `pid_start`: its command line names the job) |
+| `exited` | `exit_code` written |
+| `lost` | no `exit_code`, pid gone (killed hard, or the M5 rebooted) |
+| `pid-reused` | the pid is alive but belongs to another process |
+
+A bare pid is not liveness: after the 2026-11-01 reboot, pids came back on
+other processes (`mini-plug-unlock` showed alive on macOS `mapssyncd`,
+`google-ko-sitelinks` on another job's wrapper), and `--kill` would have
+killed that process group. `--kill` now refuses a `pid-reused` job (exit 6)
+and touches nothing. Never count the replica file as liveness.
+
+## Resume / steer / fork — same host only
 
 ```bash
 sume-bg-launch --host mini --backend claude --name <job-slug> \
-  --resume <session_uuid> --prompt-file /tmp/sume-opus-prompts/<follow-up>.md
+  --resume <session_uuid> --prompt-file "$P"                    # steer
+sume-bg-launch --host mini --backend claude --name <new-slug> \
+  --resume <session_uuid> --fork-session --prompt-file "$P"     # fork
 ```
 
-- The launcher looks the `session_id` up in the local registry replica.
-  Mini session + `--host local` (or a local session + `--host mini`) →
-  **exit 4, prints the host**. Rows without a `host` field are local.
-- On the Mini, `sume-bg-launch --host local --resume` runs as usual, so
-  older wrappers holding that uuid are killed **on the Mini**, not here.
-- The Mini cwd of the original job is reused automatically (from the
-  registry). Unknown session → pass `--cwd <remote dir>`.
-- `--fork-session` passes through unchanged.
+- The launcher looks the session up in the local registry replica. A Mini
+  session with `--host local` (or the reverse) → **exit 4**, host printed.
+- **Steer:** before it starts the new job, `sume-bg-remote start` stops every
+  running M5 job that holds the session: the job whose `worker.log` printed
+  `📎 session_id=<uuid>`, or a non-fork job that resumed `<uuid>`. Their
+  `exit_code` becomes 143. On 2026-11-01 this did not happen: the old code
+  matched `pgrep -af` output, and on macOS `-a` means "include ancestors",
+  not "print arguments", so nothing ever matched and two wrappers ran on one
+  session. `sume-bg-launch --host local` now reads `ps -axo pid=,command=`
+  plus the registry's wrapper pid for the session.
+- **Fork** leaves the parent running.
+- The original job's M5 cwd is reused (from the registry). Unknown session →
+  `--cwd <remote dir>`.
+
+## Network on the M5
+
+The M5 shares 2.4 GHz Wi-Fi (~43 Mbps). Workers keep media probes to 4 at a
+time and use byte ranges: on 2026-11-01 one scan with 84 parallel ffprobes
+starved every other job's `git fetch` and a `gh stack submit` preflight
+(see `sume-gt-mq` playbook E).
 
 ## Dest / ego evidence (hard lock, Chase 2026-09-13)
 
-**Mini has ego; dest/ego verification is allowed on the Mini.** Proven by
-[Fable's Mini shots on #7259](https://github.com/sumelabs/sume/issues/7259#issuecomment-5651727580).
-Use the Mini's own logged-in ego-browser TaskSpace.
-
-When dest/prod browser verification is in scope, stay after main land until
-dest `/api/build` reports the land commit or a descendant SHA. Then verify
-with **sumelabs**, compose model **Auto** (not Astra), and post **one**
-`gh issue comment` on the Job issue with **2–4 screenshots** + host,
-workspace, Auto, deployed SHA, pass/fail, and thread/URL. Prod verification
-still needs Chase's explicit authorization.
-
-Final report must carry **`SHOTS: <comment URL>`**. No URL ⇒ no `DEST: pass`.
-Do not exit while dest builds or because a background dest-watch exists;
-`Waiting on dest deploy poll` is not a final result. Research / no-UI Jobs
-need no forced tour, but any dest/prod browser verify requires the evidence.
-The launcher reminds Mini workers of this requirement.
-
-Full recipe: [references/dest-verify-issue-shots.md](../sume-desk/skills/sume-main-agent-orchestration/references/dest-verify-issue-shots.md).
+Ego verification on the M5 is allowed. When dest/prod browser verification is
+in scope, stay after main land until dest `/api/build` reports the land
+commit or a descendant. Verify under **sumelabs** with compose model
+**Auto**, then post **one** `gh issue comment` with 2–4 screenshots + host,
+workspace, Auto, SHA, pass/fail, URL. Final report: `SHOTS: <comment URL>`;
+no URL ⇒ no `DEST: pass`. Prod needs Chase's explicit authorization.
+Recipe: [references/dest-verify-issue-shots.md](../sume-desk/skills/sume-main-agent-orchestration/references/dest-verify-issue-shots.md).
 
 ## Nested launches are refused (sume#7839)
 
-The "Astra disconnect" pattern: a Mini worker read the launcher flags quoted
-in its prompt (`--backend codex --model gpt-6-astra --host mini`, "Fresh
-worker", "Job title") plus the desk's "you are the main agent unless told
-otherwise" and decided it was the main agent. It ran `sume-bg-launch` itself:
+A worker that reads launcher flags quoted in its prompt can decide it is the
+main agent and start another worker; that child dies with the parent's turn
+or duplicates the job. Guards:
 
-- `--host local` from inside the worker → Codex's unified exec returned the
-  tool call early (`status: failed`, banner in stdout), the model reported
-  "Started …", the outer job exited rc=0 and Codex killed the tracked child
-  at turn end. The nested session has no `remote-jobs/` dir (its opus-live
-  stamp is not a job id → `--status` says unknown job).
-- `--host mini` from the Mini (ssh to itself) → a second, detached job on the
-  same clone; the outer job still exits rc=0 and the main agent relaunches.
-
-Guards now in place:
-
-- `agent-human-stream` exports `SUME_WORKER_SESSION=<name>` (plus the
-  existing `AGENT_HUMAN_STREAM_PID`); `sume-bg-remote run` exports
-  `SUME_BG_REMOTE_JOB=<job>`. Tool shells inherit them.
-- `sume-bg-launch` (launch only) and `agent-human-stream` exit **5** inside
-  such a session and tell the model it *is* the worker. `--status` /
-  `--jobs` / `--attach` / `--kill` still work. Override on purpose only:
-  `SUME_BG_ALLOW_NESTED=1`.
-- Every wrapper-launched prompt gets a `[sume worker session]` preamble;
-  `install.sh` appends "Sume worker mode (always on)" to `~/.codex/AGENTS.md`
-  and `~/.grok/AGENTS.md` (Claude Code inherits via the import).
-- Main-agent prompts: task only, no launcher flags in the body (SKILL.md
-  delegation checklist).
+- `agent-human-stream` exports `SUME_WORKER_SESSION`; `sume-bg-remote run`
+  exports `SUME_BG_REMOTE_JOB`. `sume-bg-launch` (launch only) and
+  `agent-human-stream` exit **5** inside such a session. Control-plane
+  actions still work. Override on purpose only: `SUME_BG_ALLOW_NESTED=1`.
+- Every wrapper-launched prompt gets the `[sume worker session]` preamble;
+  `~/.codex/AGENTS.md` carries "Sume worker mode (always on)".
+- Main-agent prompts: task only, no launcher flags in the body.
 
 ## Secrets
 
-- The Mini keeps its own logins. Nothing is forwarded (no agent forwarding,
-  no env, no tokens on argv).
-- Prompt files carry issue URLs and locks only. The launcher refuses a
-  prompt file that looks like it contains a credential (`ghp_…`,
-  `sk-ant-…`, `xox…`, `AKIA…`, private keys).
+The M5 keeps its own logins. Nothing is forwarded. The launcher refuses a
+prompt file that looks like a credential (`ghp_…`, `sk-ant-…`, `xox…`,
+`AKIA…`, private keys).
 
-## Files on the Mini
+## Files on the M5
 
 ```
 ~/.cstack/state/remote-jobs/<job>/
   prompt.md     scp'd prompt
-  job.env       backend / name / cwd / resume
+  job.env       backend / name / cwd / resume / fork
   pid pgid      detached process (own process group)
+  pid_start     start time of pid (ps lstart), the liveness check
   worker.log    wrapper stdout+stderr (what attach streams)
-  exit_code     written when the worker exits
-~/.cstack/state/opus-live/…        Mini's own live logs (writer)
-~/.cstack/state/opus-sessions.jsonl Mini's own registry (writer)
+  exit_code     written when the worker exits (143 when stopped)
+~/.cstack/state/opus-live/…          M5 live logs (writer)
+~/.cstack/state/opus-sessions.jsonl   M5 registry (writer)
 ```
 
-Do **not** iCloud / Syncthing / SSHFS any of these. One writer per file.
+One writer per file; do not sync these.
 
 ## Cron (no laptop)
 
-One named job on a schedule: `sume-cron-job --name <slug>` from the Mini's
-crontab calls `sume-bg-remote start` locally. See [MINI-CRON.md](MINI-CRON.md).
-
-## Non-goals
-
-Cursor IDE on the Mini, custom RPC / sockets, sharing dirty worktrees,
-changing sume-com stack / merge-queue policy.
+`sume-cron-job --name <slug>` from the M5 crontab calls `sume-bg-remote
+start` locally. See [MINI-CRON.md](MINI-CRON.md).
 
 ## Tests
 
 `sume-desk/skills/sume-main-agent-orchestration/bin/sume-bg-launch.test.sh`
 runs offline (fake `ssh` / `scp` against a temp HOME standing in for the
-Mini; fake wrapper). `install.sh` runs it. Covers: local regression, host
-env / validation, fail-closed unreachable, prompt secret guard, mini launch
-→ replica + registry, same-host resume, detached survival after attach
-death, `--status` / `--jobs` / `--attach` / `--kill`. Plus the nested-launch guard
-(exit 5 inside a worker session, control plane still allowed,
-`SUME_BG_ALLOW_NESTED=1` override) and the `SUME_BG_REMOTE_JOB` export.
+M5, fake wrapper); `install.sh` runs it. Covers local regression, host
+resolution (M5 default, stale M4 → M5, `--host m4`), fail-closed, the
+prompt secret guard, launch → replica + registry, same-host resume, detached
+survival, `--status` / `--jobs` / `--attach` / `--kill`, pid reuse (not
+alive, `--kill` refuses), the M5 steer stopping the older job (fork does
+not), the local steer, the prompt dir, and the nested-launch guard.

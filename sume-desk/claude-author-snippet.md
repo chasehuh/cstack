@@ -7,7 +7,7 @@ landed PR (replace N with the PR number), for every layer of a stack.
 Queueing is not done.
 Forbidden: `ScheduleWakeup`, Monitor, or a background poll/watcher **then
 exit** before that proof. Re-queue after a queue removal in the same session;
-do not STOP at enqueue or hand off land to Grok. This overrides older
+do not STOP at enqueue or hand off land to another worker. This overrides older
 STOP/handoff wording, regardless of the main-agent gate above.
 
 For sume-com, read `~/.agents/skills/sume-gt-mq/SKILL.md` and

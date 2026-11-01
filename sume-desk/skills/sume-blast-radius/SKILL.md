@@ -71,7 +71,7 @@ package).
 5. **Prove the one fact.** Write the script or test that runs the real code,
    run it, and paste what happened.
 6. **Big or wide change: get an independent second pass before you submit
-   the PR** (`gt submit` on sume-com). Give one angle to a read-only
+   the PR** (`gh stack submit` on sume-com). Give one angle to a read-only
    in-process subagent (Claude Code Agent or Explore) and fold its findings
    in. A worker never launches
    nested workers (sume#7839). If a cross-family pass still looks warranted,

@@ -12,7 +12,7 @@ WRAP="$ROOT/agent-human-stream.sh"
 LAUNCH="$ROOT/sume-bg-launch.sh"
 POST="$ROOT/cstack-slack-post.sh"
 TAIL="$ROOT/../references/slack-report-tail.md"
-TAIL_MARK='<!-- slack-report:tail v1 -->'
+TAIL_MARK='<!-- slack-report:tail v2 -->'
 STEER_MARK='[slack-report] Steer turn'
 
 T=$(mktemp -d)
@@ -43,7 +43,7 @@ printf 'Fix the thing (#42).\n' >"$T/p.md"
 
 # 1) tail file: one source, both sections, the desk rules.
 grep -qF "$TAIL_MARK" "$TAIL" || fail "tail marker missing in $TAIL"
-grep -qF '<!-- slack-report:steer v1 -->' "$TAIL" || fail "steer marker missing"
+grep -qF '<!-- slack-report:steer v2 -->' "$TAIL" || fail "steer marker missing"
 for want in C0A9L7AU5HS '600 characters' 'SLACK_TEXT:' 'session limit' 'secrets' 'LANDED: yes|no' 'cstack-slack-post' '{{JOB}}' '{{LANE}}'; do
   grep -qF -- "$want" "$TAIL" || fail "tail lacks: $want"
 done
@@ -159,6 +159,13 @@ out=$(CSTACK_SLACK_EGO="$T/fake-ego" FAKE_EGO_SCRIPT="$T/script2.mjs" \
   "$POST" --job demo-job --text-file "$T/ok.txt"); rc=$?
 set -e
 [[ $rc -eq 1 && "$out" == "SLACK: not posted — Slack web client is signed in as bob, not chase" ]] || fail "failure line: $out (rc=$rc)"
+grep -qF '"newThread": false' "$T/script.mjs" || fail "default post must not be a new thread"
+out=$(CSTACK_SLACK_EGO="$T/fake-ego" FAKE_EGO_SCRIPT="$T/script3.mjs" \
+  FAKE_EGO_RESULT='{"ok":true,"created":true,"inParent":true,"link":"https://example.slack.com/p3"}' \
+  "$POST" --job demo-job --title "데모" --text-file "$T/ok.txt" --new-thread)
+[[ "$out" == *"SLACK: https://example.slack.com/p3"* ]] || fail "new-thread success line: $out"
+grep -qF '"newThread": true' "$T/script3.mjs" || fail "--new-thread not passed to the page script"
+grep -qF 'cfg.newThread' "$T/script3.mjs" || fail "page script has no new-thread branch"
 pass "cstack-slack-post guards and result lines"
 
 echo "slack-report tests: all ok"
