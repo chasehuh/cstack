@@ -12,8 +12,9 @@ WRAP="$ROOT/agent-human-stream.sh"
 LAUNCH="$ROOT/sume-bg-launch.sh"
 POST="$ROOT/cstack-slack-post.sh"
 TAIL="$ROOT/../references/slack-report-tail.md"
-TAIL_MARK='<!-- slack-report:tail v2 -->'
-STEER_MARK='[slack-report] Steer turn'
+TAIL_MARK='<!-- slack-report:tail v3 -->'
+STEER_MARK='[slack-report] New instruction'
+SAME_MARK='[slack-report] Same ask, continued'
 
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
@@ -43,7 +44,8 @@ printf 'Fix the thing (#42).\n' >"$T/p.md"
 
 # 1) tail file: one source, both sections, the desk rules.
 grep -qF "$TAIL_MARK" "$TAIL" || fail "tail marker missing in $TAIL"
-grep -qF '<!-- slack-report:steer v2 -->' "$TAIL" || fail "steer marker missing"
+grep -qF '<!-- slack-report:steer v3 -->' "$TAIL" || fail "steer marker missing"
+grep -qF '<!-- slack-report:same-thread v3 -->' "$TAIL" || fail "same-thread marker missing"
 for want in C0A9L7AU5HS '600 characters' 'SLACK_TEXT:' 'session limit' 'secrets' 'LANDED: yes|no' 'cstack-slack-post' '{{JOB}}' '{{LANE}}'; do
   grep -qF -- "$want" "$TAIL" || fail "tail lacks: $want"
 done
@@ -57,6 +59,8 @@ grep -qF '`Fable : demo-job (#N)`' "$T/a.txt" || fail "lane/job not substituted"
 ! grep -qF '{{' "$T/a.txt" || fail "placeholder left"
 grep -q 'slack-report: tail appended' "$T/a.err" || fail "stderr note missing"
 [[ $(count "$STEER_MARK" "$T/a.txt") -eq 0 ]] || fail "fresh launch must not get the steer line"
+[[ $(count "$SAME_MARK" "$T/a.txt") -eq 0 ]] || fail "fresh launch must not get the same-thread line"
+grep -qF 'new top-level message' "$T/a.txt" || fail "fresh tail must say new top-level message"
 awk -v m="$TAIL_MARK" 'index($0,"Fix the thing"){t=NR} index($0,m){k=NR} END{exit !(t && k && t<k)}' "$T/a.txt" || fail "tail must follow the task"
 "$WRAP" --print-prompt --backend grok --name inline-job "Inline task text" >"$T/b.txt" 2>/dev/null
 [[ $(count "$TAIL_MARK" "$T/b.txt") -eq 1 ]] || fail "inline: tail count != 1"
@@ -81,6 +85,9 @@ pass "opt-outs (flag, env, marker) and idempotence"
 "$WRAP" --print-prompt --resume deadbeef --name demo-job --prompt-file "$T/p.md" >"$T/g.txt" 2>/dev/null
 [[ $(count "$TAIL_MARK" "$T/g.txt") -eq 0 ]] || fail "resume got the full tail"
 [[ $(count "$STEER_MARK on job \"demo-job\"" "$T/g.txt") -eq 1 ]] || fail "resume lacks the steer line"
+[[ $(count "$SAME_MARK" "$T/g.txt") -eq 0 ]] || fail "default resume must not get the same-thread line"
+grep -qF 'new top-level message' "$T/g.txt" || fail "resume steer must say new top-level message"
+! grep -qF -- '--same-thread' "$T/g.txt" || fail "default resume must not tell the worker to use --same-thread"
 "$WRAP" --print-prompt --resume deadbeef --fork-session --name fork-job --prompt-file "$T/p.md" >"$T/h.txt" 2>/dev/null
 [[ $(count "$TAIL_MARK" "$T/h.txt") -eq 1 ]] || fail "fork must get the full tail"
 [[ $(count "$STEER_MARK" "$T/h.txt") -eq 0 ]] || fail "fork must not get the steer line"
@@ -89,6 +96,34 @@ pass "opt-outs (flag, env, marker) and idempotence"
 CSTACK_SLACK_REPORT=0 "$WRAP" --print-prompt --resume deadbeef --name demo-job --prompt-file "$T/p.md" >"$T/j.txt" 2>/dev/null
 [[ $(count 'slack-report' "$T/j.txt") -eq 0 ]] || fail "opt-out must also drop the steer line"
 pass "resume steer / fork tail / continue steer"
+
+# 4b) --same-thread (flag or prompt marker) on a resume = reply in the job's thread; a fork ignores it.
+"$WRAP" --print-prompt --resume deadbeef --same-thread --name demo-job --prompt-file "$T/p.md" >"$T/st1.txt" 2>"$T/st1.err"
+[[ $(count "$SAME_MARK on job \"demo-job\"" "$T/st1.txt") -eq 1 ]] || fail "--same-thread resume lacks the same-thread line"
+[[ $(count "$STEER_MARK" "$T/st1.txt") -eq 0 ]] || fail "--same-thread resume must not get the new-thread steer line"
+grep -qF -- 'cstack-slack-post --job demo-job --text-file <file> --same-thread' "$T/st1.txt" || fail "same-thread line must name --same-thread"
+grep -q 'slack-report: same-thread steer appended' "$T/st1.err" || fail "same-thread stderr note missing"
+printf 'Poke: keep going. <!-- slack-report:same-thread -->\n' >"$T/poke.md"
+"$WRAP" --print-prompt --resume deadbeef --name demo-job --prompt-file "$T/poke.md" >"$T/st2.txt" 2>/dev/null
+[[ $(count "$SAME_MARK" "$T/st2.txt") -eq 1 ]] || fail "prompt marker must pick the same-thread line"
+"$WRAP" --print-prompt --resume deadbeef --fork-session --same-thread --name fork-job --prompt-file "$T/p.md" >"$T/st3.txt" 2>/dev/null
+[[ $(count "$TAIL_MARK" "$T/st3.txt") -eq 1 && $(count "$SAME_MARK" "$T/st3.txt") -eq 0 ]] || fail "a fork is a new job: full tail, no same-thread line"
+pass "--same-thread flag / marker on a resume; fork ignores it"
+
+# 4c) a DM request never replaces the channel report: tail and both steer lines carry the rule,
+#     and a prompt that asks for "DM only" still gets the tail.
+for f in "$T/a.txt" "$T/g.txt" "$T/st1.txt"; do
+  grep -qF 'still post' "$f" || fail "DM rule missing in $(basename "$f")"
+done
+grep -qF 'DM only' "$T/a.txt" || fail "tail must name the DM-only case"
+grep -qF 'Amounts' "$T/a.txt" || fail "tail must allow amounts in the channel"
+printf 'Send the refund total to Chase by DM only, not in the channel.\n' >"$T/dm.md"
+"$WRAP" --print-prompt --name dm-job --prompt-file "$T/dm.md" >"$T/dm.txt" 2>"$T/dm.err"
+[[ $(count "$TAIL_MARK" "$T/dm.txt") -eq 1 ]] || fail "a DM-only prompt must still get the tail"
+grep -q 'slack-report: tail appended' "$T/dm.err" || fail "DM-only prompt turned the report off"
+"$WRAP" --print-prompt --resume deadbeef --name dm-job --prompt-file "$T/dm.md" >"$T/dm2.txt" 2>/dev/null
+[[ $(count "$STEER_MARK" "$T/dm2.txt") -eq 1 ]] || fail "a DM-only steer must still get the steer line"
+pass "DM is extra delivery; the channel report stays"
 
 # 5) real launches reach every backend with the tail (not just the dry run).
 for b in claude grok codex; do
@@ -125,7 +160,13 @@ FAKE_ARGV="$T/w1.txt" SUME_BG_LAUNCH_WRAPPER="$T/fake-wrapper.sh" "$LAUNCH" --ho
 grep -qx -- '--no-slack-report' "$T/w1.txt" || fail "wrapper argv lacks --no-slack-report"
 FAKE_ARGV="$T/w2.txt" SUME_BG_LAUNCH_WRAPPER="$T/fake-wrapper.sh" "$LAUNCH" --host local --backend grok --name w --prompt-file "$T/p.md" >/dev/null 2>&1
 ! grep -qx -- '--no-slack-report' "$T/w2.txt" || fail "default launch must not opt out"
-pass "launcher forwards the opt-out"
+FAKE_ARGV="$T/w3.txt" SUME_BG_LAUNCH_WRAPPER="$T/fake-wrapper.sh" "$LAUNCH" --host local --backend claude --name w --resume deadbeef-0000-4000-8000-000000000001 --same-thread --prompt-file "$T/p.md" >/dev/null 2>&1
+grep -qx -- '--same-thread' "$T/w3.txt" || fail "wrapper argv lacks --same-thread"
+! grep -qx -- '--same-thread' "$T/w2.txt" || fail "default launch must not pass --same-thread"
+SUME_BG_LAUNCH_WRAPPER="$WRAP" "$LAUNCH" --print-prompt --backend claude --name dry-job --resume deadbeef --same-thread --prompt-file "$T/p.md" >"$T/n2.txt" 2>/dev/null
+[[ $(count "$SAME_MARK" "$T/n2.txt") -eq 1 ]] || fail "launcher --print-prompt --same-thread lacks the same-thread line"
+"$LAUNCH" --help | grep -q -- '--same-thread' || fail "--help lacks --same-thread"
+pass "launcher forwards the opt-out and --same-thread"
 
 # 8) cstack-slack-post: refuses long / secret text, reports ego results.
 python3 -c 'print("가" * 601)' >"$T/long.txt"
@@ -159,13 +200,18 @@ out=$(CSTACK_SLACK_EGO="$T/fake-ego" FAKE_EGO_SCRIPT="$T/script2.mjs" \
   "$POST" --job demo-job --text-file "$T/ok.txt"); rc=$?
 set -e
 [[ $rc -eq 1 && "$out" == "SLACK: not posted — Slack web client is signed in as bob, not chase" ]] || fail "failure line: $out (rc=$rc)"
-grep -qF '"newThread": false' "$T/script.mjs" || fail "default post must not be a new thread"
+grep -qF '"newThread": true' "$T/script.mjs" || fail "default post must be a new top-level message"
 out=$(CSTACK_SLACK_EGO="$T/fake-ego" FAKE_EGO_SCRIPT="$T/script3.mjs" \
   FAKE_EGO_RESULT='{"ok":true,"created":true,"inParent":true,"link":"https://example.slack.com/p3"}' \
   "$POST" --job demo-job --title "데모" --text-file "$T/ok.txt" --new-thread)
 [[ "$out" == *"SLACK: https://example.slack.com/p3"* ]] || fail "new-thread success line: $out"
 grep -qF '"newThread": true' "$T/script3.mjs" || fail "--new-thread not passed to the page script"
 grep -qF 'cfg.newThread' "$T/script3.mjs" || fail "page script has no new-thread branch"
+out=$(CSTACK_SLACK_EGO="$T/fake-ego" FAKE_EGO_SCRIPT="$T/script4.mjs" \
+  FAKE_EGO_RESULT='{"ok":true,"created":false,"link":"https://example.slack.com/p4"}' \
+  "$POST" --job demo-job --text-file "$T/ok.txt" --same-thread)
+[[ "$out" == "SLACK: https://example.slack.com/p4" ]] || fail "same-thread success line: $out"
+grep -qF '"newThread": false' "$T/script4.mjs" || fail "--same-thread must reply in the job thread"
 pass "cstack-slack-post guards and result lines"
 
 echo "slack-report tests: all ok"

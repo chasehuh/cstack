@@ -311,6 +311,16 @@ grep -q 'sume-bg-remote start .*--no-slack-report' "$FAKE_SSH_LOG" || fail "star
 ! grep -qx -- '--no-slack-report' "$MINI/remote-argv.txt" || fail "default Mini launch must not opt out"
 pass "slack-report opt-out reaches the Mini"
 
+# 12b) --same-thread crosses ssh as a flag and lands in job.env + wrapper argv; default stays off.
+FAKE_WRAPPER_ARGV="$MINI/remote-argv-same.txt" \
+  "$LAUNCH" --host mini --backend claude --name mini-job --resume "$SID" --same-thread --prompt-file "$PROMPT" >/dev/null 2>"$T/err12b.txt"
+JOB12B=$(sed -n 's/.*job: \([^ ]*\).*/\1/p' "$T/err12b.txt" | head -n 1)
+grep -q '^SAME_THREAD=1$' "$MINI/.cstack/state/remote-jobs/$JOB12B/job.env" || fail "Mini job.env lacks SAME_THREAD=1"
+grep -qx -- '--same-thread' "$MINI/remote-argv-same.txt" || fail "--same-thread did not reach the Mini wrapper"
+grep -q '^SAME_THREAD=0$' "$MINI/.cstack/state/remote-jobs/$JOB/job.env" || fail "default Mini job must record SAME_THREAD=0"
+! grep -qx -- '--same-thread' "$MINI/remote-argv-resume.txt" || fail "default Mini resume must not pass --same-thread"
+pass "--same-thread reaches the Mini"
+
 # 13) host SoT: env > ~/.cstack/mini-ssh.env > hosts.env M5; a stale M4 value
 #     under --host mini goes to the M5; --host m4 reaches the M4 on purpose.
 last_host() { tail -n 1 "$FAKE_SSH_LOG.hosts"; }

@@ -86,7 +86,9 @@ wrapper still has `--backend grok|codex`; the desk does not use them now.
 
 **Completion report (default on):** the wrapper appends the slack-report
 tail (forks and fresh jobs get the full tail, steers a one-line reminder,
-`sume-cron-job` none). Opt out: `--no-slack-report`, `CSTACK_SLACK_REPORT=0`,
+`sume-cron-job` none). Every report is a new top-level message, steers
+included; `--same-thread` makes a poke reply in the job's thread. A DM
+request adds a DM and never replaces the channel report. Opt out: `--no-slack-report`, `CSTACK_SLACK_REPORT=0`,
 or `<!-- slack-report:off -->`. Dry run: `sume-bg-launch --print-prompt …`.
 
 ## Stacks and the merge queue (sume-com only)

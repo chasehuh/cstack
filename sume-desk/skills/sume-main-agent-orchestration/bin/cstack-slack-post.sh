@@ -4,12 +4,13 @@
 # is signed in as Chase on desk Macs; there is no bot token on the desk.
 #
 #   cstack-slack-post --job <slug> --text-file <path> [--issue N] [--title "<short what>"] \
-#                     [--file <clip-or-image>]… [--lane Opus] [--new-thread] [--dry-run]
+#                     [--file <clip-or-image>]… [--lane Opus] [--same-thread] [--dry-run]
 #
-# --new-thread (a new ask): ONE new channel message
+# Default (every launch, resume and steer): ONE new top-level message
 # "<title> — `<Lane> : <slug> (#N)`" with the report under it, files on it.
-# Without it (a second note on the same ask): a reply in the newest parent
-# that names the job slug, the issue (#N), or starts with --title.
+# --same-thread (only when the prompt says so: a poke, restart or effort
+# change): a reply in the newest parent that names the job slug, the
+# issue (#N), or starts with --title. --new-thread is the default, kept as a no-op.
 # --dry-run posts nothing. Prints `SLACK: <permalink>` (exit 0) or
 # `SLACK: not posted — <reason>` (exit 1; exit 2 for a bad text or argument).
 # The Slack token stays inside the page; it is never printed.
@@ -34,10 +35,10 @@ ISSUE=""
 TITLE=""
 LANE=""
 DRY_RUN=0
-NEW_THREAD=0
+NEW_THREAD=1
 FILES=()
 
-usage() { sed -n '2,15p' "$SOURCE" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,16p' "$SOURCE" | sed 's/^# \{0,1\}//'; }
 bad() { echo "SLACK: not posted — $*" >&2; exit 2; }
 
 while [[ $# -gt 0 ]]; do
@@ -50,6 +51,7 @@ while [[ $# -gt 0 ]]; do
     --file) FILES+=("${2:-}"); shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
     --new-thread) NEW_THREAD=1; shift ;;
+    --same-thread) NEW_THREAD=0; shift ;;
     -h|--help) usage; exit 0 ;;
     *) bad "unknown option $1" ;;
   esac

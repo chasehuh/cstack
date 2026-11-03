@@ -140,7 +140,10 @@ sume-bg-launch --host mini --backend claude --name <same-slug> \
   --resume <session-uuid> --prompt-file "$P"
 ```
 
-Open the prompt with `STEERING UPDATE` and say what changed. On the M5 the
+Open the prompt with `STEERING UPDATE` and say what changed. The worker's
+report goes to a **new top-level message** in `#coding-agents`. For a poke,
+restart or effort change with no new instruction, add `--same-thread` so the
+report replies in the job's existing thread instead. On the M5 the
 start step stops the older job holding that session first (the job that
 printed `📎 session_id=<uuid>` or resumed it), so one session never has two
 wrappers. `--resume` is same-host only: a Mini session resumed with
@@ -235,11 +238,14 @@ is in Slack `#coding-agents` (Chase lock 2026-10-17). No polling loops.
 
 ## Slack `#coding-agents`
 
-Every worker posts its own Korean completion report (`docs/SLACK-REPORT.md`):
-a new ask is a **new channel message** `<short what> — \`Opus : <slug> (#N)\``
-with the report in that message (Chase lock 2026-10-13); a reply only for a
-second note on the same ask. The launcher appends this rule; do not paste it
-into prompts. A final block with `SLACK_TEXT:` means the worker could not
+Every worker posts its own Korean completion report (`docs/SLACK-REPORT.md`)
+as a **new top-level message** `<short what> — \`Opus : <slug> (#N)\`` with
+the report in that message, for fresh jobs, forks and `--resume` steers alike
+(Chase lock 2026-10-13, 2026-11-03). A reply in the job's old thread only
+with `--same-thread` (a poke, restart or effort change, no new instruction).
+When Chase asks for a DM, the DM is extra: the channel report still happens,
+amounts included. The launcher appends these rules; do not paste them into
+prompts, and never write "DM only" as if it replaced the channel. A final block with `SLACK_TEXT:` means the worker could not
 post; the main agent posts that text as a new channel message.
 
 ## Browser verification and dest evidence

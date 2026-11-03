@@ -12,10 +12,18 @@ and how the post is made.
 
 ## The format (as the desk already posts it)
 
-- **Thread (Chase lock 2026-10-13):** a new ask is a new channel message.
-  Do not reply on an older thread. Parent text is
-  ``<short what> — `Opus : <slug> (#N)` `` and the report is that message.
-  A reply is only a follow-up to the parent you just posted.
+- **Thread (Chase lock 2026-10-13, 2026-11-03):** every launch, including a
+  `--resume` steer with a new instruction, reports as a **new top-level
+  message**. Parent text is ``<short what> — `Opus : <slug> (#N)` `` and the
+  report is that message. Replies in an old thread confused Chase. A reply
+  happens only when the launch says so (`--same-thread`, for a poke, restart
+  or effort change on the same ask), or for a second note right after the
+  parent you just posted.
+- **DM is extra, never a replacement (Chase 2026-11-03):** a job asked to DM
+  its result sends the DM **and** posts the report to `#coding-agents`.
+  "DM only" / "not in the channel" does not cancel the channel report, and
+  nothing in the wrapper turns the report off because of a DM request.
+  Amounts and other financial figures are fine in the channel.
 - **Report:** Korean, 600 characters or fewer, mrkdwn. A bold title line with
   issue/PR/SHA links, then `•` lines (cause or what was done, check with
   numbers, what remains), then one evidence link. Clips and images go on
@@ -32,7 +40,8 @@ and how the post is made.
 |---|---|
 | fresh launch (`sume-bg-launch`, `agent-human-stream`, `claude-human-stream`) | the full tail, after the task text |
 | `--resume <id> --fork-session` | the full tail (a fork is a new Job) |
-| `--resume <id>` / `--continue` (steer) | one steer line: post only if this turn finishes new work; a new ask is a new channel message; a status answer posts nothing |
+| `--resume <id>` / `--continue` (steer) | one steer line: when this turn finishes new work, post a **new top-level message**; a status answer posts nothing |
+| steer with `--same-thread` (launcher or wrapper), or the prompt marker `<!-- slack-report:same-thread -->` | the same-thread line: reply in the job's existing thread (`cstack-slack-post --same-thread`). For a poke, restart or effort change with no new instruction. A fork ignores it (a fork is a new Job) |
 | `sume-cron-job` | nothing: cron prompts post their own result. `--slack-report` turns it on for one entry |
 | prompt contains `<!-- slack-report:off -->` | nothing |
 | prompt already contains `<!-- slack-report:tail` | nothing more (no second copy) |
@@ -69,20 +78,20 @@ Desk Macs have no Slack bot token. Workers post as Chase through the
 
 ```bash
 cstack-slack-post --job <slug> [--issue N] [--title "<short what>"] \
-  --text-file /tmp/<job>/slack.txt [--file clip.mp4]… --new-thread [--dry-run]
+  --text-file /tmp/<job>/slack.txt [--file clip.mp4]… [--same-thread] [--dry-run]
 ```
 
 - It refuses text over 600 characters or text that looks like a credential (exit 2).
 - `auth.test` must say `chase`.
-- `--new-thread` (the default for a completion report): one new channel
-  message, the parent line ``<title> — `<Lane> : <slug> (#N)` `` with the
+- Default (every completion report): one new top-level message, the parent line ``<title> — `<Lane> : <slug> (#N)` `` with the
   report under it (`chat.postMessage`, or one `files.completeUploadExternal`
   with up to 10 files and that text as its comment). Prints
   `SLACK: <permalink>`.
-- Without `--new-thread` (a second note on the same ask): it scans
+- `--same-thread` (only when the launch said so): it scans
   `#coding-agents` parents (up to 600, newest first) for the slug, `#N`, or
   the title, falls back to `search.messages`, and posts one reply there
   (with no match it posts the short parent first).
+- `--new-thread` is accepted and does nothing (it is the default).
 - `--dry-run` shows what it would post and posts nothing.
 - The token stays in the page. It is never printed.
 

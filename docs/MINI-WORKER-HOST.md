@@ -138,6 +138,10 @@ sume-bg-launch --host mini --backend claude --name <new-slug> \
   session. `sume-bg-launch --host local` now reads `ps -axo pid=,command=`
   plus the registry's wrapper pid for the session.
 - **Fork** leaves the parent running.
+- **Slack:** a steer's report is a new top-level message. `--same-thread`
+  (a poke, restart or effort change) crosses ssh as a flag, is recorded as
+  `SAME_THREAD=1` in `job.env`, and makes the report reply in the job's
+  thread.
 - The original job's M5 cwd is reused (from the registry). Unknown session →
   `--cwd <remote dir>`.
 
