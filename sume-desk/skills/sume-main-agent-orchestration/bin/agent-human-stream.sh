@@ -136,10 +136,13 @@ sume#7839). AGENT_HUMAN_STREAM_WORKER_PREAMBLE=0 / SUME_BG_ALLOW_NESTED=1 overri
 
 Completion report (docs/SLACK-REPORT.md): a fresh or forked launch gets the
 slack-report tail appended, so the worker posts one Korean report to
-#coding-agents when it finishes. --resume/--continue gets a one-line steer
-reminder instead. Off: --no-slack-report, CSTACK_SLACK_REPORT=0, or the
-marker <!-- slack-report:off --> in the prompt. A prompt that already carries
-the tail marker is not given a second copy.
+#coding-agents when it finishes, as a new top-level message.
+--resume/--continue gets a one-line steer reminder instead: a new top-level
+message by default; with --same-thread (or the prompt marker
+<!-- slack-report:same-thread -->) a reply in the job's existing thread, for a
+poke, restart or effort change. Off: --no-slack-report,
+CSTACK_SLACK_REPORT=0, or the marker <!-- slack-report:off --> in the prompt.
+A prompt that already carries the tail marker is not given a second copy.
 
 On stream start/end the formatter prints:
   📎 session_id=<uuid>  backend=<claude|grok|codex>
@@ -158,6 +161,7 @@ PROMPT=""
 PROMPT_FILE=""
 EXTRA=()
 SLACK_REPORT="${CSTACK_SLACK_REPORT:-1}"
+SLACK_SAME_THREAD=0
 PRINT_PROMPT=0
 
 while [[ $# -gt 0 ]]; do
@@ -176,6 +180,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --no-slack-report)
       SLACK_REPORT=0
+      shift
+      ;;
+    --same-thread)
+      SLACK_SAME_THREAD=1
       shift
       ;;
     --print-prompt)
@@ -1113,15 +1121,32 @@ fi
 if [[ -z "$_slack_report_off" ]]; then
   _sr_marker=$(grep -o '<!-- slack-report:steer v[0-9]* -->' "$SLACK_REPORT_TAIL_FILE" | head -n 1)
   _sr_marker=${_sr_marker:-'<!-- slack-report:steer v1 -->'}
-  _sr_text=$(cat "$SLACK_REPORT_TAIL_FILE")
+  _sr_same_marker=$(grep -o '<!-- slack-report:same-thread v[0-9]* -->' "$SLACK_REPORT_TAIL_FILE" | head -n 1)
+  _sr_full=$(cat "$SLACK_REPORT_TAIL_FILE")
+  _sr_tail=${_sr_full%%"$_sr_marker"*}
+  _sr_tail=${_sr_tail%$'\n'}
+  _sr_steer=${_sr_full#*"$_sr_marker"}
+  _sr_steer=${_sr_steer#$'\n'}
+  _sr_same=""
+  if [[ -n "$_sr_same_marker" ]]; then
+    _sr_same=${_sr_steer#*"$_sr_same_marker"}
+    _sr_same=${_sr_same#$'\n'}
+    _sr_steer=${_sr_steer%%"$_sr_same_marker"*}
+    _sr_steer=${_sr_steer%$'\n'}
+  fi
+  if [[ "$PROMPT_ORIGINAL" == *"<!-- slack-report:same-thread -->"* ]]; then
+    SLACK_SAME_THREAD=1
+  fi
   if [[ (-n "$RESUME" || "$CONTINUE" -eq 1) && "$FORK" -eq 0 ]]; then
-    # Steer turn: the session already has the tail (or a pointer to it).
-    _sr_text=${_sr_text#*"$_sr_marker"}
-    _sr_text=${_sr_text#$'\n'}
-    _sr_kind="steer"
+    if [[ "$SLACK_SAME_THREAD" == "1" && -n "$_sr_same" ]]; then
+      _sr_text=$_sr_same
+      _sr_kind="same-thread steer"
+    else
+      _sr_text=$_sr_steer
+      _sr_kind="new-thread steer"
+    fi
   else
-    _sr_text=${_sr_text%%"$_sr_marker"*}
-    _sr_text=${_sr_text%$'\n'}
+    _sr_text=$_sr_tail
     _sr_kind="tail"
   fi
   _sr_job="${NAME:-$BACKEND}"

@@ -3,6 +3,25 @@
 Newest first. What changed in how the desk runs, and what was removed, so a
 stale habit can be traced to the day it stopped being true.
 
+## 2026-11-03 — every report is a new thread; DM never replaces the channel (cstack-slack-new-thread)
+
+- Chase: a resumed job that replied in its old Slack thread confused him.
+  Now every launch reports as a new top-level message in `#coding-agents`,
+  including `--resume` steers (tail v3 steer line; `cstack-slack-post`
+  posts a new thread by default).
+- `--same-thread` (`sume-bg-launch`, `sume-bg-remote`, `agent-human-stream`)
+  or the prompt marker `<!-- slack-report:same-thread -->` is the explicit
+  override for a poke, restart or effort change: the steer line tells the
+  worker to reply in the job's thread (`cstack-slack-post --same-thread`).
+  `--new-thread` is still accepted as a no-op.
+- A DM request is extra delivery. The tail and both steer lines say the
+  channel report still happens, amounts included; no DM wording turns the
+  report off (only `--no-slack-report`, `CSTACK_SLACK_REPORT=0` or
+  `<!-- slack-report:off -->` do).
+- Trap found on the way: editing `~/.cstack/src` in place truncates the same
+  inode that running `agent-human-stream` bash processes read from. Edit in
+  a separate clone; `git pull` writes new inodes and is safe.
+
 ## 2026-11-01 — cleanup to match the real desk (cstack-cleanup)
 
 Derived from the M5 job history (`~/.cstack/state/remote-jobs/*`,

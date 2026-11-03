@@ -50,6 +50,7 @@ FORK=0
 PROMPT_FILE=""
 EXTRA=()
 SLACK_REPORT="${CSTACK_SLACK_REPORT:-1}"
+SAME_THREAD=0
 PRINT_PROMPT=0
 HOST="${CSTACK_WORKER_HOST:-local}"
 HOST_SET=0
@@ -94,6 +95,8 @@ sume-bg-launch --backend claude|codex|grok --name <slug> --prompt-file <path> \
   [--resume <uuid> [--fork-session]] [--no-slack-report] [--print-prompt] -- [backend flags…]
 
   --no-slack-report   do not append the completion-report tail (also CSTACK_SLACK_REPORT=0)
+  --same-thread       steer only: the report replies in the job's existing thread
+                      (a poke, restart or effort change). Default: a new top-level message
   --print-prompt      print the final prompt the worker would get; launch nothing
 
 Mini control plane (--host mini):
@@ -152,6 +155,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --no-slack-report)
       SLACK_REPORT=0
+      shift
+      ;;
+    --same-thread)
+      SAME_THREAD=1
       shift
       ;;
     --print-prompt)
@@ -555,6 +562,9 @@ if [[ "$PRINT_PROMPT" -eq 1 ]]; then
   if [[ "$SLACK_REPORT" == "0" ]]; then
     CMD+=(--no-slack-report)
   fi
+  if [[ "$SAME_THREAD" == "1" ]]; then
+    CMD+=(--same-thread)
+  fi
   CMD+=(--prompt-file "$PROMPT_FILE")
   if [[ -n "$RESUME" ]]; then
     CMD+=(--resume "$RESUME")
@@ -649,6 +659,9 @@ if [[ "$HOST" == "mini" ]]; then
   if [[ "$SLACK_REPORT" == "0" ]]; then
     START_ARGS+=(--no-slack-report)
   fi
+  if [[ "$SAME_THREAD" == "1" ]]; then
+    START_ARGS+=(--same-thread)
+  fi
   if [[ ${#EXTRA[@]} -gt 0 ]]; then
     START_ARGS+=(-- "${EXTRA[@]}")
   fi
@@ -718,6 +731,9 @@ resolve_wrapper
 CMD=("$WRAPPER" --backend "$BACKEND" --name "$NAME")
 if [[ "$SLACK_REPORT" == "0" ]]; then
   CMD+=(--no-slack-report)
+fi
+if [[ "$SAME_THREAD" == "1" ]]; then
+  CMD+=(--same-thread)
 fi
 CMD+=(--prompt-file "$PROMPT_FILE")
 if [[ -n "$RESUME" ]]; then
