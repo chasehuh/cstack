@@ -27,10 +27,9 @@ Does **not** replace the chat work report or the status board.
 
 ## How
 
-1. **`ego-browser` TaskSpace (preferred) or `aside repl`.** Ego: own
-   space + own tab (`p1`), `page.screenshot({ path })` for the PNGs.
-   Aside: Chase window **and same tab** are OK. Tab title is optional; if
-   set, **`[Agent]`** only — not `[Astra]`.
+1. **`ego-browser` TaskSpace only** (`~/.cstack/src/docs/BROWSER.md`):
+   own space + own tab (`p1`), `page.screenshot({ path })` for the PNGs.
+   Never launch or drive Chrome yourself.
 2. **Compose model = Auto.** Never pin GPT-6 Astra (or another model)
    unless Chase locked a pin test. Auto router is the dest AC.
 3. Capture 2–4 PNGs of the locked surfaces (not a full product tour).
@@ -53,7 +52,7 @@ Does **not** replace the chat work report or the status board.
 
 ```text
 DEST EVIDENCE (hard lock 2026-09-11, #7110): after dest/prod browser verify
-(ego-browser TaskSpace preferred, aside repl ok; Auto router, not GPT-6
+(ego-browser TaskSpace only, never your own Chrome; Auto router, not GPT-6
 Astra; sumelabs; www.dev.sume.com), post ONE gh issue comment on the Job
 issue with 2–4 screenshots + host, sumelabs, Auto, SHA, pass/fail. Final
 report must carry `SHOTS: <comment URL>`. Forbidden: `DEST: pass` without

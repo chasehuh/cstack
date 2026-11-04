@@ -251,9 +251,17 @@ post; the main agent posts that text as a new channel message.
 ## Browser verification and dest evidence
 
 Workers that ship user-visible product verify in a real browser after their
-own work: locally first, then dev after the dev deploy. Use the
-`ego-browser` skill (own TaskSpace and tab; never drive Chase's live tab),
-or `aside repl` only when ego is unavailable. M5 ego is allowed.
+own work: locally first, then dev after the dev deploy.
+
+**ego-browser (Ego Lite) only (Chase lock 2026-11-04, `docs/BROWSER.md`).**
+Every agent that needs a browser uses the `ego-browser` skill: its own
+TaskSpace and tab, never Chase's live tab. Never launch or drive Chrome
+yourself: no `open -a` / `osascript`, `--remote-debugging-port`, temp
+`--user-data-dir`, `connectOverCDP`, Playwright/Puppeteer `launch()`,
+`aside`, or Cursor `browser_*` tools. The only exception is a repo's own
+automated test suite run by its own runner. Do not kill Chrome processes
+you did not start. M5 ego is allowed. Prompts never ask a worker to
+"open Chrome".
 
 - Dev or prod under the **sumelabs** workspace only; compose model **Auto**.
 - Destructive steps (send, delete, pay, ops settings) need Chase first.

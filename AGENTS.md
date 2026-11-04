@@ -67,6 +67,12 @@ and re-run `./install.sh`.
   (`docs/RELEASE-LOCK.md`).
 - Every worker posts one Korean report to Slack `#coding-agents`, a new
   thread per ask (`docs/SLACK-REPORT.md`).
+- **Browser = `ego-browser` (Ego Lite) only** (`docs/BROWSER.md`). Never
+  launch or drive Chrome yourself (`open -a`, `osascript`,
+  `--remote-debugging-port`, temp `--user-data-dir`, `connectOverCDP`,
+  Playwright/Puppeteer `launch()`, `aside`). Only exception: a repo's own
+  automated test suite run by its own runner. Do not kill Chrome processes
+  you did not start. This applies to workers too.
 - Dev-only until Chase says otherwise. Prod test = Sumelabs + desk SoT key
   only (never paste keys).
 - Stay in the opened workspace; operate on worktrees/clones via paths.

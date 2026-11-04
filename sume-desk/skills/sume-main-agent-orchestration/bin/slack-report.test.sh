@@ -141,6 +141,7 @@ SUME_WORKER_SESSION=outer SUME_BG_LAUNCH_WRAPPER="$WRAP" \
   "$LAUNCH" --print-prompt --backend claude --name dry-job --prompt-file "$T/p.md" -- --model opus >"$T/k.txt" 2>"$T/k.err" \
   || fail "sume-bg-launch --print-prompt failed: $(cat "$T/k.err")"
 grep -q '^\[sume worker session\] You are the WORKER for job "dry-job"' "$T/k.txt" || fail "dry run lacks preamble"
+grep -qF 'use ego-browser (Ego Lite) only; never launch or drive Chrome yourself' "$T/k.txt" || fail "worker preamble lacks the ego-browser-only rule"
 [[ $(count "$TAIL_MARK" "$T/k.txt") -eq 1 ]] || fail "dry run lacks the tail"
 [[ ! -s "$T/reg.jsonl" ]] || fail "--print-prompt wrote a registry row (it launched)"
 SUME_BG_LAUNCH_WRAPPER="$WRAP" "$LAUNCH" --print-prompt --backend claude --name dry-job --no-slack-report --prompt-file "$T/p.md" >"$T/l.txt" 2>/dev/null

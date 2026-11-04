@@ -124,6 +124,10 @@ grep -q "Sume release lock (always on)" "$HOME/.codex/AGENTS.md" \
   && ok "codex entry has the release lock (docs/RELEASE-LOCK.md)" \
   || bad "codex entry missing release lock: re-run install.sh"
 
+grep -q "Sume browser: ego-browser only (always on)" "$HOME/.codex/AGENTS.md" \
+  && ok "codex entry has the ego-browser-only rule (docs/BROWSER.md)" \
+  || bad "codex entry missing ego-browser-only rule: re-run install.sh"
+
 grep -q "codex/AGENTS.md" "$HOME/.claude/CLAUDE.md" \
   && ok "claude imports codex entry point" \
   || bad "claude entry point does not import ~/.codex/AGENTS.md"

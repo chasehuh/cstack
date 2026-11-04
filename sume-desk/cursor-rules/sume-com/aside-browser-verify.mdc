@@ -1,40 +1,28 @@
 ---
-description: Dest browser verify via ego-browser TaskSpace (preferred) or aside repl; Auto router; sumelabs only; evidence = one issue comment w/ shots (SHOTS URL required)
+description: Browser work via ego-browser (Ego Lite) only — never launch or drive Chrome; sumelabs only; dest Auto; evidence = one issue comment w/ shots (SHOTS URL required)
 alwaysApply: true
 ---
 
-# Browser verification — ego-browser (preferred) or Aside
+# Browser — ego-browser (Ego Lite) only
 
-Worker ships user-visible product → verifies in a real browser **after its
-own work**: locally first when not yet verified locally, then the same flow
-on dev after the dev deploy.
+SoT: `~/.cstack/src/docs/BROWSER.md` (Chase lock 2026-11-04).
 
-- Tool: **`ego-browser` TaskSpace (preferred)** or **`aside repl`**.
-  Forbidden: bare Playwright, Cursor `browser_*` MCP, other harnesses.
-  `aside exec` is task delegation, not deterministic verification.
-- **ego-browser:** skill `~/.agents/skills/ego-browser`. Run
-  `ego-browser nodejs <<'EOF' … EOF`. One `taskSpace("<job>")` per job,
+- Tool: **`ego-browser` TaskSpace only** (`~/.agents/skills/ego-browser`).
+  Run `ego-browser nodejs <<'EOF' … EOF`. One `taskSpace("<job>")` per job,
   print `spaceId`, resume with `taskSpace(<id>)`. Work in the space’s own
-  tab (`p1`); never adopt/drive Chase’s live tab. `page.snapshot()` →
-  act (`@ref` / `loc=css:` / CSS) → fresh snapshot → `page.screenshot({ path })`.
-  `task.finish({ keep: [] })` when done. Do not import Chrome cookies.
-- **aside repl:** Chase’s window and the same tab are OK. Do not hunt a
-  spare window. Never `chrome.windows.create`. No `page.context().newPage()`
-  / `page.close()`. Optional title `[Agent]` only — never worker model
-  names. `snapshot(page, { interactive: true })` after each action.
-- **Dest compose = Auto.** Do not select GPT-6 Astra (or any pin) unless
-  Chase locked a model-pin test. The coding worker (Astra/Fable/…) is not
-  the Agents picker. Auto router is the dest AC.
+  tab (`p1`); never adopt/drive Chase’s live tab. `page.snapshot()` → act
+  (`@ref` / `loc=css:` / CSS) → fresh snapshot → `page.screenshot({ path })`.
+  `task.finish({ keep: [] })` when done.
+- Forbidden: launching or driving Chrome/Chromium yourself (`open -a`,
+  `osascript`, `--remote-debugging-port`, temp `--user-data-dir`,
+  `connectOverCDP`, Playwright/Puppeteer `launch()`), `aside`, Cursor
+  `browser_*` tools. Only exception: a repo’s own automated test suite run by
+  its own runner. Do not kill Chrome processes you did not start.
+- Verify after your own work: locally first, then dev after the dev deploy.
 - Dev (`www.dev.sume.com`) / prod (`www.sume.com`): **sumelabs workspace
-  only**. Not sumelabs → STOP. Never customer workspaces (e.g. mobidoo).
-- Do not confuse Aside CLI account (`aside account list`) with the Sume
-  workspace or browser profile.
-- **Evidence hard lock (2026-09-11, #7110):** after any dest/prod browser
-  verify, post **one** `gh issue comment` on the Job issue with **2–4
-  screenshots** + host, `sumelabs`, **Auto**, SHA, pass/fail. Final report
-  must include `SHOTS: <comment URL>`. No URL ⇒ no `DEST: pass`. Do not
-  exit after main land while the dest deploy is still building. Recipe:
+  only**; compose model **Auto**. Not sumelabs → STOP.
+- **Evidence hard lock (#7110):** after any dest/prod browser verify, post
+  **one** `gh issue comment` on the Job issue with **2–4 screenshots** +
+  host, `sumelabs`, **Auto**, SHA, pass/fail. Final report must include
+  `SHOTS: <comment URL>`. No URL ⇒ no `DEST: pass`. Recipe:
   `~/.agents/skills/sume-main-agent-orchestration/references/dest-verify-issue-shots.md`
-
-Policy SoT: `~/.agents/skills/sume-main-agent-orchestration/SKILL.md`
-§ "Browser verification" + "Dest issue screenshots — HARD LOCK".

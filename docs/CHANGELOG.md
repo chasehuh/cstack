@@ -3,6 +3,23 @@
 Newest first. What changed in how the desk runs, and what was removed, so a
 stale habit can be traced to the day it stopped being true.
 
+## 2026-11-04 — browser = ego-browser (Ego Lite) only (cstack-ego-only)
+
+- Hard rule in `docs/BROWSER.md`: every agent and worker that needs a
+  browser uses `ego-browser`; nobody launches or drives Chrome (no
+  `open -a` / `osascript`, `--remote-debugging-port`, temp
+  `--user-data-dir`, `connectOverCDP`, Playwright/Puppeteer `launch()`,
+  `aside`, Cursor `browser_*`). Only exception: a repo's own automated test
+  suite run by its own runner. Do not kill Chrome processes you did not
+  start.
+- Carried by: the worker preamble (every wrapper-launched prompt), a new
+  always-on `~/.codex/AGENTS.md` section (`browser-snippet.md`, Claude Code
+  imports it; `check-wiring.sh` checks it), `AGENTS.md`, the orchestration
+  skill, `dest-verify-issue-shots.md`, and the Cursor
+  `aside-browser-verify.mdc` rules.
+- Removed: the "or `aside repl`" fallback in the skill, the dest recipe and
+  the Cursor rules.
+
 ## 2026-11-03 — every report is a new thread; DM never replaces the channel (cstack-slack-new-thread)
 
 - Chase: a resumed job that replied in its old Slack thread confused him.
