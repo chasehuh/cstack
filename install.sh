@@ -190,6 +190,9 @@ append_entry "$HOME/.codex/AGENTS.md" \
 append_entry "$HOME/.codex/AGENTS.md" \
   "$ROOT/sume-desk/release-lock-snippet.md" \
   "## Sume release lock (always on)"
+append_entry "$HOME/.codex/AGENTS.md" \
+  "$ROOT/sume-desk/browser-snippet.md" \
+  "## Sume browser: ego-browser only (always on)"
 
 refresh_section() {
   local f="$1" snip="$2"
@@ -219,6 +222,7 @@ PY
 refresh_section "$HOME/.codex/AGENTS.md" "$ROOT/sume-desk/codex-agents-snippet.md"
 refresh_section "$HOME/.claude/CLAUDE.md" "$ROOT/sume-desk/claude-author-snippet.md"
 refresh_section "$HOME/.codex/AGENTS.md" "$ROOT/sume-desk/worker-mode-snippet.md"
+refresh_section "$HOME/.codex/AGENTS.md" "$ROOT/sume-desk/browser-snippet.md"
 
 # Existing snippets keep the old marker, so append the wait cook if missing.
 ensure_wait_hint() {

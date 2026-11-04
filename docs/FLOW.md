@@ -49,6 +49,7 @@ Triggers: “그렇게 가보자”, “mega-issue → opus”, “플로우 타
 | No code comments | `docs/CODE-COMMENTS.md` | `~/.codex/AGENTS.md` section (Claude Code imports it), Cursor `no-code-comments.mdc` |
 | No feature flags | `docs/FEATURE-FLAGS.md` | same, `no-feature-flags.mdc` |
 | Release lock | `docs/RELEASE-LOCK.md` | same, `release-lock.mdc`, the worker preamble, `GRAPHITE-HARD-LOCK.md` |
+| Browser = ego-browser only | `docs/BROWSER.md` | `~/.codex/AGENTS.md` section, the worker preamble, `aside-browser-verify.mdc` (ego-only content) |
 | Worker mode (no nested launches) | `docs/MINI-WORKER-HOST.md` § Nested | `~/.codex/AGENTS.md` section, the worker preamble |
 | Author completion (stay until main) | `sume-gt-mq` | `~/.claude/CLAUDE.md` section |
 | Slack report | `docs/SLACK-REPORT.md` | the launcher appends the tail to every prompt |

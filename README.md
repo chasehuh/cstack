@@ -42,7 +42,8 @@ Tokenmaxxing credentials stay in `~/.config/tokenmaxxing/` + keychain.
 - Sections in `~/.codex/AGENTS.md` (Claude Code imports it) and
   `~/.claude/CLAUDE.md`: orchestration pointer, worker mode, author
   completion, no code comments (`docs/CODE-COMMENTS.md`), no feature flags
-  (`docs/FEATURE-FLAGS.md`), release lock (`docs/RELEASE-LOCK.md`)
+  (`docs/FEATURE-FLAGS.md`), release lock (`docs/RELEASE-LOCK.md`),
+  browser = ego-browser only (`docs/BROWSER.md`)
 - Offline tests: launcher host routing, cron, Slack tail, wait-merge matcher
 
 Edit files **here**, then `./install.sh`.
@@ -58,7 +59,7 @@ docs/MINI-WORKER-HOST.md  # sume-bg-launch --host mini (M5 worker host)
 docs/MINI-CRON.md         # scheduled jobs on the M5
 docs/SLACK-REPORT.md      # worker completion report → #coding-agents
 docs/TOKENMAXXING.md      # local Claude = tokenmaxxing supervisor
-docs/RELEASE-LOCK.md / CODE-COMMENTS.md / FEATURE-FLAGS.md
+docs/RELEASE-LOCK.md / CODE-COMMENTS.md / FEATURE-FLAGS.md / BROWSER.md
 docs/PSTACK.md / STE.md   # vendored engineering + STE skills
 sume-desk/
   hosts.env               # M5 / M4 ssh targets (single SoT)
