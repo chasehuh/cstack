@@ -105,8 +105,21 @@ Grok Build (`grok` on PATH):
 
 Resume:
   --resume <uuid>   | AGENT_RESUME_SESSION / CLAUDE_RESUME_SESSION / GROK_RESUME_SESSION
-  --continue        most recent session in this cwd
+  --continue        most recent session in this cwd (refused for grok when another job is open here)
   --fork-session    new session id, copy history
+  Grok --resume refuses to start while a live process still holds the uuid;
+  steer with sume-bg-launch (kills the holder group first).
+
+Long sessions (grok):
+  Fresh grok runs mint --session-id up front (live log + registry know the uuid at t=0).
+  --until-landed <PR#>   land-loop: after each model turn, re-prompt the same session
+                         until `git log origin/main --grep='(#PR)'` hits; then LANDED: yes.
+  --until-regex <re>     same loop, proof = regex on the last —— final —— text.
+  --max-cycles N         land-loop bound (default 12) → LANDED: no, exit 4.
+  --cycle-sleep S        seconds between cycles (default 60).
+  --wall-timeout <dur>   6h | 90m | 3600 — TERM the session group, abort row.
+  --allow-monitor        land jobs deny monitor/scheduler_* tools unless set.
+  --no-caffeinate        darwin runs caffeinate -i for the wrapper lifetime by default.
 
 Watch:
   tail -f ~/.cstack/state/opus-live/LATEST.log
@@ -127,6 +140,13 @@ SELF_TEST=0
 PROMPT=""
 PROMPT_FILE=""
 EXTRA=()
+UNTIL_LANDED=""
+UNTIL_REGEX=""
+MAX_CYCLES="${AGENT_HUMAN_STREAM_MAX_CYCLES:-12}"
+CYCLE_SLEEP="${AGENT_HUMAN_STREAM_CYCLE_SLEEP:-60}"
+WALL_TIMEOUT="${AGENT_HUMAN_STREAM_WALL_TIMEOUT:-}"
+ALLOW_MONITOR=0
+NO_CAFFEINATE="${AGENT_HUMAN_STREAM_NO_CAFFEINATE:-0}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -196,6 +216,34 @@ while [[ $# -gt 0 ]]; do
       ;;
     --prompt-file=*)
       PROMPT_FILE=${1#--prompt-file=}
+      shift
+      ;;
+    --until-landed)
+      UNTIL_LANDED=${2:?--until-landed needs a PR number}
+      shift 2
+      ;;
+    --until-regex)
+      UNTIL_REGEX=${2:?--until-regex needs a pattern}
+      shift 2
+      ;;
+    --max-cycles)
+      MAX_CYCLES=${2:?--max-cycles needs a number}
+      shift 2
+      ;;
+    --cycle-sleep)
+      CYCLE_SLEEP=${2:?--cycle-sleep needs seconds}
+      shift 2
+      ;;
+    --wall-timeout)
+      WALL_TIMEOUT=${2:?--wall-timeout needs a duration (e.g. 6h, 90m, 3600)}
+      shift 2
+      ;;
+    --allow-monitor)
+      ALLOW_MONITOR=1
+      shift
+      ;;
+    --no-caffeinate)
+      NO_CAFFEINATE=1
       shift
       ;;
     --)
@@ -304,6 +352,7 @@ if [[ "$SELF_TEST" -eq 1 ]]; then
   _tmp=$(mktemp -d)
   cat > "$_tmp/grok" <<'EOF'
 #!/usr/bin/env bash
+if [[ "${1:-}" == "--version" ]]; then echo "grok 0.0.0-fake (self-test) [stable]"; exit 0; fi
 printf '%s\n' "$@" > "${GROK_ARGV_FILE:?}"
 echo '{"type":"result","session_id":"00000000-0000-0000-0000-000000000000","result":"ok"}'
 EOF
@@ -318,7 +367,7 @@ EOF
     AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg.jsonl" \
     AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live" \
     PATH="$_tmp:$PATH" \
-    "$SOURCE" --backend grok "self-test mid alias" --effort mid >/dev/null
+    "$SOURCE" --backend grok --no-caffeinate "self-test mid alias" --effort mid >/dev/null
   if ! grep -qx 'medium' "$_tmp/argv.txt"; then
     echo "self-test: grok argv missing effort medium:" >&2
     cat "$_tmp/argv.txt" >&2
@@ -336,10 +385,108 @@ EOF
     AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg.jsonl" \
     AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live" \
     PATH="$_tmp:$PATH" \
-    "$SOURCE" --backend grok --prompt-file "$_tmp/p.md" --effort high >/dev/null
-  if ! grep -q 'prompt-file self-test ok' "$_tmp/argv-file.txt"; then
-    echo "self-test: --prompt-file did not reach grok -p:" >&2
+    "$SOURCE" --backend grok --no-caffeinate --prompt-file "$_tmp/p.md" --effort high >/dev/null
+  if ! grep -qx -- '--prompt-file' "$_tmp/argv-file.txt" || ! grep -qx -- "$_tmp/p.md" "$_tmp/argv-file.txt"; then
+    echo "self-test: --prompt-file did not reach grok natively:" >&2
     cat "$_tmp/argv-file.txt" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  if ! grep -qx -- '--session-id' "$_tmp/argv-file.txt"; then
+    echo "self-test: fresh grok run must mint --session-id:" >&2
+    cat "$_tmp/argv-file.txt" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  # land-loop: fake grok answers "watching" first, "LANDED: yes" on the 2nd call.
+  cat > "$_tmp/grok-land" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "--version" ]]; then echo "grok 0.0.0-fake (self-test) [stable]"; exit 0; fi
+printf '%s\n' "$@" >> "${GROK_ARGV_FILE:?}"
+n=$(cat "${GROK_CALLS:?}" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$GROK_CALLS"
+if [[ "$n" -ge "${GROK_LAND_AT:-2}" ]]; then
+  echo '{"type":"result","session_id":"00000000-0000-0000-0000-000000000000","result":"LANDED: yes — main has (#1)"}'
+else
+  echo '{"type":"result","session_id":"00000000-0000-0000-0000-000000000000","result":"Watching MQ draft; not on main yet."}'
+fi
+EOF
+  chmod +x "$_tmp/grok-land"
+  mkdir -p "$_tmp/landbin" && ln -sfn "$_tmp/grok-land" "$_tmp/landbin/grok" && ln -sfn "$_tmp/claude" "$_tmp/landbin/claude"
+  echo "land self-test" > "$_tmp/land.md"
+  : > "$_tmp/argv-land.txt"; echo 0 > "$_tmp/calls-land"
+  set +e
+  GROK_ARGV_FILE="$_tmp/argv-land.txt" GROK_CALLS="$_tmp/calls-land" GROK_LAND_AT=2 \
+    AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg-land.jsonl" \
+    AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live-land" \
+    PATH="$_tmp/landbin:$PATH" \
+    "$SOURCE" --backend grok --name self-test-land --no-caffeinate --until-regex 'LANDED: yes' \
+      --max-cycles 3 --cycle-sleep 0 --prompt-file "$_tmp/land.md" --effort high >/dev/null 2>&1
+  _rc=$?
+  set -e
+  _land_log=$(ls "$_tmp"/live-land/*self-test-land*.log | head -1)
+  if [[ "$_rc" -ne 0 ]] || ! grep -q '↻ land-loop cycle 1/3' "$_land_log" || ! grep -q '^LANDED: yes' "$_land_log"; then
+    echo "self-test: land-loop did not re-prompt to proof (rc=$_rc):" >&2
+    cat "$_land_log" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  if [[ "$(cat "$_tmp/calls-land")" != "2" ]] || ! grep -qx -- '--resume' "$_tmp/argv-land.txt" \
+     || ! grep -q 'monitor,scheduler_create,scheduler_delete' "$_tmp/argv-land.txt"; then
+    echo "self-test: land-loop argv wrong (calls=$(cat "$_tmp/calls-land")):" >&2
+    cat "$_tmp/argv-land.txt" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  if ! grep -q '"event": "exit"' "$_tmp/reg-land.jsonl" || ! grep -q '"landed": "yes"' "$_tmp/reg-land.jsonl"; then
+    echo "self-test: registry exit row missing landed=yes:" >&2
+    cat "$_tmp/reg-land.jsonl" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  # bound: never proves → LANDED: no, exit 4
+  : > "$_tmp/argv-land2.txt"; echo 0 > "$_tmp/calls-land2"
+  set +e
+  GROK_ARGV_FILE="$_tmp/argv-land2.txt" GROK_CALLS="$_tmp/calls-land2" GROK_LAND_AT=99 \
+    AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg-land2.jsonl" \
+    AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live-land2" \
+    PATH="$_tmp/landbin:$PATH" \
+    "$SOURCE" --backend grok --name self-test-land-bound --no-caffeinate --until-regex 'LANDED: yes' \
+      --max-cycles 1 --cycle-sleep 0 --prompt-file "$_tmp/land.md" >/dev/null 2>&1
+  _rc=$?
+  set -e
+  _land_log2=$(ls "$_tmp"/live-land2/*self-test-land-bound*.log | head -1)
+  if [[ "$_rc" -ne 4 ]] || ! grep -q '^LANDED: no' "$_land_log2" || [[ "$(cat "$_tmp/calls-land2")" != "2" ]]; then
+    echo "self-test: land-loop bound wrong (rc=$_rc calls=$(cat "$_tmp/calls-land2")):" >&2
+    cat "$_land_log2" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  # init watchdog: a grok that never prints must be killed → exit 5 + ❌ line.
+  cat > "$_tmp/grok-hang" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == "--version" ]]; then echo "grok 0.0.0-fake (self-test) [stable]"; exit 0; fi
+sleep 30
+EOF
+  chmod +x "$_tmp/grok-hang"
+  mkdir -p "$_tmp/hangbin" && ln -sfn "$_tmp/grok-hang" "$_tmp/hangbin/grok" && ln -sfn "$_tmp/claude" "$_tmp/hangbin/claude"
+  set +e
+  AGENT_HUMAN_STREAM_INIT_TIMEOUT=2 \
+    AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg-hang.jsonl" \
+    AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live-hang" \
+    PATH="$_tmp/hangbin:$PATH" \
+    "$SOURCE" --backend grok --name self-test-hang --no-caffeinate "self-test hang" >/dev/null 2>&1
+  _rc=$?
+  set -e
+  _hang_log=$(ls "$_tmp"/live-hang/*self-test-hang*.log | head -1)
+  if [[ "$_rc" -ne 5 ]] || ! grep -q '❌ no output from grok in 2s' "$_hang_log"; then
+    echo "self-test: init watchdog did not fire (rc=$_rc):" >&2
+    cat "$_hang_log" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  if pgrep -f "$_tmp/grok-hang" >/dev/null 2>&1; then
+    echo "self-test: hung grok survived the init watchdog" >&2
+    pkill -f "$_tmp/grok-hang" || true
     rm -rf "$_tmp"
     exit 1
   fi
@@ -347,7 +494,7 @@ EOF
     AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg.jsonl" \
     AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live" \
     PATH="$_tmp:$PATH" \
-    "$SOURCE" --backend grok "self-test max alias" --effort max >/dev/null
+    "$SOURCE" --backend grok --no-caffeinate "self-test max alias" --effort max >/dev/null
   if ! grep -qx 'xhigh' "$_tmp/argv-max.txt"; then
     echo "self-test: grok argv missing effort xhigh from max:" >&2
     cat "$_tmp/argv-max.txt" >&2
@@ -467,6 +614,8 @@ _passed_effort=""
 _has_output_format=0
 _has_permission_mode=0
 _has_always_approve=0
+_has_session_id=0
+_has_disallowed_tools=0
 _i=0
 while [[ $_i -lt ${#EXTRA[@]} ]]; do
   _a="${EXTRA[$_i]}"
@@ -515,6 +664,21 @@ while [[ $_i -lt ${#EXTRA[@]} ]]; do
       ;;
     --always-approve|--yolo)
       _has_always_approve=1
+      _i=$((_i + 1))
+      continue
+      ;;
+    --session-id|-s)
+      _has_session_id=1
+      _i=$((_i + 2))
+      continue
+      ;;
+    --session-id=*|-s=*)
+      _has_session_id=1
+      _i=$((_i + 1))
+      continue
+      ;;
+    --disallowed-tools|--disallowed-tools=*)
+      _has_disallowed_tools=1
       _i=$((_i + 1))
       continue
       ;;
@@ -591,6 +755,9 @@ if [[ "$BACKEND" == "grok" && -n "$RESUME" && "${AGENT_HUMAN_STREAM_FORCE_RESUME
     echo "steer with: sume-bg-launch --backend grok --name <slug> --resume $RESUME --prompt-file <path>" >&2
     exit 3
   fi
+fi
+if [[ "$BACKEND" == "grok" && -n "$RESUME" && "${AGENT_HUMAN_STREAM_NO_CLOSE:-0}" != "1" ]]; then
+  "$ROOT/agent-holders.sh" close "$RESUME" || true
 fi
 if [[ "$BACKEND" == "grok" && "$CONTINUE" -eq 1 && "${AGENT_HUMAN_STREAM_ALLOW_CONTINUE:-0}" != "1" ]]; then
   _open=$(python3 - "$REGISTRY" "$PWD" <<'PY2' || true
@@ -765,51 +932,83 @@ if [[ "$BACKEND" == "grok" && ${#EXTRA[@]} -gt 0 ]]; then
   EXTRA=("${_filtered[@]+"${_filtered[@]}"}")
 fi
 
-CMD=()
+if [[ -n "$UNTIL_LANDED$UNTIL_REGEX" && "$BACKEND" != "grok" ]]; then
+  echo "error: --until-landed / --until-regex are grok land-loop options" >&2
+  exit 2
+fi
+
+# ---------- session id (grok): mint up front so the live log + registry know it ----------
+SESSION_ID=""
+if [[ "$BACKEND" == "grok" && -z "$RESUME" && "$CONTINUE" -eq 0 && "$_has_session_id" -eq 0 \
+      && "${AGENT_HUMAN_STREAM_NO_MINT:-0}" != "1" ]]; then
+  SESSION_ID=$( (uuidgen 2>/dev/null || python3 -c 'import uuid; print(uuid.uuid4())') | tr 'A-Z' 'a-z')
+elif [[ -n "$RESUME" && "$FORK" -eq 0 ]]; then
+  SESSION_ID="$RESUME"
+fi
+
+# Land jobs: the model must block in run_terminal_command, not hand the wait
+# to a background monitor (that ends the -p turn: sumelabs/sume#5706 R4).
+if [[ "$BACKEND" == "grok" && -n "$UNTIL_LANDED$UNTIL_REGEX" && "$ALLOW_MONITOR" -eq 0 && "$_has_disallowed_tools" -eq 0 ]]; then
+  EXTRA+=(--disallowed-tools "monitor,scheduler_create,scheduler_delete")
+fi
+
+CMD_BASE=()
 if [[ "$BACKEND" == "claude" ]]; then
   if ! command -v claude >/dev/null 2>&1; then
     echo "error: claude not on PATH (want tokenmaxxing supervisor on this desk)" >&2
     exit 127
   fi
-  CMD=(claude -p "$PROMPT" --output-format stream-json --verbose)
+  CMD_BASE=(claude --output-format stream-json --verbose)
   if [[ "$_has_permission_mode" -eq 0 ]]; then
-    CMD+=(--permission-mode bypassPermissions)
+    CMD_BASE+=(--permission-mode bypassPermissions)
   fi
 else
   if ! command -v grok >/dev/null 2>&1; then
     echo "error: grok not on PATH. Install Grok Build: curl -fsSL https://x.ai/cli/install.sh | bash" >&2
     exit 127
   fi
-  CMD=(grok -p "$PROMPT")
+  CMD_BASE=(grok)
   if [[ "$_has_output_format" -eq 0 ]]; then
-    CMD+=(--output-format streaming-messages-json)
+    CMD_BASE+=(--output-format streaming-messages-json)
   fi
   if [[ "$_has_permission_mode" -eq 0 ]]; then
-    CMD+=(--permission-mode bypassPermissions)
+    CMD_BASE+=(--permission-mode bypassPermissions)
   fi
   if [[ "$_has_always_approve" -eq 0 ]]; then
-    CMD+=(--always-approve)
+    CMD_BASE+=(--always-approve)
   fi
-  CMD+=(--no-auto-update)
+  CMD_BASE+=(--no-auto-update)
 fi
+# Claude /resume picker; Grok has no --name display flag — keep it in our logs only.
+if [[ -n "$NAME" && "$BACKEND" == "claude" ]]; then
+  CMD_BASE+=(--name "$NAME")
+fi
+CMD_BASE+=("${EXTRA[@]+"${EXTRA[@]}"}")
 
+# First run: prompt + session flags. Grok reads the prompt file natively
+# (prompt stays out of `ps` / tokenmaxxing.log; no ARG_MAX ceiling).
+CMD=("${CMD_BASE[@]}")
+if [[ "$BACKEND" == "grok" && -n "$PROMPT_FILE" ]]; then
+  CMD+=(--prompt-file "$PROMPT_FILE")
+else
+  CMD+=(-p "$PROMPT")
+fi
 if [[ -n "$RESUME" ]]; then
   CMD+=(--resume "$RESUME")
-fi
-if [[ "$CONTINUE" -eq 1 ]]; then
+elif [[ "$CONTINUE" -eq 1 ]]; then
   CMD+=(--continue)
+elif [[ -n "$SESSION_ID" ]]; then
+  CMD+=(--session-id "$SESSION_ID")
 fi
 if [[ "$FORK" -eq 1 ]]; then
   CMD+=(--fork-session)
 fi
-# Claude /resume picker; Grok has no --name display flag — keep it in our logs only.
-if [[ -n "$NAME" && "$BACKEND" == "claude" ]]; then
-  CMD+=(--name "$NAME")
-fi
-
-CMD+=("${EXTRA[@]+"${EXTRA[@]}"}")
 
 PROMPT_HEAD=$(printf '%s' "$PROMPT" | tr '\n' ' ' | cut -c1-200)
+GROK_VERSION=""
+if [[ "$BACKEND" == "grok" ]]; then
+  GROK_VERSION=$(grok --version 2>/dev/null | head -1 | awk '{print $2}' || true)
+fi
 
 export AGENT_HUMAN_STREAM_BACKEND="$BACKEND"
 export AGENT_HUMAN_STREAM_MODEL="${_resolved_model:-}"
@@ -818,7 +1017,13 @@ export AGENT_HUMAN_STREAM_PROMPT_HEAD="$PROMPT_HEAD"
 export AGENT_HUMAN_STREAM_NAME="$NAME"
 export AGENT_HUMAN_STREAM_REGISTRY="$REGISTRY"
 export AGENT_HUMAN_STREAM_PID="$$"
+AGENT_HUMAN_STREAM_PGID="$(ps -o pgid= -p $$ 2>/dev/null | tr -d ' ' || true)"
+export AGENT_HUMAN_STREAM_PGID
 export AGENT_HUMAN_STREAM_CWD="$PWD"
+export AGENT_HUMAN_STREAM_SESSION_ID="$SESSION_ID"
+export AGENT_HUMAN_STREAM_GROK_VERSION="$GROK_VERSION"
+export AGENT_HUMAN_STREAM_WALL_TIMEOUT="$WALL_TIMEOUT"
+export AGENT_HUMAN_STREAM_UNTIL_LANDED="$UNTIL_LANDED"
 export AGENT_HUMAN_STREAM_RESUME_FROM="${RESUME:-}"
 if [[ "$CONTINUE" -eq 1 ]]; then
   export AGENT_HUMAN_STREAM_RESUME_FROM="${AGENT_HUMAN_STREAM_RESUME_FROM:-continue}"
@@ -840,38 +1045,259 @@ LIVE_LABEL="${NAME:-$BACKEND}"
 LIVE_LABEL=${LIVE_LABEL//[^a-zA-Z0-9._-]/_}
 if [[ -n "$RESUME" ]]; then
   LIVE_LABEL="${LIVE_LABEL}-resume-${RESUME:0:8}"
+elif [[ -n "$SESSION_ID" ]]; then
+  LIVE_LABEL="${LIVE_LABEL}-${SESSION_ID:0:8}"
 fi
 LIVE_LOG="$LIVE_DIR/${LIVE_STAMP}-${LIVE_LABEL}.log"
 : >"$LIVE_LOG"
 ln -sfn "$LIVE_LOG" "$LIVE_DIR/LATEST.log"
+if [[ -n "$NAME" ]]; then
+  # Parallel jobs: LATEST.log follows the newest launch of any job; this one follows this job.
+  ln -sfn "$LIVE_LOG" "$LIVE_DIR/LATEST-${NAME//[^a-zA-Z0-9._-]/_}.log"
+fi
 export AGENT_HUMAN_STREAM_LIVE_LOG="$LIVE_LOG"
 export CLAUDE_HUMAN_STREAM_LIVE_LOG="$LIVE_LOG"
 
 mkdir -p "$(dirname "$REGISTRY")"
-python3 - <<'PY' || true
-import json, os, time
-path = os.environ["AGENT_HUMAN_STREAM_REGISTRY"]
-rec = {
-    "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-    "event": "start",
-    "backend": os.environ.get("AGENT_HUMAN_STREAM_BACKEND") or None,
-    "session_id": None,
-    "cwd": os.environ.get("AGENT_HUMAN_STREAM_CWD") or os.getcwd(),
-    "name": os.environ.get("AGENT_HUMAN_STREAM_NAME") or None,
-    "prompt_head": os.environ.get("AGENT_HUMAN_STREAM_PROMPT_HEAD") or None,
-    "pid": int(os.environ.get("AGENT_HUMAN_STREAM_PID") or "0") or None,
-    "resume_from": os.environ.get("AGENT_HUMAN_STREAM_RESUME_FROM") or None,
-    "live_log": os.environ.get("AGENT_HUMAN_STREAM_LIVE_LOG") or None,
-    "model": os.environ.get("AGENT_HUMAN_STREAM_MODEL") or None,
-    "effort": os.environ.get("AGENT_HUMAN_STREAM_EFFORT") or None,
-}
-with open(path, "a", encoding="utf-8") as f:
-    f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-PY
+python3 "$ROOT/agent-registry.py" start || true
 
 echo "backend: $BACKEND" >&2
+if [[ -n "$SESSION_ID" ]]; then
+  echo "📎 session_id=$SESSION_ID  backend=$BACKEND${NAME:+  name=$NAME}  (pre-assigned)" >&2
+fi
 echo "👁 live_log: $LIVE_LOG" >&2
 echo "👁 watch:    tail -f $(printf %q "$LIVE_LOG")" >&2
 echo "👁 latest:   tail -f $(printf %q "$LIVE_DIR/LATEST.log")" >&2
 
-"${CMD[@]}" | python3 -u "$ROOT/agent-human-stream.py"
+# ---------- runtime: traps, watchdog, caffeinate, run_once, land-loop ----------
+RC_DIR=$(mktemp -d)
+RC_FILE="$RC_DIR/rc"
+CYCLE=0
+LANDED=""
+ABORTED=0
+WATCHDOG_PID=""
+PIPE_PID=""
+CHILD_PID=""
+
+live_note() {
+  printf '%s\n' "$1" | tee -a "$LIVE_LOG"
+}
+
+# Kill this wrapper's own process tree only (subshell → tokenmaxxing supervisor
+# → raw grok child, tee, formatter, caffeinate). Never `agent-holders kill`
+# here: a steer that replaces us also holds the uuid, and we would kill it.
+kill_tree() {
+  local sig="$1" pid="$2" child
+  for child in $(pgrep -P "$pid" 2>/dev/null || true); do
+    kill_tree "$sig" "$child"
+  done
+  kill "-$sig" "$pid" 2>/dev/null || true
+}
+
+cleanup_children() {
+  local child
+  for child in $(pgrep -P $$ 2>/dev/null || true); do
+    kill_tree TERM "$child"
+  done
+  if [[ -n "$CHILD_PID" ]]; then
+    kill -TERM "$CHILD_PID" 2>/dev/null || true
+  fi
+  sleep 1
+  for child in $(pgrep -P $$ 2>/dev/null || true); do
+    kill_tree KILL "$child"
+  done
+  if [[ -n "$CHILD_PID" ]]; then
+    kill -KILL "$CHILD_PID" 2>/dev/null || true
+  fi
+}
+
+on_term() {
+  ABORTED=1
+  live_note "⛔ ${1}: stopping ${BACKEND} session ${SESSION_ID:-?}${LANDED:+ (landed=$LANDED)}" >&2
+  cleanup_children
+  exit 143
+}
+trap 'on_term INT' INT
+trap 'on_term TERM' TERM
+
+on_exit() {
+  local rc=$?
+  if [[ -n "$WATCHDOG_PID" ]]; then
+    kill "$WATCHDOG_PID" 2>/dev/null || true
+  fi
+  python3 "$ROOT/agent-registry.py" exit --exit-code "$rc" --aborted "$ABORTED" \
+    --landed "${LANDED:-}" --cycles "$CYCLE" --child-pid "${CHILD_PID:-}" 2>/dev/null || true
+  rm -rf "$RC_DIR"
+}
+trap on_exit EXIT
+
+dur_to_secs() {
+  local d="$1"
+  case "$d" in
+    *h) echo $(( ${d%h} * 3600 )) ;;
+    *m) echo $(( ${d%m} * 60 )) ;;
+    *s) echo "${d%s}" ;;
+    *) echo "$d" ;;
+  esac
+}
+
+if [[ -n "$WALL_TIMEOUT" ]]; then
+  _secs=$(dur_to_secs "$WALL_TIMEOUT")
+  ( sleep "$_secs"; printf '⏰ wall-timeout %s reached\n' "$WALL_TIMEOUT" >> "$LIVE_LOG"; kill -TERM $$ 2>/dev/null ) &
+  WATCHDOG_PID=$!
+fi
+
+if [[ "$NO_CAFFEINATE" != "1" && "$(uname -s)" == "Darwin" ]] && command -v caffeinate >/dev/null 2>&1; then
+  # Laptop idle sleep froze land polls for 48 min on #5697 (auth.sleep.gate_set).
+  caffeinate -i -w $$ >/dev/null 2>&1 &
+fi
+
+INIT_TIMEOUT="${AGENT_HUMAN_STREAM_INIT_TIMEOUT:-90}"
+INIT_HUNG=0
+
+# The formatter prints "📎 session_id=" on the first event. A Grok resume that
+# hangs in session_create prints nothing forever (sumelabs/sume#5706 R2); do
+# not let that become a silent empty live log.
+init_watchdog() {
+  local before="$1" deadline=$(( $(date +%s) + INIT_TIMEOUT ))
+  while kill -0 "$PIPE_PID" 2>/dev/null; do
+    if [[ "$(grep -c '^📎 session_id=' "$LIVE_LOG" 2>/dev/null || true)" -gt "$before" ]]; then
+      return 0
+    fi
+    if [[ $(date +%s) -ge $deadline ]]; then
+      INIT_HUNG=1
+      live_note "❌ no output from $BACKEND in ${INIT_TIMEOUT}s (session_create hang? resume of an open-turn session?) — killing" >&2
+      cleanup_children
+      return 0
+    fi
+    sleep 1
+  done
+}
+
+run_once() {
+  : > "$RC_FILE"
+  local before
+  before=$(grep -c '^📎 session_id=' "$LIVE_LOG" 2>/dev/null || true)
+  [[ "$before" =~ ^[0-9]+$ ]] || before=0
+  ( set +e; "$@" 2> >(tee -a "$LIVE_LOG.stderr" >&2); echo $? > "$RC_FILE" ) \
+    | python3 -u "$ROOT/agent-human-stream.py" &
+  PIPE_PID=$!
+  if [[ -n "$SESSION_ID" && -z "$CHILD_PID" ]]; then
+    sleep 1.5
+    CHILD_PID=$("$ROOT/agent-holders.sh" list "$SESSION_ID" 2>/dev/null \
+      | awk -F'\t' '$3 ~ /grok-[0-9]|\/claude |claude -p/ {print $1; exit}' || true)
+    [[ -n "$CHILD_PID" ]] && echo "👁 child_pid: $CHILD_PID" >&2
+  fi
+  init_watchdog "$before"
+  wait "$PIPE_PID" 2>/dev/null || true
+  PIPE_PID=""
+  if [[ "$INIT_HUNG" -eq 1 ]]; then
+    INIT_HUNG=0
+    return 5
+  fi
+  local rc
+  rc=$(cat "$RC_FILE" 2>/dev/null || true)
+  [[ "$rc" =~ ^[0-9]+$ ]] || rc=1
+  return "$rc"
+}
+
+registry_session_for_pid() {
+  python3 - "$REGISTRY" "$$" <<'PYREG' 2>/dev/null || true
+import json, sys
+path, pid = sys.argv[1], int(sys.argv[2])
+found = ""
+try:
+    for line in open(path, encoding="utf-8"):
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if rec.get("pid") == pid and rec.get("event") == "session" and rec.get("session_id"):
+            found = rec["session_id"]
+except OSError:
+    pass
+print(found)
+PYREG
+}
+
+last_final() {
+  awk '/^—— final ——$/ { f = 1; buf = ""; next } f { buf = buf $0 "\n" } END { printf "%s", buf }' "$LIVE_LOG"
+}
+
+land_proof() {
+  if [[ -n "$UNTIL_LANDED" ]]; then
+    git fetch origin main -q 2>/dev/null || true
+    git log origin/main --oneline --grep="(#${UNTIL_LANDED})" 2>/dev/null | grep -q . && return 0
+  fi
+  if [[ -n "$UNTIL_REGEX" ]]; then
+    last_final | grep -Eq "$UNTIL_REGEX" && return 0
+  fi
+  return 1
+}
+
+set +e
+run_once "${CMD[@]}"
+rc=$?
+set -e
+if [[ -z "$SESSION_ID" ]]; then
+  SESSION_ID=$(registry_session_for_pid)
+  export AGENT_HUMAN_STREAM_SESSION_ID="$SESSION_ID"
+fi
+
+if [[ -n "$UNTIL_LANDED$UNTIL_REGEX" ]]; then
+  while :; do
+    if land_proof; then
+      LANDED=yes
+      if [[ -n "$UNTIL_LANDED" ]]; then
+        live_note "LANDED: yes — origin/main has (#${UNTIL_LANDED}) [land-loop cycles=${CYCLE}]"
+      else
+        live_note "LANDED: yes — final matched /${UNTIL_REGEX}/ [land-loop cycles=${CYCLE}]"
+      fi
+      rc=0
+      break
+    fi
+    if [[ "$rc" -ne 0 ]]; then
+      LANDED=no
+      live_note "LANDED: no — worker exited rc=${rc} before proof [land-loop cycles=${CYCLE}]"
+      break
+    fi
+    if [[ "$CYCLE" -ge "$MAX_CYCLES" ]]; then
+      LANDED=no
+      live_note "LANDED: no — land-loop bound ${MAX_CYCLES} cycles reached without (#${UNTIL_LANDED:-regex}) proof"
+      rc=4
+      break
+    fi
+    if [[ -z "$SESSION_ID" ]]; then
+      LANDED=no
+      live_note "LANDED: no — no session id to resume"
+      rc=4
+      break
+    fi
+    CYCLE=$((CYCLE + 1))
+    live_note "↻ land-loop cycle ${CYCLE}/${MAX_CYCLES} — no proof yet; resuming ${SESSION_ID} in ${CYCLE_SLEEP}s"
+    sleep "$CYCLE_SLEEP"
+    CONT="$RC_DIR/continue-${CYCLE}.md"
+    {
+      echo "# land-loop continuation (cycle ${CYCLE}/${MAX_CYCLES}) — same session"
+      if [[ -n "$UNTIL_LANDED" ]]; then
+        echo "PR #${UNTIL_LANDED} is NOT on origin/main yet: \`git log origin/main --oneline --grep='(#${UNTIL_LANDED})'\` is empty."
+      else
+        echo "Your last final did not match /${UNTIL_REGEX}/."
+      fi
+      echo "Keep babysitting in this turn: check the merge-queue label, the MQ draft CI, and Graphite merge activity."
+      echo "Eject → re-label \`merge-queue\`. Known flake → ≤2 \`gh run rerun --failed\`, then minimal CI unblock."
+      echo "Do NOT call monitor / scheduler tools. Block with run_terminal_command (≤10 min slices, sleep between polls)."
+      if [[ -n "$UNTIL_LANDED" ]]; then
+        echo "When the grep hits, reply \`LANDED: yes\` + the main line. Otherwise end with one status line; this wrapper will re-prompt you."
+      else
+        echo "When done, reply with a final matching /${UNTIL_REGEX}/. Otherwise end with one status line; this wrapper will re-prompt you."
+      fi
+    } > "$CONT"
+    set +e
+    run_once "${CMD_BASE[@]}" --prompt-file "$CONT" --resume "$SESSION_ID"
+    rc=$?
+    set -e
+  done
+fi
+
+exit "$rc"

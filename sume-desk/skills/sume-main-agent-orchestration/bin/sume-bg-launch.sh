@@ -5,6 +5,8 @@
 #
 #   sume-bg-launch --backend grok --name job-slug --resume <uuid> \
 #     --prompt-file /tmp/sume-grok-prompts/job.md -- --effort high
+#   sume-bg-launch --backend grok --name land-1234 --until-landed 1234 \
+#     --wall-timeout 6h --prompt-file /tmp/sume-grok-prompts/land-1234.md
 #
 # Shell: description = "Grok : <job-slug> (#N)", block_until_ms = 0.
 # After spawn: read the terminal once for 📎 session_id= or exit_code.
@@ -23,11 +25,13 @@ NAME=""
 RESUME=""
 PROMPT_FILE=""
 EXTRA=()
+WRAP=()
 
 usage() {
   cat <<'EOF'
 sume-bg-launch --backend grok|claude --name <slug> --prompt-file <path> \
-  [--resume <uuid>] -- [backend flags…]
+  [--resume <uuid>] [--until-landed <PR#>] [--wall-timeout 6h] [--max-cycles N] \
+  [--cycle-sleep S] [--allow-monitor] [--no-caffeinate] -- [backend flags…]
 EOF
 }
 
@@ -52,6 +56,14 @@ while [[ $# -gt 0 ]]; do
     --prompt-file)
       PROMPT_FILE=$2
       shift 2
+      ;;
+    --until-landed|--until-regex|--max-cycles|--cycle-sleep|--wall-timeout)
+      WRAP+=("$1" "$2")
+      shift 2
+      ;;
+    --allow-monitor|--no-caffeinate|--fork-session)
+      WRAP+=("$1")
+      shift
       ;;
     --)
       shift
@@ -102,7 +114,7 @@ if [[ -z "$WRAPPER" ]]; then
   exit 127
 fi
 
-CMD=("$WRAPPER" --backend "$BACKEND" --name "$NAME" --prompt-file "$PROMPT_FILE")
+CMD=("$WRAPPER" --backend "$BACKEND" --name "$NAME" "${WRAP[@]+"${WRAP[@]}"}" --prompt-file "$PROMPT_FILE")
 if [[ -n "$RESUME" ]]; then
   CMD+=(--resume "$RESUME")
 fi
