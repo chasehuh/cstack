@@ -3,8 +3,10 @@
 This desk does **not** run bare `claude` against a single Anthropic login.
 On Chase’s machine, **`claude` on PATH is the tokenmaxxing supervisor**.
 `claude-human-stream` / `agent-human-stream --backend claude` (Fable/Opus
-workers) go through that same binary. Grok Build is a different CLI (`grok`)
-and uses `agent-human-stream --backend grok`.
+workers) go through that same binary. **`grok` on PATH is also a tokenmaxxing
+shim** (`__supervise-grok`, installed by `tokenmaxxing init --grok`); Grok
+Build workers (`agent-human-stream --backend grok`) run through it — see
+§ Grok Build pool below.
 
 Upstream: [anaclumos/tokenmaxxing](https://github.com/anaclumos/tokenmaxxing)
 (Bun global, `tokenmaxxing` on PATH). Subscription accounts only — not API keys.
@@ -87,6 +89,41 @@ issues, or chat.
   asked; it spends quota.
 - Codex can have its own tokenmaxxing pool (`init --codex`). This desk’s
   Fable/Opus path is the **Claude** pool.
+
+## Grok Build pool (SuperGrok seats)
+
+`~/.config/tokenmaxxing/bin/grok` → `bun run ~/.local/src/tokenmaxxing/src/main.ts
+__supervise-grok` → the binary named by `config.json` **`grokBin`** (a pinned
+`~/.grok/downloads/grok-<ver>-macos-aarch64`). That pin is the **only** Grok
+that desk workers run. `~/.grok/bin/grok` (what `grok --version` from that
+path reports) and `~/.grok/version.json` can be newer; they are not what
+runs. `install.sh` prints both; `tokenmaxxing config get grokBin` is the
+check. Bumping the pin = editing `grokBin` (then re-run the desk probes in
+sumelabs/sume#5706, the wire shapes were captured on 1.0.11).
+
+Facts that shape `agent-human-stream --backend grok` (2026-09-02):
+
+- The supervisor ignores SIGINT/SIGHUP and has **no SIGTERM handler**: killing
+  it orphans the raw grok child with its stdout still on the pipe. The desk
+  steer (`sume-bg-launch --resume`) therefore kills the **process group and
+  the raw child** (`agent-holders kill <uuid>`), never the supervisor alone.
+- The child pid lives in `~/.config/tokenmaxxing/grok-live/<supervisorId>`
+  (`{accountId, pid, startedAt}`); stale files self-heal by pid + start time.
+- Three SuperGrok seats rotate on the **weekly** bar; a swap hot-reloads
+  `auth.json` on the next API call (no restart). The `StopFailure rate_limit`
+  respawn path relaunches `grok --resume <sid>` **without** the headless
+  flags (`-p`, `--output-format`) — latent (never fired on this desk); the
+  wrapper aborts if a non-NDJSON line shows up. Upstream fix belongs in
+  tokenmaxxing, not cstack.
+- Hooks: `~/.grok/hooks/tokenmaxxing-grok.json` (`Stop`, `StopFailure
+  rate_limit`) is the pool's; `~/.grok/hooks/sume-desk.json` (installed by
+  `install.sh`) is the desk registry hook. Both are silent, exit 0.
+
+```bash
+tokenmaxxing status          # grok seats: weekly bars
+tokenmaxxing switch --grok   # running sessions hot-reload on their next call
+tokenmaxxing config get grokBin
+```
 
 ## Install / repair (human)
 

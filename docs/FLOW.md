@@ -72,7 +72,9 @@ duplicate the full SKILL into the `.mdc`.
 a supervisor in front of Claude Code that pools subscription accounts and
 swaps near 5h / weekly limits. `claude-human-stream` /
 `agent-human-stream --backend claude` uses that `claude`.
-Local Grok Build (`grok` CLI) uses `agent-human-stream --backend grok`.
+Local Grok Build (`grok` CLI, tokenmaxxing-pinned) uses `agent-human-stream --backend grok`;
+land jobs go through `sume-bg-launch … --until-landed <PR#>` (wrapper land-loop,
+`LANDED:` line, steer via `agent-holders`). See `docs/TOKENMAXXING.md` § Grok Build pool.
 
 SoT: **`docs/TOKENMAXXING.md`**. Short version:
 

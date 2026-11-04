@@ -53,6 +53,7 @@ docs/TOKENMAXXING.md      # local Claude = tokenmaxxing supervisor
 sume-desk/
   GRAPHITE-HARD-LOCK.md   # paste block for every author prompt
   skills/                 # SoT (orchestration, gt-mq, mega-issue, Formats LC)
+  grok-hooks/             # ~/.grok/hooks/sume-desk.json template (registry rows)
   cursor-rules/user/      # ~/.cursor/rules
   cursor-rules/sume-com/  # <repo>/.cursor/rules
 ```

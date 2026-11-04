@@ -176,6 +176,13 @@ ensure_wait_hint "$HOME/.codex/AGENTS.md"
 ensure_wait_hint "$HOME/.claude/CLAUDE.md"
 ensure_wait_hint "$HOME/.grok/AGENTS.md"
 
+# Grok land rule (no monitor hand-off) for desks that already had the snippet.
+if [ -f "$HOME/.grok/AGENTS.md" ] && ! grep -q "Land babysit (Grok Build worker)" "$HOME/.grok/AGENTS.md"; then
+  printf '\n' >> "$HOME/.grok/AGENTS.md"
+  sed -n '/^Land babysit (Grok Build worker)/,$p' "$ROOT/sume-desk/grok-agents-snippet.md" >> "$HOME/.grok/AGENTS.md"
+  echo "updated land hint: ~/.grok/AGENTS.md"
+fi
+
 if [ -x "$GTBIN/cstack-gt-wait-merge.test.sh" ]; then
   echo "== cstack-gt-wait-merge matcher =="
   "$GTBIN/cstack-gt-wait-merge.test.sh"
