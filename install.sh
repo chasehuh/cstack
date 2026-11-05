@@ -128,6 +128,8 @@ ln -sfn "$GTBIN/cstack-gt-wait-merge.sh" "$HOME/.local/bin/cstack-gt-wait-merge"
 # Heavy-gate admission + ego task-space reaper (sume#12962).
 ln -sfn "$GTBIN/cstack-gate.mjs" "$HOME/.local/bin/cstack-gate"
 ln -sfn "$BIN/cstack-ego-reap.mjs" "$HOME/.local/bin/cstack-ego-reap"
+ln -sfn "$BIN/cstack-kill-guard.sh" "$HOME/.local/bin/pkill"
+ln -sfn "$BIN/cstack-kill-guard.sh" "$HOME/.local/bin/killall"
 chmod +x "$BIN/agent-human-stream.sh" "$BIN/agent-human-stream.py" \
   "$BIN/agent-human-stream.test.py" \
   "$BIN/claude-human-stream.sh" "$BIN/claude-human-stream.py" \
@@ -139,7 +141,7 @@ chmod +x "$BIN/agent-human-stream.sh" "$BIN/agent-human-stream.py" \
   "$GTBIN/cstack-clone.sh" "$GTBIN/cstack-clone-rm.sh" \
   "$GTBIN/cstack-mirror-sync.sh" "$GTBIN/cstack-gt-wait-merge.sh" \
   "$GTBIN/cstack-gt-wait-merge.test.sh" \
-  "$GTBIN/cstack-gate.mjs" "$BIN/cstack-ego-reap.mjs" \
+  "$GTBIN/cstack-gate.mjs" "$BIN/cstack-ego-reap.mjs" "$BIN/cstack-kill-guard.sh" \
   "$DESK/skills/sume-principles/sync-from-pstack.sh" \
   "$DESK/skills/sume-ste/sync-from-upstream.sh" \
   "$DESK/skills/sume-ste/scripts/ste_check.py" \

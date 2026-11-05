@@ -398,12 +398,14 @@ EOF
   cat > "$_tmp/claude" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$@" > "${CLAUDE_ARGV_FILE:?}"
+cat > "${CLAUDE_ARGV_FILE}.stdin"
 echo '{"type":"result","session_id":"00000000-0000-0000-0000-000000000000","result":"ok"}'
 EOF
   chmod +x "$_tmp/claude"
   cat > "$_tmp/codex" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$@" > "${CODEX_ARGV_FILE:?}"
+cat > "${CODEX_ARGV_FILE}.stdin"
 echo '{"type":"thread.started","thread_id":"00000000-0000-0000-0000-00000000c0de"}'
 echo '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"ok"}}'
 echo '{"type":"turn.completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":1}}'
@@ -489,7 +491,7 @@ EOF
     rm -rf "$_tmp"
     exit 1
   fi
-  # Codex: exec --json + bypass + effort → -c model_reasoning_effort, stdin closed.
+  # Codex: exec --json + bypass + effort → -c model_reasoning_effort, prompt on stdin (exec -).
   CODEX_ARGV_FILE="$_tmp/codex-argv.txt" \
     AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg.jsonl" \
     AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live" \
@@ -497,7 +499,7 @@ EOF
     PATH="$_tmp:$PATH" \
     "$SOURCE" --backend codex --name self-test-codex "self-test codex mid" --model gpt-5.5 --effort mid --verbose >"$_tmp/codex-out.txt"
   for _want in exec --json --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check \
-      'model_reasoning_effort="medium"' gpt-5.5 'self-test codex mid'; do
+      'model_reasoning_effort="medium"' gpt-5.5 -; do
     if ! grep -qxF -- "$_want" "$_tmp/codex-argv.txt"; then
       echo "self-test: codex argv missing ${_want}:" >&2
       cat "$_tmp/codex-argv.txt" >&2
@@ -505,6 +507,11 @@ EOF
       exit 1
     fi
   done
+  if ! grep -qxF -- 'self-test codex mid' "$_tmp/codex-argv.txt.stdin"; then
+    echo "self-test: codex prompt missing on stdin" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
   for _bad in --effort mid --verbose --permission-mode --output-format --name resume; do
     if grep -qxF -- "$_bad" "$_tmp/codex-argv.txt"; then
       echo "self-test: codex argv still has ${_bad}:" >&2
@@ -645,6 +652,29 @@ EOF
     "$SOURCE" --resume 00000000-0000-0000-0000-00000000c0de "self-test codex registry resume" >/dev/null
   if [[ ! -s "$_tmp/codex-argv-reg.txt" ]]; then
     echo "self-test: --resume did not route to codex from registry backend" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  CLAUDE_ARGV_FILE="$_tmp/claude-argv-stdin.txt" \
+    AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg.jsonl" \
+    AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live" \
+    PATH="$_tmp:$PATH" \
+    "$SOURCE" --backend claude --name self-test-stdin "self-test prompt marker cstack-gt-wait-merge" >/dev/null
+  if grep -qF -- 'cstack-gt-wait-merge' "$_tmp/claude-argv-stdin.txt" || ! grep -qF -- 'self-test prompt marker cstack-gt-wait-merge' "$_tmp/claude-argv-stdin.txt.stdin"; then
+    echo "self-test: the claude prompt must reach stdin, never argv:" >&2
+    cat "$_tmp/claude-argv-stdin.txt" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  CODEX_ARGV_FILE="$_tmp/codex-argv-stdin.txt" \
+    AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg.jsonl" \
+    AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live" \
+    TOKENMAXXING_REQUIRE_SUPERVISOR=0 \
+    PATH="$_tmp:$PATH" \
+    "$SOURCE" --backend codex --name self-test-stdin-codex "self-test codex marker cstack-gt-wait-merge" >/dev/null
+  if grep -qF -- 'cstack-gt-wait-merge' "$_tmp/codex-argv-stdin.txt" || ! grep -qxF -- '-' "$_tmp/codex-argv-stdin.txt" || ! grep -qF -- 'self-test codex marker cstack-gt-wait-merge' "$_tmp/codex-argv-stdin.txt.stdin"; then
+    echo "self-test: the codex prompt must reach stdin (exec -), never argv:" >&2
+    cat "$_tmp/codex-argv-stdin.txt" >&2
     rm -rf "$_tmp"
     exit 1
   fi
@@ -1187,13 +1217,13 @@ if [[ "$BACKEND" == "codex" ]]; then
   elif [[ "$CONTINUE" -eq 1 ]]; then
     CMD+=(--last)
   fi
-  CMD+=("$PROMPT")
+  CMD+=(-)
 elif [[ "$BACKEND" == "claude" ]]; then
   if ! command -v claude >/dev/null 2>&1; then
     echo "error: claude not on PATH (want tokenmaxxing supervisor on this desk)" >&2
     exit 127
   fi
-  CMD=(claude -p "$PROMPT" --output-format stream-json --verbose)
+  CMD=(claude -p --output-format stream-json --verbose)
   if [[ "$_has_permission_mode" -eq 0 ]]; then
     CMD+=(--permission-mode bypassPermissions)
   fi
@@ -1282,6 +1312,8 @@ LIVE_LOG="$LIVE_DIR/${LIVE_STAMP}-${LIVE_LABEL}.log"
 : >"$LIVE_LOG"
 ln -sfn "$LIVE_LOG" "$LIVE_DIR/LATEST.log"
 export AGENT_HUMAN_STREAM_LIVE_LOG="$LIVE_LOG"
+PROMPT_STDIN="${LIVE_LOG%.log}.prompt.md"
+(umask 077 && printf '%s' "$PROMPT" >"$PROMPT_STDIN")
 export CLAUDE_HUMAN_STREAM_LIVE_LOG="$LIVE_LOG"
 
 mkdir -p "$(dirname "$REGISTRY")"
@@ -1315,14 +1347,13 @@ echo "👁 watch:    tail -f $(printf %q "$LIVE_LOG")" >&2
 echo "👁 latest:   tail -f $(printf %q "$LIVE_DIR/LATEST.log")" >&2
 
 if [[ "$BACKEND" == "codex" ]]; then
-  # stdin: close it. `codex exec` appends a piped stdin to the prompt and
-  # blocks on a non-tty. stdout: regular file, never a pipe. Codex's Rust
+  # stdin: the prompt file (`exec -`), never a pipe or a tty. stdout: regular file, never a pipe. Codex's Rust
   # `println!` panics on EAGAIN when the formatter's 64KB pipe backs up
   # on one huge `aggregated_output` line (rc=101). A file write blocks or
   # succeeds; it does not return EAGAIN.
   CODEX_RAW="${LIVE_LOG%.log}.codex.jsonl"
   : >"$CODEX_RAW"
-  "${CMD[@]}" </dev/null >"$CODEX_RAW" &
+  "${CMD[@]}" <"$PROMPT_STDIN" >"$CODEX_RAW" &
   CODEX_PID=$!
   FORMAT_RC=0
   python3 -u "$ROOT/agent-human-stream.py" --follow "$CODEX_RAW" --until-pid "$CODEX_PID" || FORMAT_RC=$?
@@ -1333,5 +1364,9 @@ if [[ "$BACKEND" == "codex" ]]; then
   fi
   exit "$FORMAT_RC"
 else
-  "${CMD[@]}" | python3 -u "$ROOT/agent-human-stream.py"
+  if [[ "$BACKEND" == "claude" ]]; then
+    "${CMD[@]}" <"$PROMPT_STDIN" | python3 -u "$ROOT/agent-human-stream.py"
+  else
+    "${CMD[@]}" | python3 -u "$ROOT/agent-human-stream.py"
+  fi
 fi

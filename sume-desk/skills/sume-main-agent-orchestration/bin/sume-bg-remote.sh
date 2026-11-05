@@ -111,6 +111,7 @@ kill_job() {
       ;;
   esac
   pgid=$(cat "$dir/pgid" 2>/dev/null || true)
+  : >"$dir/stopped"
   if [[ -n "$pgid" ]]; then kill -TERM -- "-$pgid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
   else kill -TERM "$pid" 2>/dev/null || true; fi
   for _ in 1 2 3 4 5 6 7 8 9 10; do
@@ -127,7 +128,7 @@ kill_job() {
   status_line "$dir"
 }
 
-stop_session_holders() {
+session_holders() {
   local uuid="$1" self="$2" d id resumed forked
   [[ -d "$JOBS_DIR" ]] || return 0
   for d in "$JOBS_DIR"/*/; do
@@ -139,10 +140,118 @@ stop_session_holders() {
     forked=$(sed -n 's/^FORK=//p' "$d/job.env" 2>/dev/null | tail -n 1)
     if { [[ "$resumed" == "$uuid" && "$forked" != "1" ]]; } \
       || grep -Eq "^📎 session_id=${uuid}( |\$)" "$d/worker.log" 2>/dev/null; then
-      echo "steer: stopping older job $id (same session $uuid)"
-      kill_job "$d" >/dev/null || true
+      printf '%s\n' "$d"
     fi
   done
+}
+
+stop_session_holders() {
+  local uuid="$1" self="$2" d
+  while read -r d; do
+    [[ -n "$d" ]] || continue
+    echo "steer: stopping older job $(basename "$d") (same session $uuid)"
+    kill_job "$d" >/dev/null || true
+  done < <(session_holders "$uuid" "$self")
+}
+
+death_reason() {
+  local rc="$1" sig
+  [[ -f "$DIR/stopped" ]] && return 1
+  if [[ "$rc" -gt 128 && "$rc" -lt 160 ]]; then
+    sig=$(kill -l $((rc - 128)) 2>/dev/null || echo $((rc - 128)))
+    printf 'SIG%s (rc=%s)' "${sig#SIG}" "$rc"
+    return 0
+  fi
+  if [[ "$rc" -ne 0 ]] && tail -n 40 "$DIR/worker.log" 2>/dev/null | grep -Eiq "hit your [a-z0-9 -]*limit"; then
+    printf 'usage limit (rc=%s)' "$rc"
+    return 0
+  fi
+  return 1
+}
+
+auto_resume() {
+  local reason="$1" sid="$2" depth max delay new ndir args
+  depth=$(sed -n 's/^AUTO_RESUME_DEPTH=//p' "$DIR/job.env" 2>/dev/null | tail -n 1)
+  depth=${depth:-0}
+  case "$reason" in
+    usage*) max=3; delay=${SUME_BG_LIMIT_RESUME_DELAY:-120} ;;
+    *) max=2; delay=${SUME_BG_KILL_RESUME_DELAY:-5} ;;
+  esac
+  [[ -n "$sid" && "$depth" -lt "$max" ]] || return 1
+  sleep "$delay"
+  [[ -z "$(session_holders "$sid" "$JOB")" ]] || return 1
+  while :; do
+    new="$(date -u +%Y%m%dT%H%M%SZ)-${NAME}-resume-${sid:0:8}"
+    ndir=$(job_dir "$new")
+    mkdir "$ndir" 2>/dev/null && break
+    sleep 1
+  done
+  {
+    printf 'AUTO-RESUME: your previous run of this job (Mini job %s) ended on its own at %s: %s. ' "$JOB" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$reason"
+    printf 'Neither Chase nor the main agent stopped it. Continue the same task from where you left off. '
+    printf 'First check what already happened (git branch, PRs, merge queue, Slack posts) so nothing runs twice. '
+    printf 'Background commands and watchers from before are gone; restart only the ones you still need.\n'
+  } >"$ndir/prompt.md"
+  args=(start --job "$new" --backend "$BACKEND" --name "$NAME" --cwd "$CWD" --resume "$sid")
+  if [[ "$SLACK_REPORT" == "0" ]]; then args+=(--no-slack-report); fi
+  if [[ "$SAME_THREAD" == "1" ]]; then args+=(--same-thread); fi
+  if [[ ${#EXTRA[@]} -gt 0 ]]; then args+=(-- "${EXTRA[@]}"); fi
+  env -u SUME_BG_REMOTE_JOB -u SUME_WORKER_SESSION -u AGENT_HUMAN_STREAM_PID -u AGENT_HUMAN_STREAM_NAME \
+    -u AGENT_HUMAN_STREAM_LIVE_LOG SUME_BG_AUTO_RESUME_OF="$JOB" SUME_BG_AUTO_RESUME_DEPTH=$((depth + 1)) \
+    "$SOURCE" "${args[@]}" >/dev/null 2>&1 || return 1
+  printf '%s' "$new"
+}
+
+alert_deaths() {
+  local spool="$CSTACK_STATE/job-alerts" files f n text title post
+  mkdir -p "$spool"
+  if ! mkdir "$spool/.lock" 2>/dev/null; then
+    [[ -n "$(find "$spool/.lock" -maxdepth 0 -mmin +10 2>/dev/null)" ]] || return 0
+    rm -rf "$spool/.lock"
+    mkdir "$spool/.lock" 2>/dev/null || return 0
+  fi
+  sleep "${SUME_BG_ALERT_BATCH_S:-20}"
+  post=${SUME_BG_SLACK_POST_BIN:-$ROOT/cstack-slack-post.sh}
+  while :; do
+    files=()
+    for f in "$spool"/*.line; do [[ -e "$f" ]] && files+=("$f"); done
+    [[ ${#files[@]} -gt 0 ]] || break
+    n=${#files[@]}
+    title="Mini 워커 비정상 종료 ${n}건"
+    text="*${title}* ($(TZ=Asia/Seoul date '+%m/%d %H:%M KST'))"
+    for f in "${files[@]}"; do
+      cat "$f" >>"$spool/log"
+      if [[ $(( ${#text} + $(wc -m <"$f") )) -lt 540 ]]; then
+        text+=$'\n'"$(cat "$f")"
+      else
+        text+=$'\n'"…전체 목록: ~/.cstack/state/job-alerts/log"
+        break
+      fi
+    done
+    rm -f "${files[@]}"
+    printf '%s\n' "$text" >"$spool/.lock/text.md"
+    "$post" --job launcher-watch --title "$title" --text-file "$spool/.lock/text.md" >>"$spool/post.log" 2>&1 || true
+  done
+  rm -rf "$spool/.lock"
+}
+
+after_exit() {
+  local rc="$1" reason sid new line
+  reason=$(death_reason "$rc") || return 0
+  sid=$(sed -n 's/^📎 session_id=\([0-9a-fA-F-]\{36\}\).*/\1/p' "$DIR/worker.log" 2>/dev/null | tail -n 1)
+  [[ -n "$sid" && -n "$(session_holders "$sid" "$JOB")" ]] && return 0
+  printf 'sume-bg-remote: job=%s ended unexpectedly: %s\n' "$JOB" "$reason"
+  if new=$(auto_resume "$reason" "$sid"); then
+    printf 'sume-bg-remote: auto-resumed as job=%s\n' "$new"
+    line="• \`${NAME}\` ${reason} → 자동 재개 \`${new}\`"
+  elif [[ -n "$sid" ]]; then
+    line="• \`${NAME}\` ${reason} → 재개 필요: \`--resume ${sid}\`"
+  else
+    line="• \`${NAME}\` ${reason} → 세션 id 없음, 재시작 필요 (\`${JOB}\`)"
+  fi
+  mkdir -p "$CSTACK_STATE/job-alerts"
+  printf '%s\n' "$line" >"$CSTACK_STATE/job-alerts/$JOB.line"
+  alert_deaths
 }
 
 # PATH as the Mini desk sees it (tokenmaxxing claude/codex first, gh/gt/grok
@@ -221,6 +330,9 @@ case "$CMD" in
       printf 'JOB=%q\nBACKEND=%q\nNAME=%q\nCWD=%q\nRESUME=%q\nFORK=%q\nSLACK_REPORT=%q\nSAME_THREAD=%q\n' \
         "$JOB" "$BACKEND" "$NAME" "$CWD" "$RESUME" "$FORK" "$SLACK_REPORT" "$SAME_THREAD"
       printf 'STARTED=%q\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      if [[ -n "${SUME_BG_AUTO_RESUME_OF:-}" ]]; then
+        printf 'AUTO_RESUME_OF=%q\nAUTO_RESUME_DEPTH=%q\n' "$SUME_BG_AUTO_RESUME_OF" "${SUME_BG_AUTO_RESUME_DEPTH:-1}"
+      fi
     } >"$DIR/job.env"
     RUN_ARGS=(run --job "$JOB" --backend "$BACKEND" --name "$NAME" --cwd "$CWD")
     if [[ -n "$RESUME" ]]; then RUN_ARGS+=(--resume "$RESUME"); fi
@@ -280,6 +392,7 @@ case "$CMD" in
     if [[ "${CSTACK_EGO_REAP:-1}" != "0" ]] && command -v node >/dev/null 2>&1; then
       node "$ROOT/cstack-ego-reap.mjs" --job-dir "$DIR" --sweep --apply >>"$DIR/ego-reap.log" 2>&1 || true
     fi
+    after_exit "$RC" || true
     exit "$RC"
     ;;
 
