@@ -145,6 +145,63 @@ sume-bg-launch --host mini --backend claude --name <new-slug> \
 - The original job's M5 cwd is reused (from the registry). Unknown session →
   `--cwd <remote dir>`.
 
+## Unrelated activity never stops a job
+
+Incidents: 2026-11-04 12:53 KST (7 jobs) and 2026-11-05 12:58 KST (11 jobs)
+ended with rc=143 in the same second. Each time, one worker ran
+`pkill -f cstack-gt-wait-merge` to stop its own merge-queue wait. The full
+prompt sat in the argv of `claude -p` and of the tokenmaxxing supervisor, and
+every prompt that names `cstack-gt-wait-merge` matched. macOS `pkill` never
+signals its own ancestors, so the worker that ran it lived on. On 2026-11-05
+07:51 KST a steer of session `9614dd9d` also stopped its fork
+`lost-payments-audit`: the local steer matched every process whose argv held
+the id, and a fork's argv holds `--resume <parent> --fork-session`.
+
+Rules the launcher enforces:
+
+- **No prompt text in argv.** `agent-human-stream` writes the composed prompt
+  to `<live log>.prompt.md` (mode 600) and feeds it on stdin: `claude -p`
+  with no prompt argument, `codex exec … -`. Argv holds flags, the session
+  id and `--name` only.
+- **A steer stops holders only.** Local steer matches `resume <uuid>` without
+  `--fork-session` (or `codex exec resume … <uuid>`), plus the registry
+  wrapper pid. A fork or a prompt that only names the id is left alone. The
+  M5 path (`sume-bg-remote start`) already skipped forks.
+- **`pkill` and `killall` spare other live jobs.** `install.sh` links
+  `~/.local/bin/pkill` and `~/.local/bin/killall` to `cstack-kill-guard.sh`,
+  which is ahead of `/usr/bin` on desk and worker PATHs. It runs the same
+  match with `/usr/bin/pgrep`, then signals only processes outside the
+  process group of every other live job in `remote-jobs/`. It prints what it
+  left alone. The caller's own job (`SUME_BG_REMOTE_JOB`) is not protected.
+  Workers stop what they started with `kill <pid>` or a pattern unique to
+  their job (its `/tmp` path); a job is stopped with
+  `sume-bg-launch --host mini --kill <job>`, never with a signal by hand.
+- **`--kill` marks intent.** `kill_job` writes `<job>/stopped` before it
+  signals; a steer stops the old job through `kill_job` too.
+- **Unexpected death auto-resumes and alerts.** When the wrapper exits on a
+  signal (rc 129–159) with no `stopped` marker, or with a usage-limit result
+  ("hit your … limit"), and no other live job holds the session,
+  `sume-bg-remote run` starts `<stamp>-<name>-resume-<sid8>` on the same
+  session with an `AUTO-RESUME:` prompt (check what already happened, restart
+  needed watchers). Delay: 5 s after a signal, 120 s after a usage limit (time
+  for the tokenmaxxing swap). Cap: 2 resumes after signals, 3 after limits,
+  counted by `AUTO_RESUME_DEPTH` in `job.env`. Every death also writes one
+  line to `~/.cstack/state/job-alerts/`; the first dying job holds
+  `job-alerts/.lock`, waits 20 s for the rest, and posts one
+  `#coding-agents` message, "Mini 워커 비정상 종료 N건", that lists each job
+  with its auto-resume job or its `--resume <uuid>`. The full list is kept in
+  `job-alerts/log`.
+- **Account switch.** Workers run `claude -p`, which the tokenmaxxing
+  supervisor passes through unmanaged (no in-session respawn). A swap only
+  changes the credentials for the next request and kills nothing. A usage
+  limit ends `claude -p` with rc=1 (2026-11-05 11:08 KST: 4 jobs); the
+  auto-resume above brings it back on the swapped account.
+
+Deploy: the launcher runs straight from the `~/.cstack/src` checkout, and a
+running bash reads its script as it goes. Update with `git pull` (git writes a
+new file, so running jobs keep the old inode), never with an in-place edit of
+a live script.
+
 ## Network on the M5
 
 The M5 shares 2.4 GHz Wi-Fi (~43 Mbps). Workers keep media probes to 4 at a
@@ -192,6 +249,8 @@ prompt file that looks like a credential (`ghp_…`, `sk-ant-…`, `xox…`,
   pid_start     start time of pid (ps lstart), the liveness check
   worker.log    wrapper stdout+stderr (what attach streams)
   exit_code     written when the worker exits (143 when stopped)
+  stopped       written by --kill / steer before the signal (intent)
+~/.cstack/state/job-alerts/          unexpected-death lines, batch lock, log
 ~/.cstack/state/opus-live/…          M5 live logs (writer)
 ~/.cstack/state/opus-sessions.jsonl   M5 registry (writer)
 ```
@@ -212,4 +271,9 @@ resolution (M5 default, stale M4 → M5, `--host m4`), fail-closed, the
 prompt secret guard, launch → replica + registry, same-host resume, detached
 survival, `--status` / `--jobs` / `--attach` / `--kill`, pid reuse (not
 alive, `--kill` refuses), the M5 steer stopping the older job (fork does
-not), the local steer, the prompt dir, and the nested-launch guard.
+not), the local steer (forks and id mentions left alone), the prompt dir,
+the nested-launch guard, the `pkill` / `killall` guard (only dry-run
+`killall` and unique markers, never a broad live kill), and auto-resume +
+alert on an unexpected death (capped; `--kill` does neither).
+`agent-human-stream --self-test` checks that the claude and codex prompt
+reaches stdin and never argv.

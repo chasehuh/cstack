@@ -686,7 +686,7 @@ fi
 
 steer_holders() {
   local sid="$1" pid
-  ps -axo pid=,command= | STEER_SID="$sid" awk 'index($0, ENVIRON["STEER_SID"]) && /agent-human-stream|\/grok |grok -p|codex exec|claude -p/ {print $1, $0}'
+  ps -axo pid=,command= | STEER_SID="$sid" awk '(index($0, "resume " ENVIRON["STEER_SID"]) || (/codex exec resume/ && index($0, ENVIRON["STEER_SID"]))) && !/--fork-session|codex exec fork/ && /agent-human-stream|\/grok |grok -p|codex exec|claude -p/ {print $1, $0}'
   [[ -f "$REGISTRY" ]] || return 0
   while read -r pid; do
     [[ -n "$pid" ]] || continue
@@ -720,7 +720,7 @@ if [[ -n "$RESUME" && "$FORK" -eq 0 ]]; then
       *gt\ merge*|*gt\ submit*) continue ;;
     esac
     echo "steer: stopping pid ${_pid} (same session ${RESUME})" >&2
-    pkill -TERM -P "$_pid" 2>/dev/null || true
+    /usr/bin/pkill -TERM -P "$_pid" 2>/dev/null || true
     kill "$_pid" 2>/dev/null || true
   done < <(steer_holders "$RESUME")
   sleep 0.2

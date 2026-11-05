@@ -3,6 +3,19 @@
 Newest first. What changed in how the desk runs, and what was removed, so a
 stale habit can be traced to the day it stopped being true.
 
+## 2026-11-05 — unrelated activity never stops a Mini job (worker-mass-kill-rca)
+
+- Root cause of the 2026-11-04 12:53 KST (7 jobs) and 2026-11-05 12:58 KST
+  (11 jobs) mass SIGTERM: one worker's `pkill -f cstack-gt-wait-merge`
+  matched every worker whose prompt (in `claude -p` argv) named that tool.
+  Prompts now go on stdin (claude, codex).
+- Local steer no longer stops forks of the steered session.
+- `~/.local/bin/pkill` / `killall` → `cstack-kill-guard.sh`: never signal
+  another live job's process group.
+- An unexpected death (signal without `--kill`, or a usage limit) resumes
+  the same session (capped) and posts one batched alert in `#coding-agents`.
+- Details: `docs/MINI-WORKER-HOST.md` → "Unrelated activity never stops a job".
+
 ## 2026-11-04 — browser = ego-browser (Ego Lite) only (cstack-ego-only)
 
 - Hard rule in `docs/BROWSER.md`: every agent and worker that needs a

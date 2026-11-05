@@ -206,6 +206,7 @@ def test_fork_launchers() -> None:
 import json, os, sys
 from pathlib import Path
 Path(os.environ['ARGV_FILE']).write_text(json.dumps(sys.argv[1:]))
+Path(os.environ['ARGV_FILE'] + '.stdin').write_text('' if Path(sys.argv[0]).name == 'grok' else sys.stdin.read())
 if os.environ.get('FAIL_FORK'):
     sys.stderr.write('error: --fork-session unavailable\\n')
     sys.exit(2)
@@ -232,8 +233,11 @@ else:
             argv = json.loads((base / "argv.json").read_text())
             assert parent in argv, argv
             # The wrapper prepends the worker preamble (sume#7839); the task text stays last.
+            bodies = argv if backend == "grok" else [(base / "argv.json.stdin").read_text()]
             assert any(a.startswith("[sume worker session]") and a.endswith("\n\nFork fixture prompt")
-                       for a in argv), argv
+                       for a in bodies), (argv, bodies)
+            if backend != "grok":
+                assert not any("Fork fixture prompt" in a for a in argv), argv
             if backend == "codex":
                 assert argv[:2] == ["exec", "fork"], argv
                 assert "resume" not in argv and "--resume" not in argv, argv
@@ -290,7 +294,7 @@ def test_codex_file_drain() -> None:
         stub.write_text(r'''#!/usr/bin/env python3
 import json, os, stat, sys, time
 assert stat.S_ISREG(os.fstat(1).st_mode), "Codex stdout is still a pipe"
-assert sys.stdin.read() == "", "Codex stdin must be closed"
+assert sys.argv[-1] == "-" and "fixture" in sys.stdin.read(), "Codex prompt must arrive on stdin (exec -), never argv"
 # Split a JSON event and a UTF-8 character across separate writes.
 payload = json.dumps({"type": "item.completed", "item": {
     "type": "agent_message", "text": "Partial café."}}, ensure_ascii=False).encode()
@@ -350,6 +354,7 @@ def test_worker_preamble_and_nested_guard() -> None:
 import json, os, sys
 from pathlib import Path
 Path(os.environ['ARGV_FILE']).write_text(json.dumps(sys.argv[1:]))
+Path(os.environ['ARGV_FILE'] + '.stdin').write_text(sys.stdin.read())
 Path(os.environ['ENV_FILE']).write_text(json.dumps({k: v for k, v in os.environ.items() if k.startswith(('SUME_', 'AGENT_HUMAN_STREAM_PID'))}))
 print(json.dumps({'type': 'thread.started', 'thread_id': 'cccccccc-cccc-7ccc-8ccc-cccccccccccc'}))
 """)
@@ -363,7 +368,8 @@ print(json.dumps({'type': 'thread.started', 'thread_id': 'cccccccc-cccc-7ccc-8cc
         proc = subprocess.run(args, env=env, text=True, capture_output=True)
         assert proc.returncode == 0, proc.stderr
         argv = json.loads((base / "argv.json").read_text())
-        body = argv[-1]
+        assert argv[-1] == "-", argv
+        body = (base / "argv.json.stdin").read_text()
         assert body.startswith('[sume worker session] You are the WORKER for job "preamble-test"'), body
         assert "Never run sume-bg-launch" in body, body
         assert "Only a dedicated release subagent may tag, approve Production, or dispatch the prod release" in body, body
@@ -378,7 +384,7 @@ print(json.dumps({'type': 'thread.started', 'thread_id': 'cccccccc-cccc-7ccc-8cc
         proc = subprocess.run(args, env={**env, "AGENT_HUMAN_STREAM_WORKER_PREAMBLE": "0"},
                               text=True, capture_output=True)
         assert proc.returncode == 0, proc.stderr
-        assert json.loads((base / "argv.json").read_text())[-1] == prompt.read_text()
+        assert (base / "argv.json.stdin").read_text() == prompt.read_text()
 
         # Inside a worker session (marker inherited by its tool shells) the launch is refused.
         (base / "argv.json").unlink()

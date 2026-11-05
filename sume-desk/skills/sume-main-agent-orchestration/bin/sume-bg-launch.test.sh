@@ -28,12 +28,13 @@ cat >"$T/bin/fake-wrapper.sh" <<EOF
 #!/usr/bin/env bash
 printf '%s\n' "\$@" >"\${FAKE_WRAPPER_ARGV:-\$HOME/wrapper-argv.txt}"
 echo "live_log: \$HOME/.cstack/state/opus-live/remote-live.log"
-echo "📎 session_id=$SID  backend=grok  name=\$4"
+echo "📎 session_id=\${FAKE_WRAPPER_SID:-$SID}  backend=grok  name=\$4"
 echo "🔧 Bash git status"
 if [[ -n "\${FAKE_WRAPPER_SLEEP:-}" ]]; then sleep "\$FAKE_WRAPPER_SLEEP"; fi
-echo "📎 session_id=$SID  backend=grok"
+echo "📎 session_id=\${FAKE_WRAPPER_SID:-$SID}  backend=grok"
 echo "—— final ——"
 echo "fake done"
+exit "\${FAKE_WRAPPER_RC:-0}"
 EOF
 chmod +x "$T/bin/fake-wrapper.sh"
 
@@ -86,6 +87,19 @@ chmod +x "$T/bin/fake-scp"
 export FAKE_SSH_LOG="$T/ssh.log"
 export MINI_HOME="$MINI"
 export SUME_BG_LAUNCH_WRAPPER="$T/bin/fake-wrapper.sh"
+cat >"$T/bin/fake-slack-post" <<'EOS'
+#!/usr/bin/env bash
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --text-file) cat "$2" >>"$FAKE_SLACK_LOG"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+echo "SLACK: fake"
+EOS
+chmod +x "$T/bin/fake-slack-post"
+export SUME_BG_SLACK_POST_BIN="$T/bin/fake-slack-post" FAKE_SLACK_LOG="$T/slack.log"
+export SUME_BG_ALERT_BATCH_S=0 SUME_BG_KILL_RESUME_DELAY=0 SUME_BG_LIMIT_RESUME_DELAY=0
 export AGENT_HUMAN_STREAM_REGISTRY="$LAPTOP/state/opus-sessions.jsonl"
 export AGENT_HUMAN_STREAM_LIVE_DIR="$LAPTOP/state/opus-live"
 export SUME_BG_SSH="$T/bin/fake-ssh"
@@ -412,6 +426,23 @@ sleep 0.3
 ! kill -0 "$OLD" 2>/dev/null || fail "older local wrapper still alive"
 pass "local steer stops the older wrapper"
 
+# 16b) a local steer of a parent session leaves its forks and any process that
+#      only names the id in its text alone (lost-payments-audit, 2026-11-05).
+SID_PARENT="deadbeef-0000-4000-8000-0000parent01"
+"$T/bin/agent-human-stream" --backend claude --name child --resume "$SID_PARENT" --fork-session &
+FORKED=$!
+"$T/bin/agent-human-stream" --backend claude --name other "notes about $SID_PARENT" &
+MENTION=$!
+sleep 0.3
+FAKE_WRAPPER_ARGV="$T/argv-local-steer2.txt" \
+  "$LAUNCH" --host local --backend claude --name parent --resume "$SID_PARENT" --prompt-file "$PROMPT" >/dev/null 2>"$T/err16b.txt"
+sleep 0.3
+kill -0 "$FORKED" 2>/dev/null || fail "steer of the parent killed its fork: $(cat "$T/err16b.txt")"
+kill -0 "$MENTION" 2>/dev/null || fail "steer killed a process that only names the session id: $(cat "$T/err16b.txt")"
+! grep -q "steer: stopping" "$T/err16b.txt" || fail "steer matched a non-holder: $(cat "$T/err16b.txt")"
+kill "$FORKED" "$MENTION" 2>/dev/null || true
+pass "local steer leaves forks and mentions alone"
+
 # 17) durable prompt dir.
 [[ "$("$LAUNCH" --prompt-dir)" == "$CSTACK_PROMPTS_DIR" && -d "$CSTACK_PROMPTS_DIR" ]] || fail "--prompt-dir must mkdir and print the dir"
 set +e
@@ -420,5 +451,81 @@ rc=$?
 set -e
 [[ $rc -eq 2 ]] && grep -q "$CSTACK_PROMPTS_DIR" "$T/err17.txt" || fail "missing prompt must point at the prompt dir"
 pass "durable prompt dir"
+
+# 18) pkill / killall from one worker never signal another live job's process
+#     group (2026-11-04 03:53Z: 7 jobs, 2026-11-05 03:58Z: 11 jobs died on one
+#     worker's `pkill -f cstack-gt-wait-merge`).
+GUARD="$ROOT/cstack-kill-guard.sh"
+mkdir -p "$T/guard/bin" "$T/guard/jobs/20260101T000000Z-other" "$T/guard/jobs/20260101T000001Z-self"
+ln -sfn "$GUARD" "$T/guard/bin/pkill"
+ln -sfn "$GUARD" "$T/guard/bin/killall"
+MARK="cstack-guard-mark-$$"
+perl -e 'setpgrp(0, 0); exec @ARGV' bash -c "sleep 60; : $MARK" &
+OTHER=$!
+perl -e 'setpgrp(0, 0); exec @ARGV' bash -c "sleep 60; : $MARK" &
+SELFJOB=$!
+bash -c "sleep 60; : $MARK" &
+LOOSE=$!
+sleep 0.3
+for pair in "20260101T000000Z-other:$OTHER" "20260101T000001Z-self:$SELFJOB"; do
+  jd="$T/guard/jobs/${pair%%:*}"; jp=${pair#*:}
+  echo "$jp" >"$jd/pid"; echo "$jp" >"$jd/pgid"
+  ps -o lstart= -p "$jp" | sed 's/^ *//;s/ *$//' >"$jd/pid_start"
+done
+set +e
+SUME_BG_REMOTE_JOBS_DIR="$T/guard/jobs" SUME_BG_REMOTE_JOB=20260101T000001Z-self \
+  "$T/guard/bin/pkill" -f "$MARK" 2>"$T/err18.txt"
+rc=$?
+set -e
+sleep 0.3
+[[ $rc -eq 0 ]] || fail "guarded pkill should still kill unprotected matches (rc=$rc): $(cat "$T/err18.txt")"
+kill -0 "$OTHER" 2>/dev/null || fail "pkill -f killed another live job's process group"
+! kill -0 "$LOOSE" 2>/dev/null || fail "guarded pkill must still kill a process outside any job"
+! kill -0 "$SELFJOB" 2>/dev/null || fail "guarded pkill must still reach the caller's own job group"
+grep -q "20260101T000000Z-other" "$T/err18.txt" || fail "guard must name the job it protected: $(cat "$T/err18.txt")"
+set +e
+SUME_BG_REMOTE_JOBS_DIR="$T/guard/jobs" "$T/guard/bin/killall" -s -9 bash >"$T/out18b.txt" 2>"$T/err18b.txt"
+set -e
+grep -qw "$OTHER" "$T/out18b.txt" && fail "killall must leave another live job's process group out: $(cat "$T/out18b.txt")"
+grep -q "20260101T000000Z-other" "$T/err18b.txt" || fail "killall guard must name the job it protected: $(cat "$T/err18b.txt")"
+echo 0 >"$T/guard/jobs/20260101T000000Z-other/exit_code"
+SUME_BG_REMOTE_JOBS_DIR="$T/guard/jobs" "$T/guard/bin/pkill" -KILL -f "$MARK" 2>/dev/null || true
+sleep 0.3
+! kill -0 "$OTHER" 2>/dev/null || fail "an exited job's group is not protected"
+pass "pkill/killall guard spares other live jobs"
+
+# 19) a job that dies on a signal nobody sent through the launcher resumes its
+#     own session (at most twice) and posts one alert; --kill does neither.
+SID_DIE="deadbeef-0000-4000-8000-00000000d1e1"
+: >"$T/slack.log"
+FAKE_WRAPPER_SID="$SID_DIE" FAKE_WRAPPER_RC=143 \
+  "$LAUNCH" --host mini --backend grok --name dier --prompt-file "$PROMPT" >/dev/null 2>"$T/err19.txt" || true
+for _ in $(seq 1 150); do
+  n=$(ls -d "$JOBS_MINI"/*-dier-resume-deadbeef 2>/dev/null | wc -l | tr -d ' ' || true)
+  [[ "$n" -ge 2 ]] && grep -q -- "--resume $SID_DIE" "$T/slack.log" && break
+  sleep 0.2
+done
+sleep 1
+n=$(ls -d "$JOBS_MINI"/*-dier-resume-deadbeef 2>/dev/null | wc -l | tr -d ' ' || true)
+[[ "$n" -eq 2 ]] || fail "unexpected kill must auto-resume exactly twice (got $n)"
+R1=$(ls -d "$JOBS_MINI"/*-dier-resume-deadbeef | head -n 1)
+grep -q "^RESUME=$SID_DIE" "$R1/job.env" && grep -q '^FORK=0' "$R1/job.env" && grep -q '^AUTO_RESUME_DEPTH=1' "$R1/job.env" \
+  || fail "auto-resume must steer the dead session: $(cat "$R1/job.env")"
+grep -q 'ended on its own' "$R1/prompt.md" || fail "auto-resume prompt missing"
+grep -q '자동 재개' "$T/slack.log" || fail "alert must list the auto-resume: $(cat "$T/slack.log")"
+grep -q -- "--resume $SID_DIE" "$T/slack.log" || fail "the capped run must alert with its resume id: $(cat "$T/slack.log")"
+SID_STOP="deadbeef-0000-4000-8000-0000000st0p1"
+: >"$T/slack.log"
+FAKE_WRAPPER_SID="$SID_STOP" FAKE_WRAPPER_SLEEP=30 \
+  "$LAUNCH" --host mini --backend grok --name stopme --prompt-file "$PROMPT" >/dev/null 2>"$T/stop-err.txt" &
+SPID=$!
+SJOB=$(wait_job "$T/stop-err.txt")
+[[ -n "$SJOB" ]] || fail "stopme job never printed its session"
+"$LAUNCH" --host mini --kill "$SJOB" >/dev/null
+wait "$SPID" 2>/dev/null || true
+sleep 1
+! ls -d "$JOBS_MINI"/*-stopme-resume-* >/dev/null 2>&1 || fail "--kill must not auto-resume"
+[[ ! -s "$T/slack.log" ]] || fail "--kill must not alert: $(cat "$T/slack.log")"
+pass "unexpected death auto-resumes (capped) and alerts; --kill does not"
 
 echo "sume-bg-launch host tests: all ok"

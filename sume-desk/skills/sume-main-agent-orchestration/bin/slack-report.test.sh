@@ -21,13 +21,15 @@ trap 'rm -rf "$T"' EXIT
 export AGENT_HUMAN_STREAM_REGISTRY="$T/reg.jsonl" AGENT_HUMAN_STREAM_LIVE_DIR="$T/live"
 export TOKENMAXXING_REQUIRE_SUPERVISOR=0
 
-# Fake backends: dump the prompt argument (the one carrying the preamble).
+# Fake backends: dump the prompt (argv for grok, stdin for claude and codex).
 for b in claude grok codex; do
   cat >"$T/$b" <<'EOF'
 #!/usr/bin/env python3
 import json, os, sys
 from pathlib import Path
 body = next((a for a in sys.argv[1:] if a.startswith("[sume worker session]")), "")
+if not body and Path(sys.argv[0]).name != "grok":
+    body = sys.stdin.read()
 Path(os.environ["PROMPT_OUT"]).write_text(body)
 print(json.dumps({"type": "result", "session_id": "00000000-0000-0000-0000-000000000000", "result": "ok"}))
 print(json.dumps({"type": "thread.started", "thread_id": "00000000-0000-0000-0000-000000000000"}))
