@@ -116,9 +116,19 @@ sume-bg-launch --host mini --backend claude --name <job-slug> \
   --prompt-file "$P" -- --model claude-opus-5-5 --effort high
 ```
 
-Run it as a background command. Smoke once for `📎 session_id=` (dead =
-an `exit_code` in seconds), tell Chase the job slug and session id, then
-return control. The attach streams the M5 log into
+Launch, check once, return (Chase lock 2026-11-09). The launcher's attach
+never exits on its own, so a foreground call blocks until the tool timeout
+(Chase: "돌리고 나서 막 60초 기다리고 이래?"). Always detach it:
+
+```bash
+(nohup sume-bg-launch --host mini ... </dev/null >/dev/null 2>&1 &)
+```
+
+Then do exactly one launch check: the job dir exists on the M5
+(`ls -1d ~/.cstack/state/remote-jobs/*<job-slug>*`) with no `exit_code`.
+Tell Chase the job slug and end the turn. No sleep, no polling, no waiting
+for `📎 session_id=` or for output; completion is checked only when Chase
+asks. The attach streams the M5 log into
 `~/.cstack/state/opus-live/<job>.log` (+ `LATEST.log`); laptop sleep ends
 only the attach, never the job.
 
