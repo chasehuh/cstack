@@ -90,6 +90,8 @@ Auto backend (default):
   --model opus|fable|sonnet|haiku|claude* → claude
   First-party ids (sume#8221): --model claude-opus-5-5 (alias opus-5.5) → claude,
   --model claude-sonnet-5-5 (alias sonnet-5.5) → claude,
+  --model claude-fable-5-2 (alias fable-5.2) → claude, default --effort high,
+  --model claude-fable-5-1 (alias fable-5.1) → claude,
   --model gpt-6-sol → codex. All pass through to the CLI verbatim.
   Bare `sonnet` / `opus` stay the Claude CLI's own aliases (not rewritten).
   --resume <uuid> uses the last backend recorded for that session
@@ -558,6 +560,32 @@ EOF
     rm -rf "$_tmp"
     exit 1
   fi
+  # Fable 5.2: claude-fable-5-2 verbatim with the Fable default effort (high)
+  # when --effort is omitted, and the desk alias fable-5.2 rewritten to it.
+  CLAUDE_ARGV_FILE="$_tmp/claude-argv-fable52.txt" \
+    AGENT_HUMAN_STREAM_BACKEND=auto \
+    AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg.jsonl" \
+    AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live" \
+    PATH="$_tmp:$PATH" \
+    "$SOURCE" --name self-test-fable52 "self-test fable 5.2" --model claude-fable-5-2 >/dev/null 2>&1
+  if ! grep -qxF -- 'claude-fable-5-2' "$_tmp/claude-argv-fable52.txt" || ! tr '\n' ' ' <"$_tmp/claude-argv-fable52.txt" | grep -qF -- '--effort high'; then
+    echo "self-test: --model claude-fable-5-2 did not reach claude with --effort high:" >&2
+    cat "$_tmp/claude-argv-fable52.txt" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
+  CLAUDE_ARGV_FILE="$_tmp/claude-argv-fable52-alias.txt" \
+    AGENT_HUMAN_STREAM_BACKEND=auto \
+    AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg.jsonl" \
+    AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live" \
+    PATH="$_tmp:$PATH" \
+    "$SOURCE" --name self-test-fable52-alias "self-test fable 5.2 alias" --model fable-5.2 --effort max >/dev/null
+  if ! grep -qxF -- 'claude-fable-5-2' "$_tmp/claude-argv-fable52-alias.txt" || grep -qxF -- 'fable-5.2' "$_tmp/claude-argv-fable52-alias.txt" || ! tr '\n' ' ' <"$_tmp/claude-argv-fable52-alias.txt" | grep -qF -- '--effort max'; then
+    echo "self-test: --model fable-5.2 --effort max was not rewritten to claude-fable-5-2 max:" >&2
+    cat "$_tmp/claude-argv-fable52-alias.txt" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
   # Sonnet 5.5 (same shape as Opus 5.5): claude-sonnet-5-5 verbatim, the desk
   # alias sonnet-5.5 rewritten to it, and bare `sonnet` left to the Claude CLI.
   CLAUDE_ARGV_FILE="$_tmp/claude-argv-sonnet55.txt" \
@@ -884,12 +912,16 @@ fi
 
 # Claude desk model aliases (sume#8221): `opus-5.5` / `opus5.5` / `opus-5-5`
 # name Claude Opus 5.5 (`claude-opus-5-5`); `sonnet-5.5` / `sonnet5.5` /
-# `sonnet-5-5` name Claude Sonnet 5.5 (`claude-sonnet-5-5`). Every other
+# `sonnet-5-5` name Claude Sonnet 5.5 (`claude-sonnet-5-5`); `fable-5.2` /
+# `fable5.2` / `fable-5-2` name Claude Fable 5.2 (`claude-fable-5-2`), and the
+# same spellings of 5.1 name `claude-fable-5-1`. Every other
 # spelling passes through untouched (`opus`, `sonnet`, `fable`, `claude-*`).
 _claude_model_wire() {
   case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
     opus-5.5|opus5.5|opus-5-5|claude-opus-5.5) echo "claude-opus-5-5" ;;
     sonnet-5.5|sonnet5.5|sonnet-5-5|claude-sonnet-5.5) echo "claude-sonnet-5-5" ;;
+    fable-5.2|fable5.2|fable-5-2|claude-fable-5.2) echo "claude-fable-5-2" ;;
+    fable-5.1|fable5.1|fable-5-1|claude-fable-5.1) echo "claude-fable-5-1" ;;
     *) echo "$1" ;;
   esac
 }

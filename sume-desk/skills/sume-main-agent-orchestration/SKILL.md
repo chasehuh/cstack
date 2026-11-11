@@ -161,8 +161,10 @@ wrappers. `--resume` is same-host only: a Mini session resumed with
 
 ### Model and effort
 
-- Model: `--model claude-opus-5-5` (alias `opus-5.5`). Fable
-  (`--model fable`) or Sonnet 5.5 only when Chase names them.
+- Model: `--model claude-opus-5-5` (alias `opus-5.5`). Fable 5.2
+  (`--model claude-fable-5-2`, alias `fable-5.2`; default effort `high`) or
+  Sonnet 5.5 only when Chase names them. Fable 5.1 stays reachable as
+  `--model claude-fable-5-1` (alias `fable-5.1`).
 - Effort: Chase usually names it; pass it through:
   `--effort low|medium|high|xhigh|max` (`mid` → `medium`, `maximum` → `max`,
   `x-high` → `xhigh`). Since 2026-10-18 the mix is high 48%, medium 27%,

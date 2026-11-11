@@ -3,6 +3,14 @@
 Newest first. What changed in how the desk runs, and what was removed, so a
 stale habit can be traced to the day it stopped being true.
 
+## 2026-11-11 — Fable 5.2 on workers (fable-52-cstack)
+
+- `--model claude-fable-5-2` (alias `fable-5.2`) reaches Claude Code verbatim
+  with Fable's default effort `high`; `fable-5.1` aliases `claude-fable-5-1`.
+  Opus 5.5 stays the default worker model.
+- Claude Code on the M5 is 2.1.322 (from 2.1.296). The old package was moved
+  aside, not overwritten, so workers already running keep their binary.
+
 ## 2026-11-05 — unrelated activity never stops a Mini job (worker-mass-kill-rca)
 
 - Root cause of the 2026-11-04 12:53 KST (7 jobs) and 2026-11-05 12:58 KST
