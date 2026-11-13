@@ -1454,10 +1454,20 @@ index f38b2f3..37e8cc1 100644
    rateLimitTier: z.string().optional(),
  });
 diff --git a/src/lib/usage.ts b/src/lib/usage.ts
-index b9ef2aa..b855505 100644
+index b9ef2aa..41ce1e2 100644
 --- a/src/lib/usage.ts
 +++ b/src/lib/usage.ts
-@@ -338,7 +338,7 @@ async function probeUsageOnce(env: Record<string, string>, now: number): Promise
+@@ -251,7 +251,8 @@ export function parseUsageTextFull(text: string, now = Date.now()): FullUsage |
+     else if (/^all models$/i.test(m[2]!.trim())) weekAll = window;
+     else perModel[m[2]!.trim()] = window;
+   }
+-  if (!session || !weekAll) return null;
++  if (!weekAll) return null;
++  session ??= { usedPercentage: 0, resetsAt: null };
+   return { session, weekAll, perModel };
+ }
+ 
+@@ -338,7 +339,7 @@ async function probeUsageOnce(env: Record<string, string>, now: number): Promise
  
  const PROBE_RETRY_DELAYS_MS = [2000, 5000];
  

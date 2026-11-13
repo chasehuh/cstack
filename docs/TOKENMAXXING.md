@@ -110,6 +110,11 @@ still needed (cstack#25):
   before using it. If Claude Code dead-clears it, the account is marked
   needs-reauth; if nothing changed, the account is skipped as
   `refresh_rejected`.
+- **Usage text from Claude Code 2.1.3xx**: `/usage` may print only the
+  weekly bars, without the `Current session` line. The parser needs only the
+  `Current week (all models)` bar and reads a missing session bar as 0% with
+  no reset time; with no weekly bar there is still no usage. Hand-patched on
+  the Mini on 2026-11-12, folded into `desk-1.10.0.patch` on 2026-11-13.
 
 **Why not upstream latest.** Upstream ≥1.37.0 dropped the shared live
 credential, the Claude `switch`, and tokenmaxxing's own refresh: every

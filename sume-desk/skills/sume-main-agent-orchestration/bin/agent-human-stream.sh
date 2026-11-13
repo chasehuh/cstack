@@ -26,6 +26,7 @@ SKILL_DIR="$(cd "$ROOT/.." && pwd)"
 CSTACK_STATE="${CSTACK_STATE:-$HOME/.cstack/state}"
 REGISTRY="${AGENT_HUMAN_STREAM_REGISTRY:-${CLAUDE_HUMAN_STREAM_REGISTRY:-$CSTACK_STATE/opus-sessions.jsonl}}"
 LIVE_DIR="${AGENT_HUMAN_STREAM_LIVE_DIR:-${CLAUDE_HUMAN_STREAM_LIVE_DIR:-$CSTACK_STATE/opus-live}}"
+CSTACK_FABLE_LATEST="${CSTACK_FABLE_LATEST:-claude-fable-5-2}"
 
 # Claude Code CLI 2.1.x (SDK + changelog): low|medium|high|xhigh|max.
 # Fable / Opus 4.7+ take `max` natively. Do NOT remap max → high.
@@ -90,8 +91,11 @@ Auto backend (default):
   --model opus|fable|sonnet|haiku|claude* → claude
   First-party ids (sume#8221): --model claude-opus-5-5 (alias opus-5.5) → claude,
   --model claude-sonnet-5-5 (alias sonnet-5.5) → claude,
-  --model claude-fable-5-2 (alias fable-5.2) → claude, default --effort high,
-  --model claude-fable-5-1 (alias fable-5.1) → claude,
+  --model fable (any casing or typo: Fable, fabel, "Fable max", fable-5.2,
+  claude-fable) → the latest Fable, $CSTACK_FABLE_LATEST (claude-fable-5-2),
+  default --effort high; an effort word in it ("Fable max") sets --effort.
+  A full id (--model claude-fable-5-1) passes through verbatim. A Fable
+  worker cannot fork a non-Fable session: launch it fresh.
   --model gpt-6-sol → codex. All pass through to the CLI verbatim.
   Bare `sonnet` / `opus` stay the Claude CLI's own aliases (not rewritten).
   --resume <uuid> uses the last backend recorded for that session
@@ -586,6 +590,35 @@ EOF
     rm -rf "$_tmp"
     exit 1
   fi
+  _fable_case() {
+    local name="$1" want_model="$2" want_effort="$3"
+    shift 3
+    CLAUDE_ARGV_FILE="$_tmp/claude-argv-$name.txt" \
+      AGENT_HUMAN_STREAM_BACKEND=auto \
+      AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg.jsonl" \
+      AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live" \
+      PATH="$_tmp:$PATH" \
+      "$@" >/dev/null 2>&1
+    if ! grep -qxF -- "$want_model" "$_tmp/claude-argv-$name.txt" || ! tr '\n' ' ' <"$_tmp/claude-argv-$name.txt" | grep -qF -- "--effort $want_effort"; then
+      echo "self-test: $name did not reach claude as $want_model --effort $want_effort:" >&2
+      cat "$_tmp/claude-argv-$name.txt" >&2
+      rm -rf "$_tmp"
+      exit 1
+    fi
+  }
+  _fable_case fable-bare claude-fable-5-2 high "$SOURCE" --name self-test-fable "self-test fable" --model fable
+  _fable_case fable-upper-max claude-fable-5-2 max "$SOURCE" --name self-test-fable-max "self-test Fable max" --model "Fable max"
+  _fable_case fable-typo claude-fable-5-2 high "$SOURCE" --name self-test-fabel "self-test fabel" --model Fabel
+  _fable_case fable-old-alias claude-fable-5-2 high "$SOURCE" --name self-test-fable51 "self-test fable 5.1" --model fable-5.1
+  _fable_case fable-explicit claude-fable-5-1 high "$SOURCE" --name self-test-fable51-id "self-test fable 5.1 id" --model claude-fable-5-1
+  CSTACK_FABLE_LATEST=claude-fable-9-9 _fable_case fable-bumped claude-fable-9-9 low "$SOURCE" --name self-test-fable-bump "self-test fable bump" --model fable --effort low
+  printf '%s\n' '{"session_id":"00000000-0000-4000-8000-0000000000aa","backend":"claude","model":"claude-opus-5-5"}' >>"$_tmp/reg.jsonl"
+  if AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg.jsonl" AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live" PATH="$_tmp:$PATH" \
+    "$SOURCE" --name self-test-fable-fork "self-test fable fork" --resume 00000000-0000-4000-8000-0000000000aa --fork-session --model fable >/dev/null 2>&1; then
+    echo "self-test: a Fable fork of an Opus session was not refused" >&2
+    rm -rf "$_tmp"
+    exit 1
+  fi
   # Sonnet 5.5 (same shape as Opus 5.5): claude-sonnet-5-5 verbatim, the desk
   # alias sonnet-5.5 rewritten to it, and bare `sonnet` left to the Claude CLI.
   CLAUDE_ARGV_FILE="$_tmp/claude-argv-sonnet55.txt" \
@@ -862,6 +895,70 @@ if [[ -z "$_resolved_model" && -n "$RESUME" ]]; then
   _resolved_model=$(lookup_session_field "$RESUME" model)
 fi
 
+_fable_spelling() {
+  local lc core eff=""
+  lc=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+  [[ "$lc" =~ ^claude-fable-[0-9]+(-[0-9]+)*$ ]] && return 1
+  if [[ "$lc" =~ ^(.*[^[:space:]_.-])[[:space:]_.-]+(max|maximum|xhigh|high|medium|low)$ ]]; then
+    lc="${BASH_REMATCH[1]}"
+    eff="${BASH_REMATCH[2]}"
+  fi
+  core=$(printf '%s' "$lc" | sed -E 's/^claude[[:space:]_.-]*//; s/[[:space:]_.-]*[0-9][0-9[:space:]_.-]*$//')
+  awk -v a="$core" -v b="fable" 'BEGIN {
+    n = length(a); m = length(b)
+    if (n < 4 || n > 7 || substr(a, 1, 1) != "f") exit 1
+    for (i = 0; i <= n; i++) d[i, 0] = i
+    for (j = 0; j <= m; j++) d[0, j] = j
+    for (i = 1; i <= n; i++) for (j = 1; j <= m; j++) {
+      c = (substr(a, i, 1) == substr(b, j, 1)) ? 0 : 1
+      v = d[i - 1, j] + 1; if (d[i, j - 1] + 1 < v) v = d[i, j - 1] + 1
+      if (d[i - 1, j - 1] + c < v) v = d[i - 1, j - 1] + c
+      d[i, j] = v
+    }
+    exit (d[n, m] <= 2) ? 0 : 1
+  }' || return 1
+  printf '%s' "$eff"
+}
+
+if [[ "$BACKEND" == "claude" || "$BACKEND" == "auto" ]] && [[ -n "$_resolved_model" ]] && _fable_eff=$(_fable_spelling "$_resolved_model"); then
+  _fable_asked="$_resolved_model"
+  _resolved_model="$CSTACK_FABLE_LATEST"
+  _filtered=()
+  _i=0
+  while [[ $_i -lt ${#EXTRA[@]} ]]; do
+    _a="${EXTRA[$_i]}"
+    case "$_a" in
+      --model|-m)
+        _filtered+=("$_a" "$CSTACK_FABLE_LATEST")
+        _i=$((_i + 2))
+        continue
+        ;;
+      --model=*|-m=*)
+        _filtered+=("${_a%%=*}=$CSTACK_FABLE_LATEST")
+        _i=$((_i + 1))
+        continue
+        ;;
+    esac
+    _filtered+=("$_a")
+    _i=$((_i + 1))
+  done
+  EXTRA=("${_filtered[@]+"${_filtered[@]}"}")
+  if [[ -n "$_fable_eff" && "$_has_effort" -eq 0 ]]; then
+    EXTRA+=(--effort "$_fable_eff")
+    _has_effort=1
+    _passed_effort="$_fable_eff"
+  fi
+  echo "note: Fable → ${CSTACK_FABLE_LATEST} (latest Fable; asked: ${_fable_asked})" >&2
+fi
+
+if [[ "$FORK" -eq 1 && -n "$RESUME" && "$_resolved_model" == claude-fable-* ]]; then
+  _fork_from_model=$(lookup_session_field "$RESUME" model)
+  if [[ -n "$_fork_from_model" && "$(printf '%s' "$_fork_from_model" | tr '[:upper:]' '[:lower:]')" != *fable* ]]; then
+    echo "error: a Fable worker cannot fork a ${_fork_from_model} session; launch it fresh (drop --resume/--fork-session) and put the context in the prompt" >&2
+    exit 2
+  fi
+fi
+
 if [[ "$BACKEND" == "auto" && -n "$RESUME" ]]; then
   _reg_backend=$(lookup_session_field "$RESUME" backend)
   case "$_reg_backend" in
@@ -912,16 +1009,12 @@ fi
 
 # Claude desk model aliases (sume#8221): `opus-5.5` / `opus5.5` / `opus-5-5`
 # name Claude Opus 5.5 (`claude-opus-5-5`); `sonnet-5.5` / `sonnet5.5` /
-# `sonnet-5-5` name Claude Sonnet 5.5 (`claude-sonnet-5-5`); `fable-5.2` /
-# `fable5.2` / `fable-5-2` name Claude Fable 5.2 (`claude-fable-5-2`), and the
-# same spellings of 5.1 name `claude-fable-5-1`. Every other
-# spelling passes through untouched (`opus`, `sonnet`, `fable`, `claude-*`).
+# `sonnet-5-5` name Claude Sonnet 5.5 (`claude-sonnet-5-5`). Every other
+# spelling passes through untouched (`opus`, `sonnet`, `claude-*`).
 _claude_model_wire() {
   case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
     opus-5.5|opus5.5|opus-5-5|claude-opus-5.5) echo "claude-opus-5-5" ;;
     sonnet-5.5|sonnet5.5|sonnet-5-5|claude-sonnet-5.5) echo "claude-sonnet-5-5" ;;
-    fable-5.2|fable5.2|fable-5-2|claude-fable-5.2) echo "claude-fable-5-2" ;;
-    fable-5.1|fable5.1|fable-5-1|claude-fable-5.1) echo "claude-fable-5-1" ;;
     *) echo "$1" ;;
   esac
 }

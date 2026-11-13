@@ -454,3 +454,20 @@ describe("review follow-ups", () => {
   });
 });
 
+
+describe("usage text from Claude Code 2.1.3xx", () => {
+  test("weekly bars without a Current session line still parse", async () => {
+    const { parseUsageTextFull } = await import(join(SRC, "src", "lib", "usage.ts"));
+    const full = parseUsageTextFull("Current week (all models): 40%\nCurrent week (Sonnet only): 12%");
+    expect(full).not.toBeNull();
+    expect(full.weekAll.usedPercentage).toBe(40);
+    expect(full.session).toEqual({ usedPercentage: 0, resetsAt: null });
+    expect(full.perModel["Sonnet only"].usedPercentage).toBe(12);
+  });
+
+  test("a session line is still read when present, and no weekly bar is still no usage", async () => {
+    const { parseUsageTextFull } = await import(join(SRC, "src", "lib", "usage.ts"));
+    expect(parseUsageTextFull("Current session: 55%\nCurrent week (all models): 20%").session.usedPercentage).toBe(55);
+    expect(parseUsageTextFull("Current session: 55%")).toBeNull();
+  });
+});

@@ -3,6 +3,21 @@
 Newest first. What changed in how the desk runs, and what was removed, so a
 stale habit can be traced to the day it stopped being true.
 
+## 2026-11-13 — "Fable" means the latest Fable (cstack-fable-alias)
+
+- 채원님 rule: "Fable" in any casing or typo (`fable`, `Fable max`, `Fable 5.2`)
+  always means the latest Fable. `agent-human-stream` (so `sume-bg-launch
+  -- --model fable`) rewrites every Fable spelling to `CSTACK_FABLE_LATEST`,
+  today `claude-fable-5-2`, the newest id Claude Code 2.1.322 accepts
+  (`claude-fable-5-3` and `claude-fable-6` are `unrecognized_model`). An
+  effort word in the name becomes `--effort`; a full `claude-fable-N-M` id
+  still passes verbatim, so `fable-5.1` now means the latest too.
+- A Fable fork of a non-Fable session is refused (exit 2): Fable workers
+  launch fresh.
+- tokenmaxxing desk patch: the `/usage` parser no longer needs the `Current
+  session` line (Claude Code 2.1.3xx omits it). It was a hand edit on the Mini
+  only; now in `desk-1.10.0.patch` with two desk tests, so a reinstall keeps it.
+
 ## 2026-11-11 — Fable 5.2 on workers (fable-52-cstack)
 
 - `--model claude-fable-5-2` (alias `fable-5.2`) reaches Claude Code verbatim
