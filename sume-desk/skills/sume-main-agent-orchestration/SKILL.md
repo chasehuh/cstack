@@ -169,9 +169,13 @@ wrappers. `--resume` is same-host only: a Mini session resumed with
   (today `claude-fable-5-2`), default effort `high`. An effort word in the
   name sets the effort: `--model "Fable max"` = `claude-fable-5-2 --effort
   max`. Only a full id (`--model claude-fable-5-1`) pins an older Fable.
-- **Fable workers launch fresh.** A Fable worker cannot fork an Opus session:
-  `--resume <opus uuid> --fork-session --model fable` exits 2. Start a new job
-  and put the context in the prompt. Resuming a Fable session works.
+- **Fable workers can fork an Opus session.** Fork the Opus Director base
+  session onto Fable with `sume-bg-launch --host mini --resume <base uuid>
+  --fork-session -- --model fable`: the fork runs on the latest Fable and keeps
+  the session's context (tested 2026-11-13, job
+  `20261113T012330Z-fable-fork-test-fork-a422d1fc`, `FORK_OK
+  model=claude-fable-5-2`). The earlier "Fable must launch fresh" rule was
+  wrong; a fresh launch is still fine when no base session fits.
 - **Bump the alias** when a newer Fable ships: check the installed Claude Code
   accepts the id, `claude -p --model claude-fable-<x>-<y> "Reply ok"` (an
   unknown id fails locally with `unrecognized_model`, no API call), then change

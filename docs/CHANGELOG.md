@@ -12,8 +12,12 @@ stale habit can be traced to the day it stopped being true.
   (`claude-fable-5-3` and `claude-fable-6` are `unrecognized_model`). An
   effort word in the name becomes `--effort`; a full `claude-fable-N-M` id
   still passes verbatim, so `fable-5.1` now means the latest too.
-- A Fable fork of a non-Fable session is refused (exit 2): Fable workers
-  launch fresh.
+- Corrected the same day (#42): #41 refused a
+  Fable fork of a non-Fable session (exit 2) on the belief that Fable must
+  launch fresh. That was wrong: forking the Opus Director base session onto
+  `claude-fable-5-2` works and keeps its context. The refusal blocked
+  `20261113T013627Z-draft-finalize-rca-fork-a422d1fc` and is gone; Fable
+  workers may fork Opus sessions.
 - tokenmaxxing desk patch: the `/usage` parser no longer needs the `Current
   session` line (Claude Code 2.1.3xx omits it). It was a hand edit on the Mini
   only; now in `desk-1.10.0.patch` with two desk tests, so a reinstall keeps it.
