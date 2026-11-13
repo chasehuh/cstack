@@ -95,7 +95,7 @@ Auto backend (default):
   claude-fable) → the latest Fable, $CSTACK_FABLE_LATEST (claude-fable-5-2),
   default --effort high; an effort word in it ("Fable max") sets --effort.
   A full id (--model claude-fable-5-1) passes through verbatim. A Fable
-  worker cannot fork a non-Fable session: launch it fresh.
+  worker can fork an Opus session (--resume <uuid> --fork-session --model fable).
   --model gpt-6-sol → codex. All pass through to the CLI verbatim.
   Bare `sonnet` / `opus` stay the Claude CLI's own aliases (not rewritten).
   --resume <uuid> uses the last backend recorded for that session
@@ -612,13 +612,6 @@ EOF
   _fable_case fable-old-alias claude-fable-5-2 high "$SOURCE" --name self-test-fable51 "self-test fable 5.1" --model fable-5.1
   _fable_case fable-explicit claude-fable-5-1 high "$SOURCE" --name self-test-fable51-id "self-test fable 5.1 id" --model claude-fable-5-1
   CSTACK_FABLE_LATEST=claude-fable-9-9 _fable_case fable-bumped claude-fable-9-9 low "$SOURCE" --name self-test-fable-bump "self-test fable bump" --model fable --effort low
-  printf '%s\n' '{"session_id":"00000000-0000-4000-8000-0000000000aa","backend":"claude","model":"claude-opus-5-5"}' >>"$_tmp/reg.jsonl"
-  if AGENT_HUMAN_STREAM_REGISTRY="$_tmp/reg.jsonl" AGENT_HUMAN_STREAM_LIVE_DIR="$_tmp/live" PATH="$_tmp:$PATH" \
-    "$SOURCE" --name self-test-fable-fork "self-test fable fork" --resume 00000000-0000-4000-8000-0000000000aa --fork-session --model fable >/dev/null 2>&1; then
-    echo "self-test: a Fable fork of an Opus session was not refused" >&2
-    rm -rf "$_tmp"
-    exit 1
-  fi
   # Sonnet 5.5 (same shape as Opus 5.5): claude-sonnet-5-5 verbatim, the desk
   # alias sonnet-5.5 rewritten to it, and bare `sonnet` left to the Claude CLI.
   CLAUDE_ARGV_FILE="$_tmp/claude-argv-sonnet55.txt" \
@@ -951,13 +944,6 @@ if [[ "$BACKEND" == "claude" || "$BACKEND" == "auto" ]] && [[ -n "$_resolved_mod
   echo "note: Fable → ${CSTACK_FABLE_LATEST} (latest Fable; asked: ${_fable_asked})" >&2
 fi
 
-if [[ "$FORK" -eq 1 && -n "$RESUME" && "$_resolved_model" == claude-fable-* ]]; then
-  _fork_from_model=$(lookup_session_field "$RESUME" model)
-  if [[ -n "$_fork_from_model" && "$(printf '%s' "$_fork_from_model" | tr '[:upper:]' '[:lower:]')" != *fable* ]]; then
-    echo "error: a Fable worker cannot fork a ${_fork_from_model} session; launch it fresh (drop --resume/--fork-session) and put the context in the prompt" >&2
-    exit 2
-  fi
-fi
 
 if [[ "$BACKEND" == "auto" && -n "$RESUME" ]]; then
   _reg_backend=$(lookup_session_field "$RESUME" backend)
