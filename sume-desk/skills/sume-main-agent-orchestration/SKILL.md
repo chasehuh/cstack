@@ -161,10 +161,23 @@ wrappers. `--resume` is same-host only: a Mini session resumed with
 
 ### Model and effort
 
-- Model: `--model claude-opus-5-5` (alias `opus-5.5`). Fable 5.2
-  (`--model claude-fable-5-2`, alias `fable-5.2`; default effort `high`) or
-  Sonnet 5.5 only when Chase names them. Fable 5.1 stays reachable as
-  `--model claude-fable-5-1` (alias `fable-5.1`).
+- Model: `--model claude-opus-5-5` (alias `opus-5.5`). Fable or Sonnet 5.5
+  only when Chase (or 채원님) names them.
+- **"Fable" = the latest Fable model.** Any spelling (`fable`, `Fable`,
+  `fabel`, `Fable 5.2`, `claude-fable`) passes as `--model fable` and the
+  launcher rewrites it to `CSTACK_FABLE_LATEST` in `agent-human-stream.sh`
+  (today `claude-fable-5-2`), default effort `high`. An effort word in the
+  name sets the effort: `--model "Fable max"` = `claude-fable-5-2 --effort
+  max`. Only a full id (`--model claude-fable-5-1`) pins an older Fable.
+- **Fable workers launch fresh.** A Fable worker cannot fork an Opus session:
+  `--resume <opus uuid> --fork-session --model fable` exits 2. Start a new job
+  and put the context in the prompt. Resuming a Fable session works.
+- **Bump the alias** when a newer Fable ships: check the installed Claude Code
+  accepts the id, `claude -p --model claude-fable-<x>-<y> "Reply ok"` (an
+  unknown id fails locally with `unrecognized_model`, no API call), then change
+  the one `CSTACK_FABLE_LATEST` line, run `agent-human-stream --self-test`,
+  and add a CHANGELOG line. `CSTACK_FABLE_LATEST=<id>` in the environment
+  overrides it for one launch.
 - Effort: Chase usually names it; pass it through:
   `--effort low|medium|high|xhigh|max` (`mid` → `medium`, `maximum` → `max`,
   `x-high` → `xhigh`). Since 2026-10-18 the mix is high 48%, medium 27%,
