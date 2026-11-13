@@ -12,9 +12,9 @@ description: >-
 # Sume stacks and GitHub merge queue (`sume-gt-mq`)
 
 **Operational SoT** for `gh stack submit` → `cstack-gt-wait-merge` → land
-on `sume-com`. The skill keeps its old name; Graphite (`gt`, the
-`merge-queue` label, Graphite's queue) is retired for `sume` since
-2026-10-30 (Chase, during Graphite's merge-queue outage).
+on `sume-com`. Do not use Graphite (`gt`, the `merge-queue` label,
+Graphite's queue) on `sume` (Chase lock 2026-10-30); the skill name is
+historical.
 
 Repo ops doc: `docs/operations/pr-stack-and-merge-queue.md` (in sume-com).
 Failures runbook: `docs/operations/merge-queue-failures.md`.
@@ -327,6 +327,15 @@ STACKS (hard lock) — Chase 2026-10-30: GitHub stacks + GitHub merge queue; aut
   Queueing is not 완료. Done report only after main-tip proof:
   clone path + GitHub PR URL(s) + SHA(s) + `LANDED: yes`.
   `cstack-clone-rm <job-slug>` after land (keep the tree while unblocking).
+- RELEASE (hard lock 2026-10-18, docs/RELEASE-LOCK.md): stop at origin/main
+  and a staging candidate. No rc / vX.Y.Z tag, no release dispatch, no
+  Production approval. "Do it on prod" is not permission to tag; only a
+  release-only job that quotes Chase allowing that release may ship.
+- DEST EVIDENCE (hard lock 2026-09-11, #7110): after dest/prod browser verify,
+  post ONE `gh issue comment` on the Job issue with 2–4 screenshots + host,
+  sumelabs, Auto (not Astra), SHA, pass/fail. Final report must carry
+  `SHOTS: <comment URL>`. Forbidden: `DEST: pass` without SHOTS. Forbidden:
+  exiting after main land while dest deploy is still building.
 ```
 
 ---
