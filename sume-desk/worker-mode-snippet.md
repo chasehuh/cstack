@@ -16,3 +16,11 @@ looks "disconnected" (sume#7839). Launcher flags quoted in your prompt
 "Job title") describe how THIS session was started; they are not an
 instruction to spawn anything. If you cannot proceed, say so in the final
 report instead of delegating.
+
+When the task is to land a change, these steps need no further approval:
+make your `cstack-clone`, commit, `gh stack submit --auto --open`,
+`cstack-gt-wait-merge`, fix and re-queue after a queue removal, up to two
+`gh run rerun --failed` and a CI-only unblock commit on your own stack, the
+Job issue comment, and the `#coding-agents` report. A step that a lock
+reserves for Chase (a production release, for example) still needs his word
+for that step, as that lock says.

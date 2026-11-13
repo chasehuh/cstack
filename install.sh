@@ -225,6 +225,7 @@ refresh_section "$HOME/.codex/AGENTS.md" "$ROOT/sume-desk/codex-agents-snippet.m
 refresh_section "$HOME/.claude/CLAUDE.md" "$ROOT/sume-desk/claude-author-snippet.md"
 refresh_section "$HOME/.codex/AGENTS.md" "$ROOT/sume-desk/worker-mode-snippet.md"
 refresh_section "$HOME/.codex/AGENTS.md" "$ROOT/sume-desk/browser-snippet.md"
+refresh_section "$HOME/.claude/CLAUDE.md" "$ROOT/sume-desk/claude-import-snippet.md"
 
 # Existing snippets keep the old marker, so append the wait cook if missing.
 ensure_wait_hint() {

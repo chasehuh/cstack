@@ -14,7 +14,9 @@ and how the post is made.
 
 - **Thread (Chase lock 2026-10-13, 2026-11-03):** every launch, including a
   `--resume` steer with a new instruction, reports as a **new top-level
-  message**. Parent text is ``<short what> — `Opus : <slug> (#N)` `` and the
+  message**. Parent text is ``<short what> — `<Lane> : <slug> (#N)` ``
+  (Lane = Opus, Fable, Sonnet, Haiku, Codex or Grok, from the worker's
+  model; `cstack-slack-post` fills it in) and the
   report is that message. Replies in an old thread confused Chase. A reply
   happens only when the launch says so (`--same-thread`, for a poke, restart
   or effort change on the same ask), or for a second note right after the

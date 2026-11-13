@@ -43,9 +43,9 @@ nested process dies with the session (sume#7839).
   work and report in **English**.
 - Restate the goal, constraints and current state; pick fork vs fresh vs
   steer; send a precise prompt with done criteria.
-- Launch in the background and return control. Do not block on a worker
-  unless Chase's next request depends on that exact result. The completion
-  notification is the monitor; no sleep/poll loops.
+- Launch detached and return control (§ Fresh job). Do not block on a
+  worker unless Chase's next request depends on that exact result. Check
+  completion only when Chase asks; no sleep/poll loops.
 - Read only the worker's `—— final ——` block and `📎 session_id=`; translate
   it into a short update.
 - Do not silently implement what Chase expected a worker to do. Tiny
@@ -193,7 +193,8 @@ wrappers. `--resume` is same-host only: a Mini session resumed with
 
 `--name` = 2–4 lowercase kebab tokens that say what the job is
 (`gh-stack-not-enabled`, `heygen-ticket-button`), never an issue number
-alone. Title everywhere (board, Slack parent): `Opus : <job-slug> (#N)`.
+alone. Title everywhere (board, Slack parent): `<Lane> : <job-slug> (#N)`,
+where Lane is the worker's model family (`Opus`, `Fable`, …).
 
 ### Control plane
 
@@ -268,7 +269,7 @@ is in Slack `#coding-agents` (Chase lock 2026-10-17). No polling loops.
 ## Slack `#coding-agents`
 
 Every worker posts its own Korean completion report (`docs/SLACK-REPORT.md`)
-as a **new top-level message** `<short what> — \`Opus : <slug> (#N)\`` with
+as a **new top-level message** `<short what> — \`<Lane> : <slug> (#N)\`` with
 the report in that message, for fresh jobs, forks and `--resume` steers alike
 (Chase lock 2026-10-13, 2026-11-03). A reply in the job's old thread only
 with `--same-thread` (a poke, restart or effort change, no new instruction).
@@ -293,7 +294,10 @@ you did not start. M5 ego is allowed. Prompts never ask a worker to
 "open Chrome".
 
 - Dev or prod under the **sumelabs** workspace only; compose model **Auto**.
-- Destructive steps (send, delete, pay, ops settings) need Chase first.
+- In the product under test, ask Chase before a step that sends a message
+  to a real person, deletes data, pays, or changes ops settings. The desk's
+  own required posts (the Job issue comment, the `#coding-agents` report)
+  are not covered by this rule.
 - Hard lock (#7110): after any dest/prod verify, post **one** `gh issue
   comment` on the Job issue with 2–4 screenshots + host, sumelabs, Auto,
   deployed SHA, pass/fail, URL. Final report carries `SHOTS: <comment URL>`;
