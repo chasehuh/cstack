@@ -128,12 +128,15 @@ ln -sfn "$GTBIN/cstack-gt-wait-merge.sh" "$HOME/.local/bin/cstack-gt-wait-merge"
 # Heavy-gate admission + ego task-space reaper (sume#12962).
 ln -sfn "$GTBIN/cstack-gate.mjs" "$HOME/.local/bin/cstack-gate"
 ln -sfn "$BIN/cstack-ego-reap.mjs" "$HOME/.local/bin/cstack-ego-reap"
+ln -sfn "$BIN/sume-bg-governor.py" "$HOME/.local/bin/sume-bg-governor"
+ln -sfn "$BIN/cstack-quota.py" "$HOME/.local/bin/cstack-quota"
 ln -sfn "$BIN/cstack-kill-guard.sh" "$HOME/.local/bin/pkill"
 ln -sfn "$BIN/cstack-kill-guard.sh" "$HOME/.local/bin/killall"
 chmod +x "$BIN/agent-human-stream.sh" "$BIN/agent-human-stream.py" \
   "$BIN/agent-human-stream.test.py" \
   "$BIN/claude-human-stream.sh" "$BIN/claude-human-stream.py" \
   "$BIN/sume-bg-launch.sh" "$BIN/sume-bg-remote.sh" "$BIN/sume-bg-launch.test.sh" \
+  "$BIN/sume-bg-governor.py" "$BIN/sume-bg-governor.test.sh" "$BIN/cstack-quota.py" \
   "$BIN/sume-cron-job.sh" "$BIN/sume-cron-job.test.sh" \
   "$BIN/cstack-slack-post.sh" "$BIN/slack-report.test.sh" \
   "$HOME/.agents/skills/sume-main-agent-orchestration/check-wiring.sh" \
@@ -285,6 +288,8 @@ fi
 if [ -x "$BIN/sume-bg-launch.test.sh" ] && [ "${CSTACK_SKIP_HOST_TESTS:-0}" != "1" ]; then
   echo "== sume-bg-launch host routing (offline, no Mini) =="
   "$BIN/sume-bg-launch.test.sh" || echo "NOTE: sume-bg-launch host tests failed (CSTACK_SKIP_HOST_TESTS=1 to skip)"
+  echo "== sume-bg-governor + quota (offline) =="
+  "$BIN/sume-bg-governor.test.sh" || echo "NOTE: sume-bg-governor tests failed (CSTACK_SKIP_HOST_TESTS=1 to skip)"
   echo "== sume-cron-job (offline) =="
   "$BIN/sume-cron-job.test.sh" || echo "NOTE: sume-cron-job tests failed (CSTACK_SKIP_HOST_TESTS=1 to skip)"
   echo "== slack-report tail (offline) =="

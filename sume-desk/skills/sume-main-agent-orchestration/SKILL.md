@@ -125,7 +125,9 @@ never exits on its own, so a foreground call blocks until the tool timeout
 ```
 
 Then do exactly one launch check: the job dir exists on the M5
-(`ls -1d ~/.cstack/state/remote-jobs/*<job-slug>*`) with no `exit_code`.
+(`ls -1d ~/.cstack/state/remote-jobs/*<job-slug>*`) with no `exit_code`
+(a `queued` file in it means the governor starts it when the Mini has room;
+tell Chase it is queued).
 Tell Chase the job slug and end the turn. No sleep, no polling, no waiting
 for `📎 session_id=` or for output; completion is checked only when Chase
 asks. The attach streams the M5 log into
@@ -202,7 +204,22 @@ sume-bg-launch --host mini --jobs              # alive / state per job
 sume-bg-launch --host mini --status <job>      # truth = M5 pid + recorded start time
 sume-bg-launch --host mini --attach <job>      # re-attach; rewrites the replica log
 sume-bg-launch --host mini --kill <job>        # TERM → KILL the job's process group
+sume-bg-launch --host mini --status            # governor: load, running / paused / queued, quota
+sume-bg-launch --host mini --quota             # Fable / 5 h / weekly per account + resets
+sume-bg-launch --host mini --governor pause|resume|start|pin|unpin <job>
 ```
+
+The M5 governor (launchd agent) pauses low-priority heavy jobs when the Mini
+is overloaded, resumes them when it is calm, queues new jobs while it is
+busy and staggers heavy Fable jobs when the pool is low. `state=paused` and
+`state=queued` are normal, not stuck or dead; do not kill or relaunch them.
+Launch flags: `--priority critical|high|normal|low` (default from the name:
+release/hotfix → critical, rca/sentry/incident → high, research/audit/
+loops/`-100` → low), `--now` (skip the queue for urgent work),
+`--fable-downgrade` (start on Opus 5.5 at the same effort when Fable quota
+is low; without it the launch only warns). A Fable worker that hits its
+limit resumes on another account, else on Opus 5.5 at the same effort; the
+death alert says which. Details: `docs/MINI-WORKER-HOST.md` (Governor).
 
 `state=pid-reused` means the recorded pid now belongs to another process
 (pids repeat after a reboot); the job is dead and `--kill` refuses it

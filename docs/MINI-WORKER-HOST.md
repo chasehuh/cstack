@@ -94,6 +94,16 @@ What happens:
 Laptop sleep, lid close or an ssh drop end **only the attach** (exit 255,
 registry row `attach-lost`). The job keeps running.
 
+Before step 3 starts anything, `sume-bg-remote start` checks Fable quota for a
+Fable model and asks the [governor](#governor-load-admission-quota) for
+admission. A busy Mini answers `queued: job … waits for Mini capacity`; the
+launcher exits 0 without attaching. Launch flags for this:
+
+- `--priority critical|high|normal|low` (default from the job name);
+- `--now`: skip the admission queue;
+- `--fable-downgrade` (or `SUME_BG_FABLE_DOWNGRADE=1`): when Fable quota is
+  low, start on Opus 5.5 at the same effort instead of only warning.
+
 ## Control plane
 
 ```bash
@@ -101,6 +111,10 @@ sume-bg-launch --host mini --jobs                 # job=… alive=yes|no state=�
 sume-bg-launch --host mini --status <job>
 sume-bg-launch --host mini --attach <job>         # re-attach; rewrites the replica from line 1
 sume-bg-launch --host mini --kill <job>           # TERM → KILL the job's process group
+sume-bg-launch --host mini --status               # governor: load, running / paused / queued jobs, quota
+sume-bg-launch --host mini --quota                # tokenmaxxing pool: Fable / 5 h / weekly per account, resets
+sume-bg-launch --host mini --governor pause|resume|start|pin|unpin <job>
+sume-bg-launch --host mini --governor mode observe|enforce|off
 ```
 
 `state`:
@@ -111,6 +125,8 @@ sume-bg-launch --host mini --kill <job>           # TERM → KILL the job's proc
 | `exited` | `exit_code` written |
 | `lost` | no `exit_code`, pid gone (killed hard, or the M5 rebooted) |
 | `pid-reused` | the pid is alive but belongs to another process |
+| `paused` | alive, stopped by the governor (`governor-paused` marker); `alive=yes` |
+| `queued` | admitted to the governor queue, not started yet (`queued` marker, no pid) |
 
 A bare pid is not liveness: after the 2026-11-01 reboot, pids came back on
 other processes (`mini-plug-unlock` showed alive on macOS `mapssyncd`,
@@ -180,7 +196,8 @@ Rules the launcher enforces:
   signals; a steer stops the old job through `kill_job` too.
 - **Unexpected death auto-resumes and alerts.** When the wrapper exits on a
   signal (rc 129–159) with no `stopped` marker, or with a usage-limit result
-  ("hit your … limit"), and no other live job holds the session,
+  ("hit your … limit", "reached your Fable limit"), and no other live job
+  holds the session,
   `sume-bg-remote run` starts `<stamp>-<name>-resume-<sid8>` on the same
   session with an `AUTO-RESUME:` prompt (check what already happened, restart
   needed watchers). Delay: 5 s after a signal, 120 s after a usage limit (time
@@ -196,11 +213,176 @@ Rules the launcher enforces:
   changes the credentials for the next request and kills nothing. A usage
   limit ends `claude -p` with rc=1 (2026-11-05 11:08 KST: 4 jobs); the
   auto-resume above brings it back on the swapped account.
+- **Fable limit → swap, then Opus.** Until 2026-11-14 the Fable message
+  ("You've reached your Fable limit. Switch to another model…") did not
+  match the limit pattern, so a Fable worker that ran out just died: on
+  2026-11-12 04:45–04:52 UTC four Fable jobs ended with rc=1, no resume, no
+  alert, while tokenmaxxing logged `stopfailure.decision reason=all-depleted
+  swapped=false`. Now, for a Fable worker (`--model fable…` /
+  `claude-fable-*`) that dies on a usage limit, `auto_resume` asks
+  `cstack-quota.py fable-plan` (reads `~/.config/tokenmaxxing`, see
+  [TOKENMAXXING.md](TOKENMAXXING.md#fable-quota-on-workers)):
+  - another account has Fable headroom → `tokenmaxxing switch <account>`,
+    then resume on Fable (alert: "Fable 계정 전환 후 재개"). The worker's own
+    session came over SSH and cannot read the login keychain, so its direct
+    switch fails; it then asks the governor daemon (`sume-bg-governor swap
+    <account>`, a GUI-session launchd agent that can) and waits up to 90 s
+    (`SUME_BG_SWAP_WAIT_S`). If the plan still says swap after that, the
+    resume falls back to Opus as below;
+  - no account has Fable headroom but one has weekly headroom → resume the
+    **same session** on `claude-opus-5-5` at the **same effort** (Fable max →
+    Opus max). The `AUTO-RESUME` prompt gains a `MODEL FALLBACK:` paragraph,
+    `job.env` records `MODEL_FALLBACK=fable→claude-opus-5-5 …`, and the alert
+    line says "Fable 소진 → Opus 5.5 <effort>로 재개";
+  - every account is out of weekly quota → no resume loop; the alert says
+    "모든 계정 주간 한도 소진, 재개 안 함" with the `--resume <uuid>` to run
+    after the reset.
+  Non-Fable workers keep the plain 120 s resume.
 
 Deploy: the launcher runs straight from the `~/.cstack/src` checkout, and a
 running bash reads its script as it goes. Update with `git pull` (git writes a
 new file, so running jobs keep the old inode), never with an in-place edit of
 a live script.
+
+## Governor (load, admission, quota)
+
+`sume-bg-governor` is a launchd agent on the M5 (`com.cstack.sume-bg-governor`,
+`RunAtLoad` + `KeepAlive`, so it survives a reboot or crash) that keeps many
+workers running without overloading the Mini or burning the Fable pool. One
+instance: the daemon holds `governor/daemon.lock`; a second one exits.
+
+Every 30 s it samples 1/5-min load, `kern.memorystatus_level` (memory free
+%), swap used and an sshd probe (TCP banner time on 127.0.0.1:22).
+
+| setting (env on the agent) | default (18 cores) | meaning |
+|---|---|---|
+| `GOV_HIGH_LOAD5` | 22 (1.22 × cores) | high water: 5-min load ≥ this **and** 1-min ≥ 90 % of it |
+| `GOV_LOW_LOAD5` | 12 (0.67 × cores) | low water: 5-min ≤ this and 1-min ≤ 1.2 × it, nothing else high |
+| `GOV_LOW_HOLD_MIN` | 5 | low must hold this long before a resume |
+| `GOV_COOLDOWN_S` | 180 | one pause / resume / start per cooldown |
+| `GOV_START_LOAD5` | 17 (midpoint) | a queued job starts only below this |
+| `GOV_SSH_SLOW_MS` | 3000 | sshd slower than this (or down) counts as high |
+| `GOV_MEM_FREE_LOW` / `GOV_SWAP_HIGH_MB` | 10 % / 4096 | memory / swap pressure counts as high |
+| `GOV_HEAVY_CPU` | 15 | only a job using ≥ this % CPU is worth pausing |
+| `GOV_MAX_PAUSE_MIN` | 30 | longer pauses become a clean stop + resume |
+| `GOV_FABLE_STAGGER_PCT` / `GOV_FABLE_HEAVY_MAX` | 25 / 2 | Fable stagger (below) |
+| `GOV_NOTIFY_MIN` | 10 | Slack batch interval |
+
+**Pause.** Above high water it pauses one job per cooldown: the lowest
+priority first, newest first within a priority. A pause is `SIGSTOP` of every
+process in the job's tree (descendants of the job pid plus its process
+group), recorded in `governor/state.json` and a `governor-paused` marker.
+After `GOV_LOW_HOLD_MIN` below low water it resumes one job per cooldown
+(`SIGCONT`), highest priority first, oldest pause first. Between the marks
+nothing changes (hysteresis). A pause longer than `GOV_MAX_PAUSE_MIN` becomes
+a clean stop: `SIGCONT`, then `sume-bg-remote kill` (the `stopped` marker, so
+no death alert and no auto-resume), and when the load is low again a new job
+`<stamp>-<name>-resume-<sid8>` resumes the **same session** with the same
+backend flags and a `PAUSED BY GOVERNOR, continue:` prompt.
+
+**Never paused** (the `NOTE` column of `--status` says why):
+
+- priority `critical` (release, hotfix, deploy, rollback, prod in the name);
+- a pinned job (`--governor pin <job>`), or a job dir with a `critical`
+  marker / `CRITICAL=1` in `job.env`;
+- a process in the tree running `git push|commit|rebase|merge|cherry-pick|am`,
+  `git tag v…`, `gh stack submit|merge|sync|push`, `gh pr merge|create|ready`,
+  `gh release`, `gh workflow run`, `gh run watch`, `cstack-gt-wait-merge`,
+  `cstack-gate`, `cstack-slack-post`, `vercel … deploy|--prod|promote`,
+  `railway up|deploy|redeploy`, `npm|pnpm|bun publish`, a `/release-*`
+  script or `sume-bg-remote start|kill` (read-only `git merge-base`,
+  `git tag -l` and `git status` do not count);
+- a job whose last 12 shell calls in `worker.log` include
+  `cstack-gt-wait-merge`, `gh stack submit|merge`, `gh pr merge`, a release
+  `gh workflow run`, `git push` or `git tag v…` (its merge-queue wait may be
+  between polls).
+
+If the Mini is high and nothing is pausable, it logs that once per 30 min and
+waits.
+
+**Account swaps.** The daemon also serves `sume-bg-governor swap <email>`
+requests (`governor/swap/*.req` → `*.done`, checked every second, in every
+mode): it runs `tokenmaxxing switch <email>` from the GUI session, where the
+login keychain is readable, and logs `SWAP <email> rc=…`. Auto-resume uses
+it after a Fable limit (above).
+
+**Priority.** `--priority critical|high|normal|low` on `sume-bg-launch`
+(`PRIORITY=` in `job.env`). Default from the name:
+
+| priority | name contains |
+|---|---|
+| critical | `release`, `hotfix`, `deploy`, `rollback`, `prod` |
+| high | `rca`, `sentry`, `incident`, `outage`, `sev`, `errors`, `alert(s)`, `money`, `security`, `signin` |
+| low | `research`, `study`, `audit`, `ideas`, `explore`, `dogfood`, `survey`, `eval`, `loop`, `iter`, `sweep`, `polish`, `review`, `probe`, `bench`, `-100…`, `r<N>` |
+| normal | everything else (features, fixes) |
+
+**Admission queue.** `sume-bg-remote start` asks `governor admit`. When the
+Mini is high, the job is queued: `job.env` and `extra.args` are written,
+a `queued` marker is set, no process starts, and the launcher prints
+`queued: job … waits for Mini capacity` and exits 0 without attaching. The
+governor starts queued jobs (highest priority, then oldest) when nothing is
+paused and the 5-min load is below `GOV_START_LOAD5`. Never queued: `--now`,
+priority `critical`, a steer (`--resume` without `--fork-session`), and every
+auto-resume / governor relaunch. Start one by hand with
+`sume-bg-launch --host mini --governor start <job>`; drop one with `--kill`.
+Attach after it starts with `--attach <job>`.
+
+**Quota.** At launch a Fable worker (`--model fable…`) reads the pool
+(`cstack-quota.py launch-check`): when no account has Fable headroom, or the
+pool's projected headroom (pool % minus 3 % per running Fable worker) is below
+10 %, the launch log prints a `quota:` warning. `--fable-downgrade` (or
+`SUME_BG_FABLE_DOWNGRADE=1`) then starts it on `claude-opus-5-5` at the same
+effort, records `MODEL_DOWNGRADE` in `job.env` and notifies "⬇️ …"; without
+the flag it only warns ("launching on Fable anyway"). Nothing changes model
+silently. **Fable stagger:** a heavy Fable job (effort `max` / `xhigh`) is
+queued while `GOV_FABLE_HEAVY_MAX` heavy Fable workers already run and the
+projected pool headroom is below `GOV_FABLE_STAGGER_PCT`. A Fable worker that
+still hits its limit takes the swap → Opus path in
+[auto-resume](#unrelated-activity-never-stops-a-job).
+
+**Modes.** `observe` (the install default) logs `WOULD PAUSE|RESUME|CONVERT|
+RELAUNCH|START|QUEUE …` and touches nothing; `enforce` acts; `off` does
+nothing and admits everything. `sume-bg-launch --host mini --governor mode
+enforce`. The mode lives in `governor/state.json` (`GOV_MODE` only seeds it).
+
+**Notes.** Every pause, resume, clean stop, relaunch, queue, queued start and
+launch downgrade writes a line to `governor/log` and one Korean line to
+`governor/notify/`. The daemon posts them as one `#coding-agents` message
+"Mini 거버너" at most every `GOV_NOTIFY_MIN` minutes (job `mini-governor`;
+copy in `governor/notify.log`). In `observe` only launch downgrades produce
+notes; the `WOULD …` lines stay in the log.
+
+**Death alerts.** A paused job is alive (`state=paused`, `alive=yes`), so
+`launcher-watch` never reports it. A governor stop goes through `--kill`, so
+it is not an abnormal death either. A bare `kill -TERM` by hand still is
+(17:46 KST 2026-11-14: `nav-shrink-hero` reported as a death); stop jobs with
+`--kill`.
+
+**Manual override.**
+
+```bash
+sume-bg-launch --host mini --governor pause <job> [--force]   # critical jobs refuse (exit 3) without --force
+sume-bg-launch --host mini --governor resume <job>
+sume-bg-launch --host mini --governor pin <job>               # never paused; unpin to undo
+sume-bg-launch --host mini --governor start <job>             # start a queued job now
+sume-bg-launch --host mini --governor mode observe|enforce|off
+```
+
+`<job>` may be a unique part of the id. On the M5 itself the same commands
+are `sume-bg-governor <cmd>` and `sume-bg-remote overview|quota`.
+
+**Install / deploy.** `sume-bg-governor install` (on the M5, in the console
+user's session) writes `~/Library/LaunchAgents/com.cstack.sume-bg-governor.plist`
+(`/usr/bin/python3 <checkout>/…/sume-bg-governor.py daemon`,
+`AbandonProcessGroup` so jobs it starts outlive a daemon restart) and
+bootstraps it in `gui/<uid>`. Jobs it starts still use the credentials file
+store (`sume-bg-remote run` sets `CLAUDE_SECURESTORAGE_CONFIG_DIR`). The daemon exits when its script changes on disk, and launchd
+starts the new version, so a `git pull` of `~/.cstack/src` is the deploy.
+`sume-bg-governor uninstall` resumes every paused job, then removes the
+agent. If the daemon dies, paused jobs stay paused until it comes back
+(within 30 s, `KeepAlive`); state survives in `state.json`.
+
+Python 3.9 stdlib only (`/usr/bin/python3` on the M5).
 
 ## Network on the M5
 
@@ -250,6 +432,12 @@ prompt file that looks like a credential (`ghp_…`, `sk-ant-…`, `xox…`,
   worker.log    wrapper stdout+stderr (what attach streams)
   exit_code     written when the worker exits (143 when stopped)
   stopped       written by --kill / steer before the signal (intent)
+  extra.args    backend flags, one per line (queued start, relaunch, model fallback)
+  queued        admitted to the governor queue, not started
+  governor-paused   paused by the governor (SIGSTOP), JSON record
+  governor-stopped  long pause turned into a clean stop; relaunch pending
+~/.cstack/state/governor/            state.json (+ state.lock), log, notify/, notify.log,
+                                     swap/, daemon.lock, daemon.pid, daemon.out
 ~/.cstack/state/job-alerts/          unexpected-death lines, batch lock, log
 ~/.cstack/state/opus-live/…          M5 live logs (writer)
 ~/.cstack/state/opus-sessions.jsonl   M5 registry (writer)
@@ -277,3 +465,15 @@ the nested-launch guard, the `pkill` / `killall` guard (only dry-run
 alert on an unexpected death (capped; `--kill` does neither).
 `agent-human-stream --self-test` checks that the claude and codex prompt
 reaches stdin and never argv.
+
+`sume-bg-governor.test.sh` (offline, fake wrapper / tokenmaxxing / Slack,
+`GOV_FAKE_LOAD` and friends instead of the real machine) covers the quota
+reader, `fable-plan`, the launch warning and `--fable-downgrade`, the Fable
+limit death (swap, swap through the daemon when the keychain is unreadable,
+Opus fallback at the same effort, all-exhausted), observe
+mode, pause order and cooldown, critical phases (release name, merge-queue
+wait), hysteresis, pin / manual pause / resume, the long-pause clean stop and
+relaunch, the admission queue (manual start, `--now`, release bypass), Fable
+stagger, pid reuse, `--status`, and the daemon (single instance, restart on
+a code change). Run it with `~/.local/bin` off `PATH` inside a worker (the
+kill guard protects the caller's own group).

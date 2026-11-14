@@ -264,6 +264,41 @@ an SSH worker (file copy) can still refresh the same grant within the same
 minute; one of them then loses its refresh token. Keep pooled work on the
 Mini in SSH/cron workers, not in console `claude` sessions.
 
+## Fable quota on workers
+
+`cstack-quota` (`~/.local/bin/cstack-quota` → `sume-desk/skills/sume-main-agent-orchestration/bin/cstack-quota.py`)
+reads `accounts.json` (usage fields only, never credentials),
+`model-usage.json` and `usage.json` and prints the pool:
+
+```bash
+sume-bg-launch --host mini --quota     # per account: 5 h, week, Fable %, resets, Fable ok / Opus only / exhausted
+cstack-quota status --json             # same, JSON (on the M5)
+cstack-quota fable-plan                # fable | swap <email> | opus | wait
+```
+
+- A window whose `resetsAt` has passed counts as 0 %.
+- The active account uses the live sample when its org matches and it is
+  younger than 30 min (`SUME_BG_QUOTA_LIVE_MAX_AGE_S`); parked accounts use
+  their last sample (they cannot be sampled over SSH).
+- Fable headroom = 100 − max(Fable %, week %); a `needsReauth` account has
+  none. "Fable ok" = Fable and week below 95 % (`SUME_BG_FABLE_OK_MAX`) and
+  5 h below 95 % (`SUME_BG_FIVE_OK_MAX`).
+- Pool headroom = mean headroom of the usable accounts. "Projected" subtracts
+  3 % (`SUME_BG_FABLE_RESERVE_PER_JOB`) per running Fable worker. The launch
+  warning fires below 10 % (`SUME_BG_FABLE_LOW_HEADROOM`) or when no account
+  is Fable ok.
+
+tokenmaxxing gates Fable itself (`policy.switchModels: ["fable"]`): the check
+timer swaps when the active account's Fable cap reaches the weekly bar and
+the last sampled model was Fable. When no account is left it logs
+`stopfailure.decision reason=all-depleted swapped=false` and the worker
+dies with "You've reached your Fable limit". What the Mini launcher does then
+(swap through the governor, else the same session on Opus 5.5 at the same
+effort, else stop and say so) and the launch-time warning /
+`--fable-downgrade` are in
+[MINI-WORKER-HOST.md](MINI-WORKER-HOST.md#governor-load-admission-quota).
+No tokenmaxxing code changed for this.
+
 ## What agents should do
 
 - Launch Fable/Opus as today: `cd <repo> && claude-human-stream …`

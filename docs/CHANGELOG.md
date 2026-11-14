@@ -3,6 +3,31 @@
 Newest first. What changed in how the desk runs, and what was removed, so a
 stale habit can be traced to the day it stopped being true.
 
+## 2026-11-14 — Mini governor + Fable quota fallback (mini-governor)
+
+- 채원님 ask: launch many Mini workers, leave, and nothing overloads the Mini
+  or burns the quota. New launchd agent `com.cstack.sume-bg-governor` on the
+  M5 (`sume-bg-governor`): samples load / memory / swap / sshd, pauses the
+  lowest-priority heavy job (SIGSTOP of its process tree) above high water,
+  resumes after low water holds, turns a pause over 30 min into a clean stop +
+  same-session `PAUSED BY GOVERNOR, continue:` resume, queues new jobs while
+  the Mini is busy, staggers heavy Fable jobs when the pool is low, and never
+  touches a job in a git push / merge-queue / release / deploy phase.
+  Batched Slack note "Mini 거버너". Installed in `observe` mode first, then
+  `enforce`. See [MINI-WORKER-HOST.md](MINI-WORKER-HOST.md#governor-load-admission-quota).
+- `sume-bg-launch` gains `--priority`, `--now`, `--fable-downgrade`, and the
+  control-plane `--status` (no job), `--quota`, `--governor …`. New states
+  `paused` and `queued`.
+- Fable limit deaths were invisible: "You've reached your Fable limit" did
+  not match the usage-limit pattern, so on 2026-11-12 04:45–04:52 UTC four
+  Fable jobs died with no resume and no alert. Now auto-resume swaps to an
+  account with Fable headroom (through the governor daemon, since SSH
+  sessions cannot read the keychain), else resumes the same session on
+  Opus 5.5 at the same effort and says so in the prompt, `job.env` and the
+  alert, else stops with "모든 계정 주간 한도 소진".
+- Launch-time quota check: a Fable launch warns when the pool is low;
+  `--fable-downgrade` switches it to Opus. Never silent.
+
 ## 2026-11-13 — "Fable" means the latest Fable (cstack-fable-alias)
 
 - 채원님 rule: "Fable" in any casing or typo (`fable`, `Fable max`, `Fable 5.2`)
