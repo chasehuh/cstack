@@ -57,6 +57,10 @@ HOST_SET=0
 CWD=""
 ACTION="launch"
 ACTION_JOB=""
+PRIORITY=""
+NOW=0
+FABLE_DOWNGRADE="${SUME_BG_FABLE_DOWNGRADE:-0}"
+GOV_ARGS=()
 
 # Local replica of the Mini's state (one writer per file: the Mini writes its
 # own ~/.cstack/state; the laptop attach writes ONLY these replica files).
@@ -94,6 +98,11 @@ sume-bg-launch --backend claude|codex|grok --name <slug> --prompt-file <path> \
   [--host mini|m4|local] [--cwd <remote dir>] \
   [--resume <uuid> [--fork-session]] [--no-slack-report] [--print-prompt] -- [backend flags…]
 
+  --priority P        critical|high|normal|low (default from the name: release/hotfix → critical,
+                      rca/sentry/incident → high, research/audit/loops/-100 → low, else normal)
+  --now               skip the Mini governor's admission queue (start even when the Mini is busy)
+  --fable-downgrade   if Fable quota is low at launch, start on Opus 5.5 at the same effort
+                      (also SUME_BG_FABLE_DOWNGRADE=1); without it the launch only warns
   --no-slack-report   do not append the completion-report tail (also CSTACK_SLACK_REPORT=0)
   --same-thread       steer only: the report replies in the job's existing thread
                       (a poke, restart or effort change). Default: a new top-level message
@@ -104,6 +113,10 @@ Mini control plane (--host mini):
   sume-bg-launch --host mini --status <job>     # alive = Mini process, not the replica file
   sume-bg-launch --host mini --kill <job>       # kill the detached worker on the Mini
   sume-bg-launch --host mini --jobs             # list Mini jobs
+  sume-bg-launch --host mini --status           # governor: load, running/paused/queued jobs, quota
+  sume-bg-launch --host mini --quota            # tokenmaxxing pool: per-account Fable / weekly / reset
+  sume-bg-launch --host mini --governor pause|resume|start|pin|unpin <job>
+  sume-bg-launch --host mini --governor mode observe|enforce|off
 
   sume-bg-launch --prompt-dir                   # mkdir + print the durable prompt dir
 
@@ -165,7 +178,17 @@ while [[ $# -gt 0 ]]; do
       PRINT_PROMPT=1
       shift
       ;;
-    --attach|--status|--kill)
+    --status)
+      if [[ -n "${2:-}" && "${2:-}" != -* ]]; then
+        ACTION=status
+        ACTION_JOB=$2
+        shift 2
+      else
+        ACTION=overview
+        shift
+      fi
+      ;;
+    --attach|--kill)
       ACTION=${1#--}
       ACTION_JOB=${2:-}
       if [[ -z "$ACTION_JOB" ]]; then
@@ -173,6 +196,32 @@ while [[ $# -gt 0 ]]; do
         exit 2
       fi
       shift 2
+      ;;
+    --quota)
+      ACTION=quota
+      shift
+      ;;
+    --governor)
+      ACTION=governor
+      shift
+      GOV_ARGS=("$@")
+      if [[ ${#GOV_ARGS[@]} -eq 0 ]]; then
+        echo "error: --governor needs a command (pause|resume|start|pin|unpin <job>, mode observe|enforce|off, status)" >&2
+        exit 2
+      fi
+      set --
+      ;;
+    --priority)
+      PRIORITY=$2
+      shift 2
+      ;;
+    --now)
+      NOW=1
+      shift
+      ;;
+    --fable-downgrade)
+      FABLE_DOWNGRADE=1
+      shift
       ;;
     --jobs)
       ACTION=jobs
@@ -424,6 +473,15 @@ if [[ "$ACTION" == "launch" && "$PRINT_PROMPT" -eq 0 ]]; then
   refuse_nested_launch
 fi
 
+if [[ "$ACTION" == "quota" || "$ACTION" == "overview" || "$ACTION" == "governor" ]] && [[ "$HOST" == "local" ]]; then
+  LOCAL_REMOTE="$ROOT/sume-bg-remote.sh"
+  case "$ACTION" in
+    quota) exec "$LOCAL_REMOTE" quota ;;
+    overview) exec "$LOCAL_REMOTE" overview ;;
+    governor) exec "$LOCAL_REMOTE" governor "${GOV_ARGS[@]}" ;;
+  esac
+fi
+
 if [[ "$ACTION" != "launch" ]]; then
   if [[ "$HOST" != "mini" ]]; then
     echo "error: --$ACTION is a Mini control-plane action; add --host mini" >&2
@@ -433,6 +491,15 @@ if [[ "$ACTION" != "launch" ]]; then
   case "$ACTION" in
     jobs)
       mini_ssh jobs || mini_fail_closed
+      ;;
+    quota)
+      mini_ssh quota || mini_fail_closed
+      ;;
+    overview)
+      mini_ssh overview || mini_fail_closed
+      ;;
+    governor)
+      mini_ssh governor "${GOV_ARGS[@]}"
       ;;
     status|kill)
       mini_ssh "$ACTION" --job "$ACTION_JOB"
@@ -662,11 +729,25 @@ if [[ "$HOST" == "mini" ]]; then
   if [[ "$SAME_THREAD" == "1" ]]; then
     START_ARGS+=(--same-thread)
   fi
+  if [[ -n "$PRIORITY" ]]; then
+    START_ARGS+=(--priority "$PRIORITY")
+  fi
+  if [[ "$NOW" -eq 1 ]]; then
+    START_ARGS+=(--now)
+  fi
+  if [[ "$FABLE_DOWNGRADE" == "1" ]]; then
+    START_ARGS+=(--fable-downgrade)
+  fi
   if [[ ${#EXTRA[@]} -gt 0 ]]; then
     START_ARGS+=(-- "${EXTRA[@]}")
   fi
   _start=$(mini_ssh "${START_ARGS[@]}" 2>&1) || { printf '%s\n' "$_start" >&2; echo "error: remote start failed on $MINI_SSH" >&2; exit 3; }
   printf '%s\n' "$_start" >&2
+  if printf '%s\n' "$_start" | grep -q "^sume-bg-remote: queued job=$JOB"; then
+    replica_registry_append queued "" "" "$CWD" ""
+    echo "queued: job $JOB waits for Mini capacity; the governor starts it (status: sume-bg-launch --host mini --status; attach later: sume-bg-launch --host mini --attach $JOB; start now: sume-bg-launch --host mini --governor start $JOB)" >&2
+    exit 0
+  fi
   REMOTE_PID=$(printf '%s\n' "$_start" | sed -n 's/.* pid=\([0-9][0-9]*\).*/\1/p' | tail -n 1)
   REMOTE_CWD=$(printf '%s\n' "$_start" | sed -n 's/.* cwd=\(.*\)$/\1/p' | tail -n 1)
   if [[ -z "$REMOTE_PID" ]]; then
@@ -727,6 +808,40 @@ if [[ -n "$RESUME" && "$FORK" -eq 0 ]]; then
 fi
 
 resolve_wrapper
+
+if [[ -z "${SUME_BG_REMOTE_JOB:-}" && "${SUME_BG_QUOTA_CHECK:-1}" != "0" && -f "$ROOT/cstack-quota.py" ]] && [[ "$BACKEND" == "claude" || "$BACKEND" == "auto" ]]; then
+  _m=""; _e=""; _i=0
+  while [[ $_i -lt ${#EXTRA[@]} ]]; do
+    case "${EXTRA[$_i]}" in
+      --model) _m=${EXTRA[$((_i + 1))]:-} ;;
+      --effort) _e=${EXTRA[$((_i + 1))]:-} ;;
+    esac
+    _i=$((_i + 1))
+  done
+  set +e
+  _qmsg=$(python3 "$ROOT/cstack-quota.py" launch-check --model "$_m" --effort "$_e" 2>/dev/null)
+  _qrc=$?
+  set -e
+  if [[ $_qrc -eq 10 ]]; then
+    echo "sume-bg-launch: $_qmsg" >&2
+    if [[ "$FABLE_DOWNGRADE" == "1" ]]; then
+      _eff=$(python3 "$ROOT/cstack-quota.py" model-info --model "$_m" --effort "$_e" | python3 -c 'import json,sys; print(json.load(sys.stdin)["effort"] or "high")')
+      _kept=()
+      _i=0
+      while [[ $_i -lt ${#EXTRA[@]} ]]; do
+        case "${EXTRA[$_i]}" in
+          --model|--effort) _i=$((_i + 2)); continue ;;
+        esac
+        _kept+=("${EXTRA[$_i]}")
+        _i=$((_i + 1))
+      done
+      EXTRA=("${_kept[@]+"${_kept[@]}"}" --model "${SUME_BG_FABLE_FALLBACK_MODEL:-claude-opus-5-5}" --effort "$_eff")
+      echo "sume-bg-launch: model downgraded for this launch: $_m -> ${SUME_BG_FABLE_FALLBACK_MODEL:-claude-opus-5-5} (effort $_eff)" >&2
+    else
+      echo "sume-bg-launch: launching on Fable anyway; pass --fable-downgrade (or SUME_BG_FABLE_DOWNGRADE=1) to start on Opus 5.5 at the same effort" >&2
+    fi
+  fi
+fi
 
 CMD=("$WRAPPER" --backend "$BACKEND" --name "$NAME")
 if [[ "$SLACK_REPORT" == "0" ]]; then
