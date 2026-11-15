@@ -178,6 +178,21 @@ grep -q "📎 session_id=$SID" "$REPLICA" || fail "replica lacks session_id"
 grep -q '—— final ——' "$REPLICA" || fail "replica lacks final block"
 grep -q 'fake done' "$REPLICA" || fail "replica lacks final text"
 [[ "$(readlink "$AGENT_HUMAN_STREAM_LIVE_DIR/LATEST.log")" == "$REPLICA" ]] || fail "LATEST.log not pointing at replica"
+mkdir -p "$T/race-bin"
+cat >"$T/race-bin/ln" <<'EOF'
+#!/bin/sh
+for a in "$@"; do last=$a; done
+case "$last" in */LATEST.log) echo "ln: $last: File exists" >&2; exit 1 ;; esac
+exec /bin/ln "$@"
+EOF
+chmod +x "$T/race-bin/ln"
+set +e
+PATH="$T/race-bin:$PATH" FAKE_WRAPPER_ARGV="$MINI/remote-argv-race.txt" \
+  "$LAUNCH" --host mini --backend grok --name race-job --prompt-file "$PROMPT" >/dev/null 2>"$T/race-err.txt"
+rc=$?
+set -e
+[[ $rc -eq 0 ]] || fail "a lost LATEST.log race must not fail the launch (rc=$rc): $(tail -n 3 "$T/race-err.txt")"
+[[ "$(readlink "$AGENT_HUMAN_STREAM_LIVE_DIR/LATEST.log")" == *race-job* ]] || fail "LATEST.log must point at the newest replica"
 grep -q "📎 session_id=$SID" "$T/mini-out.txt" || fail "attach stdout lacks session_id (Cursor smoke would fail)"
 # Mini side: prompt staged by scp, wrapper ran there with the remote path, exit code recorded.
 cmp -s "$PROMPT" "$MINI/.cstack/state/remote-jobs/$JOB/prompt.md" || fail "prompt not staged on Mini via scp"
@@ -244,6 +259,7 @@ done
 sleep 0.5
 kill -TERM "$LPID" 2>/dev/null || true
 pkill -TERM -f "sume-bg-remote attach --job $JOB3" 2>/dev/null || true
+pkill -TERM -f "tail -n [+]1 -f $MINI/.cstack/state/remote-jobs/$JOB3/worker.log" 2>/dev/null || true
 wait "$LPID" 2>/dev/null || true
 STATUS=$("$LAUNCH" --host mini --status "$JOB3")
 [[ "$STATUS" == *"alive=yes"* ]] || fail "job should survive laptop attach death: $STATUS"

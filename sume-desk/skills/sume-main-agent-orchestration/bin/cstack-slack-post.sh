@@ -104,7 +104,14 @@ cfg = {
 }
 js = r"""
 const cfg = __CFG__;
-const task = await taskSpace(`slack post ${cfg.job}`);
+const spaceName = `slack post ${cfg.job}`;
+let task;
+try {
+  task = await taskSpace(spaceName);
+} catch (e) {
+  if (!/belongs to the user/.test(String((e && e.message) || e))) throw e;
+  task = await taskSpace(`${spaceName} ${new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}`);
+}
 const page = task.page("p1");
 await page.goto(`https://app.slack.com/client/${cfg.team}/${cfg.channel}`);
 await page.waitForFunction((team) => {

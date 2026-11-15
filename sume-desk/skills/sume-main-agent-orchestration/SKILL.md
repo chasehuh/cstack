@@ -210,7 +210,9 @@ sume-bg-launch --host mini --governor pause|resume|start|pin|unpin <job>
 ```
 
 The M5 governor (launchd agent) pauses low-priority heavy jobs when the Mini
-is overloaded, resumes them when it is calm, queues new jobs while it is
+is really struggling (sshd slow or down, kernel memory pressure; load only if
+configured, never swap used),
+at most 2 at a time and never below 3 running, resumes them when it is calm, queues new jobs while it is
 busy and staggers heavy Fable jobs when the pool is low. `state=paused` and
 `state=queued` are normal, not stuck or dead; do not kill or relaunch them.
 Launch flags: `--priority critical|high|normal|low` (default from the name:

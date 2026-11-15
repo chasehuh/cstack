@@ -197,6 +197,18 @@ out=$(CSTACK_SLACK_EGO="$T/fake-ego" FAKE_EGO_SCRIPT="$T/script.mjs" \
 grep -qF '"job": "demo-job"' "$T/script.mjs" || fail "page script lacks the job"
 grep -qF '"issue": "42"' "$T/script.mjs" || fail "page script lacks the issue"
 grep -qF '테스트' "$T/script.mjs" || fail "page script lacks the Korean text"
+NODE=$(command -v node || echo "$HOME/.local/node/bin/node")
+if [[ -x "$NODE" ]]; then
+  {
+    printf '%s\n' 'const names = [];' \
+      'globalThis.taskSpace = async (name) => { names.push(name); if (names.length === 1) throw new Error(`taskSpace: A task space named "${name}" already exists and belongs to the user (id 7).`); console.log("SPACE " + name); process.exit(0); };'
+    cat "$T/script.mjs"
+  } >"$T/space-check.mjs"
+  out=$("$NODE" "$T/space-check.mjs" 2>&1 || true)
+  [[ "$out" =~ SPACE\ slack\ post\ demo-job\ [0-9]{14} ]] || fail "a user-owned 'slack post <job>' space must fall back to a new space name: $out"
+else
+  echo "note: node not found; skipped the user-owned space fallback check"
+fi
 set +e
 out=$(CSTACK_SLACK_EGO="$T/fake-ego" FAKE_EGO_SCRIPT="$T/script2.mjs" \
   FAKE_EGO_RESULT='{"ok":false,"error":"Slack web client is signed in as bob, not chase"}' \

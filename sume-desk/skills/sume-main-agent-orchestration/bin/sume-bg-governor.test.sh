@@ -2,7 +2,8 @@
 set -euo pipefail
 export PYTHONDONTWRITEBYTECODE=1
 unset SUME_WORKER_SESSION SUME_BG_REMOTE_JOB SUME_BG_ALLOW_NESTED AGENT_HUMAN_STREAM_PID AGENT_HUMAN_STREAM_NAME AGENT_HUMAN_STREAM_LIVE_LOG
-unset GOV_MODE GOV_FAKE_LOAD GOV_FAKE_NOW GOV_FAKE_SSH_MS GOV_FAKE_MEMFREE GOV_FAKE_SWAP_MB SUME_BG_FABLE_DOWNGRADE
+unset GOV_MODE GOV_FAKE_LOAD GOV_FAKE_NOW GOV_FAKE_SSH_MS GOV_FAKE_MEMFREE GOV_FAKE_SWAP_MB GOV_FAKE_VM_PRESSURE GOV_FAKE_VMSTAT SUME_BG_FABLE_DOWNGRADE
+unset GOV_HIGH_LOAD5 GOV_LOW_LOAD5 GOV_START_LOAD5 GOV_LOW_HOLD_MIN GOV_COOLDOWN_S GOV_MAX_PAUSE_MIN GOV_HEAVY_CPU GOV_HIGH_HOLD_S GOV_MAX_PAUSED GOV_MIN_RUNNING GOV_SWAPOUT_MBPS_HIGH GOV_MEM_FREE_LOW GOV_SSH_SLOW_MS
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REMOTE="$ROOT/sume-bg-remote.sh"
@@ -28,7 +29,7 @@ export CSTACK_TOKENMAXXING_DIR="$HOME/.config/tokenmaxxing"
 export SUME_BG_REMOTE_LOGIN_PATH=0
 export SUME_BG_ALERT_BATCH_S=0 SUME_BG_KILL_RESUME_DELAY=0 SUME_BG_LIMIT_RESUME_DELAY=0
 export GOV_NOTIFY=0
-export GOV_FAKE_SSH_MS=5 GOV_FAKE_MEMFREE=80 GOV_FAKE_SWAP_MB=0
+export GOV_FAKE_SSH_MS=5 GOV_FAKE_MEMFREE=80 GOV_FAKE_SWAP_MB=0 GOV_FAKE_VM_PRESSURE=1 GOV_FAKE_VMSTAT="0,0"
 mkdir -p "$HOME/.config/tokenmaxxing/bin" "$SUME_BG_REMOTE_JOBS_DIR" "$T/bin"
 
 cat >"$T/bin/fake-slack-post" <<'EOS'
@@ -262,60 +263,130 @@ fake_job() {
 stopped() { [[ "$(ps -o stat= -p "$(cat "$SUME_BG_REMOTE_JOBS_DIR/$1/pid")" | tr -d ' ')" == T* ]]; }
 
 export GOV_DIR="$T/gov-default"
-rm -rf "$SUME_BG_REMOTE_JOBS_DIR"/*
+rm -rf "${SUME_BG_REMOTE_JOBS_DIR:?}"/*
 fake_job 20260101T000500Z-busy-feat busy-feat 2026-01-01T00:05:00Z
 "$PY" "$GOV" mode enforce >/dev/null
-GOV_HEAVY_CPU=-1 GOV_FAKE_LOAD="60,55,50" GOV_FAKE_SWAP_MB=12000 "$PY" "$GOV" once >/dev/null
+for n in 0 100 200; do GOV_FAKE_NOW=$((1800000000 + n)) GOV_HEAVY_CPU=-1 GOV_FAKE_LOAD="60,55,50" GOV_FAKE_SWAP_MB=12000 "$PY" "$GOV" once >/dev/null; done
 stopped 20260101T000500Z-busy-feat && fail "default: high load and swap with sshd up must not pause"
-GOV_HEAVY_CPU=-1 GOV_FAKE_LOAD="60,55,50" GOV_FAKE_SSH_MS=down "$PY" "$GOV" once >/dev/null
-stopped 20260101T000500Z-busy-feat || fail "default: sshd down must pause"
+for n in 300 400; do GOV_FAKE_NOW=$((1800000000 + n)) GOV_HEAVY_CPU=-1 GOV_FAKE_LOAD="60,55,50" GOV_FAKE_SSH_MS=down "$PY" "$GOV" once >/dev/null; done
+stopped 20260101T000500Z-busy-feat || fail "default: sshd down for 100 s must pause"
+"$PY" "$GOV" status | grep -q "load never pauses" || fail "default status must say load never pauses"
 "$PY" "$GOV" resume 20260101T000500Z-busy-feat >/dev/null
 pass "default policy: only sshd (or memory) pressure pauses; load and swap alone never do"
 
 export GOV_DIR="$T/gov"
 export GOV_HEAVY_CPU=-1 GOV_HIGH_LOAD5=22 GOV_LOW_LOAD5=12 GOV_COOLDOWN_S=60 GOV_LOW_HOLD_MIN=5 GOV_MAX_PAUSE_MIN=30
-rm -rf "$SUME_BG_REMOTE_JOBS_DIR"/*
+tick() { local at="$1" load="$2"; shift 2; env GOV_FAKE_NOW="$at" GOV_FAKE_LOAD="$load" "$@" "$PY" "$GOV" once >/dev/null; }
+reset_gov() {
+  for p in "${PIDS[@]+"${PIDS[@]}"}"; do kill -CONT -- "-$p" 2>/dev/null || true; kill -KILL -- "-$p" 2>/dev/null || true; done
+  PIDS=()
+  rm -rf "${SUME_BG_REMOTE_JOBS_DIR:?}"/* "${GOV_DIR:?}"
+  mkdir -p "$SUME_BG_REMOTE_JOBS_DIR"
+  "$PY" "$GOV" mode "$1" >/dev/null
+}
+paused_count() { local n=0 j; for j in "$SUME_BG_REMOTE_JOBS_DIR"/*/; do [[ -f "$j/governor-paused" ]] && n=$((n + 1)); done; echo "$n"; }
+T0=1800000000
+
+reset_gov enforce
+for i in 1 2 3 4 5 6 7; do fake_job "20261115T03${i}000Z-worker-$i" "worker-$i" "2026-11-15T03:${i}0:00Z"; done
+SWAP=4164
+SO=882020
+for n in $(seq 0 90); do
+  SWAP=$((SWAP + 70)); SO=$((SO + 120))
+  tick $((T0 + n * 30)) "$((7 + n % 9)),$((9 + n % 7)),11" GOV_FAKE_SWAP_MB=$SWAP GOV_FAKE_MEMFREE=84 GOV_FAKE_VM_PRESSURE=1 GOV_FAKE_VMSTAT="219576,$SO"
+done
+for i in 1 2 3 4 5 6 7; do
+  W="$SUME_BG_REMOTE_JOBS_DIR/20261115T03${i}000Z-worker-$i"
+  kill -0 "$(cat "$W/pid")" 2>/dev/null && ! stopped "20261115T03${i}000Z-worker-$i" && [[ ! -f "$W/governor-stopped" ]] \
+    || fail "sticky swap with low load and normal memory pressure must leave worker-$i running: $(grep -E 'PAUSE|CONVERT' "$GOV_DIR/log" | head -n 9)"
+done
+! grep -qE 'PAUSE|CONVERT|HIGH' "$GOV_DIR/log" || fail "no pressure was real, nothing may be logged as high: $(cat "$GOV_DIR/log")"
+"$PY" "$GOV" status | grep -q "never a trigger" || fail "status must show swap used as information only"
+pass "11-15 replay: swap used 4.2→10.5 GB, load 7–15, memory free 84 %, pressure normal → nothing paused or stopped"
+
+reset_gov enforce
+for i in 1 2 3 4 5; do fake_job "20261115T04${i}000Z-busy-$i" "busy-$i" "2026-11-15T04:${i}0:00Z"; done
+tick $T0 "26,25,20"
+[[ "$(paused_count)" == "0" ]] || fail "one high sample must not pause"
+tick $((T0 + 30)) "8,20,20"
+tick $((T0 + 60)) "26,25,20"
+tick $((T0 + 120)) "26,25,20"
+[[ "$(paused_count)" == "0" ]] || fail "a dip resets the hold; 60 s of high must not pause yet"
+tick $((T0 + 160)) "26,25,20"
+[[ "$(paused_count)" == "1" ]] || fail "high held 100 s must pause one job: $(cat "$GOV_DIR/log")"
+tick $((T0 + 400)) "9,9,9" GOV_FAKE_SSH_MS=down
+tick $((T0 + 430)) "9,9,9" GOV_FAKE_SSH_MS=5
+[[ "$(paused_count)" == "1" ]] || fail "a one-off sshd miss must not pause another job"
+grep -q 'sshd down for' "$GOV_DIR/log" || fail "a one-off sshd miss is only logged: $(cat "$GOV_DIR/log")"
+pass "act only on pressure held for 90 s; a dip or a one-off sshd miss resets it"
+
+reset_gov enforce
+for i in 1 2 3 4; do fake_job "20261115T05${i}000Z-heavy-$i" "heavy-$i" "2026-11-15T05:${i}0:00Z"; done
+for n in 0 4 8 12 16 20; do tick $((T0 + n * 30)) "26,25,20"; done
+[[ "$(paused_count)" == "1" ]] || fail "4 running: pause only down to the 3-job floor: $(grep -E 'PAUSE|floor' "$GOV_DIR/log")"
+grep -q 'running (floor 3)' "$GOV_DIR/log" || fail "the floor must be logged"
+for n in 24 28 32 36 40 44; do tick $((T0 + n * 30)) "26,25,20" GOV_FAKE_SSH_MS=down; done
+[[ "$(paused_count)" == "2" ]] || fail "sshd failing lifts the floor but the cap of 2 holds: $(grep -E 'PAUSE|cap' "$GOV_DIR/log")"
+grep -q 'held back (cap 2)' "$GOV_DIR/log" || fail "the cap must be logged"
+pass "never the whole fleet: at most 2 held back, at least 3 running unless sshd is failing"
+
+reset_gov enforce
+for i in 1 2 3 4 5; do fake_job "20261115T06${i}000Z-mem-$i" "mem-$i" "2026-11-15T06:${i}0:00Z"; done
+for n in 0 4; do tick $((T0 + n * 30)) "9,9,9" GOV_FAKE_VM_PRESSURE=2 GOV_FAKE_VMSTAT="100,$((1000 + n))"; done
+[[ "$(paused_count)" == "0" ]] || fail "warn pressure without swap-out traffic is not struggling"
+tick $((T0 + 300)) "9,9,9" GOV_FAKE_VM_PRESSURE=2 GOV_FAKE_VMSTAT="100,2000"
+tick $((T0 + 330)) "9,9,9" GOV_FAKE_VM_PRESSURE=2 GOV_FAKE_VMSTAT="100,42000"
+tick $((T0 + 360)) "9,9,9" GOV_FAKE_VM_PRESSURE=2 GOV_FAKE_VMSTAT="100,82000"
+tick $((T0 + 420)) "9,9,9" GOV_FAKE_VM_PRESSURE=2 GOV_FAKE_VMSTAT="100,162000"
+[[ "$(paused_count)" == "1" ]] || fail "warn pressure + sustained swap-out ≥ 16 MB/s must pause one: $(cat "$GOV_DIR/log")"
+grep -q 'swapping out' "$GOV_DIR/log" || fail "pause reason must name the swap-out rate"
+for n in 30 34 38; do tick $((T0 + n * 30)) "9,9,9" GOV_FAKE_VM_PRESSURE=4 GOV_FAKE_VMSTAT="100,162000"; done
+[[ "$(paused_count)" == "2" ]] || fail "sustained critical kernel pressure must pause: $(cat "$GOV_DIR/log")"
+pass "memory: kernel pressure critical, or warn + swap-out rate, never swap used"
+
+reset_gov observe
 fake_job 20260101T010000Z-older-research older-research 2026-01-01T01:00:00Z
 fake_job 20260101T020000Z-newer-research newer-research 2026-01-01T02:00:00Z
 fake_job 20260101T030000Z-feature-x feature-x 2026-01-01T03:00:00Z
 fake_job 20260101T040000Z-release-170 release-170 2026-01-01T04:00:00Z
 fake_job 20260101T050000Z-mq-wait mq-wait 2026-01-01T05:00:00Z "PRIORITY=low" "sleep 300; : cstack-gt-wait-merge"
-T0=1800000000
-
-GOV_FAKE_NOW=$T0 GOV_FAKE_LOAD="26,25,20" "$PY" "$GOV" once >/dev/null
+export GOV_HIGH_HOLD_S=0
+tick $T0 "26,25,20"
 for j in 20260101T010000Z-older-research 20260101T020000Z-newer-research 20260101T030000Z-feature-x; do stopped "$j" && fail "observe mode must not pause $j"; done
 grep -q "WOULD PAUSE 20260101T020000Z-newer-research" "$GOV_DIR/log" || fail "observe log must name the newest low-priority job: $(cat "$GOV_DIR/log")"
 pass "observe mode: logs WOULD PAUSE, touches nothing"
 
 "$PY" "$GOV" mode enforce >/dev/null
-GOV_FAKE_NOW=$T0 GOV_FAKE_LOAD="26,25,20" "$PY" "$GOV" once >/dev/null
+tick $T0 "26,25,20"
 stopped 20260101T020000Z-newer-research || fail "enforce must SIGSTOP the newest low-priority job"
 stopped 20260101T010000Z-older-research && fail "one pause per cooldown"
 [[ -f "$SUME_BG_REMOTE_JOBS_DIR/20260101T020000Z-newer-research/governor-paused" ]] || fail "pause marker missing"
 "$REMOTE" status --job 20260101T020000Z-newer-research | grep -q "alive=yes state=paused" || fail "remote status must show paused"
-GOV_FAKE_NOW=$((T0 + 10)) GOV_FAKE_LOAD="26,25,20" "$PY" "$GOV" once >/dev/null
+tick $((T0 + 10)) "26,25,20"
 stopped 20260101T010000Z-older-research && fail "cooldown must hold the second pause"
-GOV_FAKE_NOW=$((T0 + 70)) GOV_FAKE_LOAD="26,25,20" "$PY" "$GOV" once >/dev/null
+tick $((T0 + 70)) "26,25,20"
 stopped 20260101T010000Z-older-research || fail "after cooldown the next low-priority job pauses"
-GOV_FAKE_NOW=$((T0 + 140)) GOV_FAKE_LOAD="26,25,20" "$PY" "$GOV" once >/dev/null
-stopped 20260101T030000Z-feature-x || fail "then the normal-priority job"
-for n in 210 280 350; do GOV_FAKE_NOW=$((T0 + n)) GOV_FAKE_LOAD="26,25,20" "$PY" "$GOV" once >/dev/null; done
+tick $((T0 + 140)) "26,25,20"
+stopped 20260101T030000Z-feature-x && fail "the cap of 2 held-back jobs must stop a third pause"
+tick $((T0 + 210)) "26,25,20" GOV_MAX_PAUSED=9 GOV_MIN_RUNNING=0
+stopped 20260101T030000Z-feature-x || fail "with room under the cap the normal-priority job is next"
+for n in 280 350 420; do tick $((T0 + n)) "26,25,20" GOV_MAX_PAUSED=9 GOV_MIN_RUNNING=0; done
 stopped 20260101T040000Z-release-170 && fail "a release job is never paused"
 stopped 20260101T050000Z-mq-wait && fail "a job waiting on the merge queue is never paused"
 grep -q "no pausable heavy job" "$GOV_DIR/log" || fail "governor must log when nothing is pausable"
-pass "enforce: lowest priority newest first, cooldown, release and merge-queue jobs never paused"
+pass "enforce: lowest priority newest first, cooldown, cap, release and merge-queue jobs never paused"
 
-GOV_FAKE_NOW=$((T0 + 400)) GOV_FAKE_LOAD="15,16,18" "$PY" "$GOV" once >/dev/null
+tick $((T0 + 500)) "15,16,18"
 stopped 20260101T030000Z-feature-x || fail "between low and high water nothing resumes"
-GOV_FAKE_NOW=$((T0 + 460)) GOV_FAKE_LOAD="8,10,14" "$PY" "$GOV" once >/dev/null
+tick $((T0 + 560)) "8,10,14"
 stopped 20260101T030000Z-feature-x || fail "low load must hold for the hold time before resuming"
-GOV_FAKE_NOW=$((T0 + 800)) GOV_FAKE_LOAD="8,10,14" "$PY" "$GOV" once >/dev/null
+tick $((T0 + 900)) "8,10,14"
 stopped 20260101T030000Z-feature-x && fail "after the hold the highest-priority paused job resumes"
 stopped 20260101T020000Z-newer-research || fail "only one resume per cooldown"
 pass "hysteresis: hold time + cooldown, highest priority resumes first"
 
 "$PY" "$GOV" pin 20260101T030000Z-feature-x >/dev/null
-GOV_FAKE_NOW=$((T0 + 900)) GOV_FAKE_LOAD="26,25,20" "$PY" "$GOV" once >/dev/null
+tick $((T0 + 1000)) "26,25,20" GOV_MAX_PAUSED=9 GOV_MIN_RUNNING=0
 stopped 20260101T030000Z-feature-x && fail "pinned job paused"
 set +e
 "$PY" "$GOV" pause 20260101T040000Z-release-170 >/dev/null 2>&1; RC=$?
@@ -326,10 +397,15 @@ stopped 20260101T010000Z-older-research && fail "manual resume must SIGCONT"
 "$PY" "$GOV" status | grep -q "pinned (never paused): 20260101T030000Z-feature-x" || fail "status must list pins"
 pass "manual pin / pause / resume"
 
-"$PY" "$GOV" mode off >/dev/null
-for p in "${PIDS[@]}"; do kill -CONT -- "-$p" 2>/dev/null || true; kill -KILL -- "-$p" 2>/dev/null || true; done
-PIDS=()
-rm -rf "$SUME_BG_REMOTE_JOBS_DIR"/* "$GOV_DIR"
+stopped 20260101T020000Z-newer-research || fail "newer-research should still be paused here"
+tick $((T0 + 2000)) "15,16,18"
+stopped 20260101T020000Z-newer-research && fail "past the max pause with the pressure gone the job must resume, not stop"
+[[ -f "$SUME_BG_REMOTE_JOBS_DIR/20260101T020000Z-newer-research/exit_code" ]] && fail "a calm Mini must never stop a paused job"
+grep -q 'RESUME 20260101T020000Z-newer-research' "$GOV_DIR/log" || fail "the resume must be logged: $(tail -n 5 "$GOV_DIR/log")"
+pass "paused too long but pressure gone → resume, never a stop"
+unset GOV_HIGH_HOLD_S
+
+reset_gov off
 : >"$FAKE_SLACK_LOG"
 export FAKE_SID="deadbeef-0000-4000-8000-00000000c0a1"
 FAKE_SLEEP=120 start_job 20260101T060000Z-long-explore long-explore -- --model claude-opus-5-5 --effort high >/dev/null
@@ -338,22 +414,52 @@ wait_for 'grep -q session_id "$SUME_BG_REMOTE_JOBS_DIR/$J/worker.log"' || fail "
 "$PY" "$GOV" mode enforce >/dev/null
 "$PY" "$GOV" pause "$J" >/dev/null
 stopped "$J" || fail "manual pause failed"
-GOV_FAKE_NOW=$(( $(date +%s) + 31 * 60 )) GOV_FAKE_LOAD="26,25,20" "$PY" "$GOV" once >/dev/null
-wait_for '[[ -f "$SUME_BG_REMOTE_JOBS_DIR/$J/exit_code" ]]' || fail "long pause must stop the job cleanly"
+NOWS=$(date +%s)
+tick $((NOWS + 29 * 60)) "26,25,20" GOV_MIN_RUNNING=0
+tick $((NOWS + 31 * 60)) "26,25,20" GOV_MIN_RUNNING=0
+wait_for '[[ -f "$SUME_BG_REMOTE_JOBS_DIR/$J/exit_code" ]]' || fail "a long pause under sustained pressure must stop the job cleanly: $(tail -n 3 "$GOV_DIR/log")"
 [[ -f "$SUME_BG_REMOTE_JOBS_DIR/$J/governor-stopped" && -f "$SUME_BG_REMOTE_JOBS_DIR/$J/stopped" ]] || fail "governor stop markers missing"
 sleep 1
 ! grep -q "long-explore" "$FAKE_SLACK_LOG" || fail "a governor stop must not be reported as an abnormal death: $(cat "$FAKE_SLACK_LOG")"
-GOV_FAKE_NOW=$(( $(date +%s) + 32 * 60 )) GOV_FAKE_LOAD="5,5,5" "$PY" "$GOV" once >/dev/null
-GOV_FAKE_NOW=$(( $(date +%s) + 40 * 60 )) GOV_FAKE_LOAD="5,5,5" "$PY" "$GOV" once >/dev/null
+tick $((NOWS + 32 * 60)) "5,5,5"
+tick $((NOWS + 40 * 60)) "5,5,5"
 R=$(ls -d "$SUME_BG_REMOTE_JOBS_DIR"/*-long-explore-resume-deadbeef 2>/dev/null | head -n 1)
 [[ -n "$R" ]] || fail "governor must relaunch the stopped session: $(tail -n 5 "$GOV_DIR/log")"
 grep -q 'PAUSED BY GOVERNOR' "$R/prompt.md" || fail "relaunch prompt must say PAUSED BY GOVERNOR"
 grep -q "^RESUME=$FAKE_SID" "$R/job.env" && grep -q "^GOVERNOR_RESUME_OF=$J" "$R/job.env" || fail "relaunch must resume the same session: $(cat "$R/job.env" 2>&1) $(grep -E "RELAUNCH|CONVERT" "$GOV_DIR/log")"
 grep -qx 'claude-opus-5-5' "$R/extra.args" || fail "relaunch must keep the backend flags"
 wait_for '[[ -f "$R/exit_code" ]]' || true
-pass "long pause → clean stop (no death alert) → PAUSED BY GOVERNOR resume of the same session"
+pass "long pause under sustained pressure → clean stop (no death alert) → PAUSED BY GOVERNOR resume of the same session"
 
-rm -rf "$SUME_BG_REMOTE_JOBS_DIR"/*
+reset_gov enforce
+TWIN_SID="deadbeef-0000-4000-8000-00000000e1e1"
+TWIN_OLD=20261115T031033Z-sandbox-x-resume-deadbeef
+TWIN_NEW=20261115T044235Z-sandbox-x-resume-deadbeef
+mkdir -p "$SUME_BG_REMOTE_JOBS_DIR/$TWIN_OLD"
+printf 'JOB=%s\nNAME=sandbox-x\nRESUME=%s\nFORK=0\n' "$TWIN_OLD" "$TWIN_SID" >"$SUME_BG_REMOTE_JOBS_DIR/$TWIN_OLD/job.env"
+echo 143 >"$SUME_BG_REMOTE_JOBS_DIR/$TWIN_OLD/exit_code"
+fake_job "$TWIN_NEW" sandbox-x 2026-11-15T04:42:35Z "RESUME=$TWIN_SID
+FORK=0"
+"$PY" - "$GOV_DIR/state.json" "$TWIN_SID" "$TWIN_OLD" <<'PY'
+import json, sys, calendar, time
+p, sid, job = sys.argv[1], sys.argv[2], sys.argv[3]
+d = json.load(open(p))
+at = calendar.timegm(time.strptime("20261115T042748Z", "%Y%m%dT%H%M%SZ"))
+d.setdefault("gov_stopped", {})[job] = {
+    "at": at, "sid": sid, "name": "sandbox-x", "backend": "claude", "cwd": "/tmp", "priority": "normal",
+    "extra": [], "slack_report": "0", "same_thread": "0", "paused_at": at - 1800}
+json.dump(d, open(p, "w"))
+PY
+for n in 0 400; do tick $((1794717000 + n)) "5,5,5"; done
+EXTRA_RESUMES=$(ls "$SUME_BG_REMOTE_JOBS_DIR" | grep -e '-sandbox-x-resume-deadbeef' | grep -v -e "$TWIN_OLD" -e "$TWIN_NEW" || true)
+[[ -z "$EXTRA_RESUMES" ]] || fail "a session someone already resumed must not be relaunched: $EXTRA_RESUMES"
+grep -q "DROP-STOPPED $TWIN_OLD: session deadbeef was already resumed by $TWIN_NEW" "$GOV_DIR/log" || fail "the drop must be logged: $(cat "$GOV_DIR/log")"
+stopped "$TWIN_NEW" && fail "the other resume must be left alone"
+kill -0 "$(cat "$SUME_BG_REMOTE_JOBS_DIR/$TWIN_NEW/pid")" || fail "the other resume must keep running"
+pass "no twins: a stopped session that someone else resumed is dropped, never relaunched over it"
+
+reset_gov enforce
+export GOV_MIN_RUNNING=0
 export FAKE_SID="deadbeef-0000-4000-8000-00000000a0d1"
 OUT=$(GOV_FAKE_LOAD="26,25,20" start_job 20260101T070000Z-queued-feat queued-feat -- --model claude-opus-5-5)
 [[ "$OUT" == *"queued job=20260101T070000Z-queued-feat"* ]] || fail "busy Mini must queue: $OUT"
@@ -370,10 +476,13 @@ OUT=$(GOV_FAKE_LOAD="26,25,20" start_job 20260101T070200Z-release-171 release-17
 GOV_FAKE_NOW=$(( $(date +%s) + 3600 )) GOV_FAKE_LOAD="9,9,9" "$PY" "$GOV" once >/dev/null
 wait_for '[[ -f "$SUME_BG_REMOTE_JOBS_DIR/20260101T070000Z-queued-feat/pid" ]]' || fail "governor must start the queued job: $(tail -n 3 "$GOV_DIR/log")"
 grep -q '^QUEUED_AT=' "$SUME_BG_REMOTE_JOBS_DIR/20260101T070000Z-queued-feat/job.env" || fail "started job keeps QUEUED_AT"
-pass "admission queue: busy → queued, manual start, --now and release bypass, governor starts it later"
+OUT=$(GOV_MIN_RUNNING=9 GOV_FAKE_LOAD="26,25,20" start_job 20260101T070300Z-floor-feat floor-feat -- --model claude-opus-5-5)
+[[ "$OUT" == *"started job=20260101T070300Z-floor-feat"* ]] || fail "below the running floor a busy Mini still starts the job: $OUT"
+unset GOV_MIN_RUNNING
+pass "admission queue: busy → queued, manual start, --now, release and running-floor bypass, governor starts it later"
 
 for j in "$SUME_BG_REMOTE_JOBS_DIR"/*; do wait_for "[[ -f '$j/exit_code' ]]" || true; done
-rm -rf "$SUME_BG_REMOTE_JOBS_DIR"/*
+rm -rf "${SUME_BG_REMOTE_JOBS_DIR:?}"/*
 fake_job 20260101T080000Z-fable-a fable-a 2026-01-01T08:00:00Z "MODEL=fable
 EFFORT=max"
 fake_job 20260101T080100Z-fable-b fable-b 2026-01-01T08:01:00Z "MODEL=claude-fable-5-2
