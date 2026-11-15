@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import calendar
 import fcntl
 import json
 import os
@@ -72,7 +73,10 @@ def config():
         "heavy_cpu": env_f("GOV_HEAVY_CPU", 15),
         "ssh_slow_ms": env_f("GOV_SSH_SLOW_MS", 3000),
         "mem_free_low": env_f("GOV_MEM_FREE_LOW", 5),
-        "swap_high_mb": env_f("GOV_SWAP_HIGH_MB", 0),
+        "swapout_mbps_high": env_f("GOV_SWAPOUT_MBPS_HIGH", 16),
+        "high_hold_s": env_f("GOV_HIGH_HOLD_S", 90),
+        "max_paused": env_f("GOV_MAX_PAUSED", 2),
+        "min_running": env_f("GOV_MIN_RUNNING", 3),
         "fable_stagger_pct": env_f("GOV_FABLE_STAGGER_PCT", 25),
         "fable_heavy_max": env_f("GOV_FABLE_HEAVY_MAX", 2),
         "notify_min": env_f("GOV_NOTIFY_MIN", 10),
@@ -179,6 +183,25 @@ def probe_ssh():
     return (time.time() - t0) * 1000.0
 
 
+VM_LEVELS = {1: "normal", 2: "warn", 4: "critical"}
+
+
+def vm_counters():
+    fake = os.environ.get("GOV_FAKE_VMSTAT")
+    if fake is not None:
+        si, so = (float(x) for x in fake.split(","))
+        return {"swapins": si, "swapouts": so, "page": 16384.0}
+    out = run(["vm_stat"], 5)
+    vals = {}
+    m = re.search(r"page size of (\d+) bytes", out)
+    vals["page"] = float(m.group(1)) if m else 16384.0
+    for key, name in (("Swapins", "swapins"), ("Swapouts", "swapouts")):
+        m = re.search(r"^%s:\s+(\d+)" % key, out, re.M)
+        if m:
+            vals[name] = float(m.group(1))
+    return vals
+
+
 def sample():
     fake = os.environ.get("GOV_FAKE_LOAD")
     if fake:
@@ -188,11 +211,29 @@ def sample():
     mem = os.environ.get("GOV_FAKE_MEMFREE")
     if mem is None:
         mem = sysctl("kern.memorystatus_level") or "100"
+    lvl = os.environ.get("GOV_FAKE_VM_PRESSURE")
+    if lvl is None:
+        lvl = sysctl("kern.memorystatus_vm_pressure_level") or "1"
     swap = os.environ.get("GOV_FAKE_SWAP_MB")
     if swap is None:
         m = re.search(r"used = ([0-9.]+)M", sysctl("vm.swapusage"))
         swap = m.group(1) if m else "0"
-    return {"load1": l1, "load5": l5, "load15": l15, "mem_free": float(mem), "swap_mb": float(swap), "ssh_ms": probe_ssh()}
+    return {"ts": now(), "load1": l1, "load5": l5, "load15": l15, "mem_free": float(mem), "vm_level": int(float(lvl)),
+            "swap_mb": float(swap), "vm": vm_counters(), "ssh_ms": probe_ssh()}
+
+
+def add_rates(s, prev):
+    s["swapout_mbps"] = s["swapin_mbps"] = None
+    if not isinstance(prev, dict) or not isinstance(prev.get("vm"), dict) or not prev.get("ts"):
+        return s
+    dt = s["ts"] - prev["ts"]
+    if dt <= 0 or dt > 600:
+        return s
+    page = s["vm"].get("page", 16384.0)
+    for key, out in (("swapouts", "swapout_mbps"), ("swapins", "swapin_mbps")):
+        if key in s["vm"] and key in prev["vm"]:
+            s[out] = max(0.0, s["vm"][key] - prev["vm"][key]) * page / dt / 1048576.0
+    return s
 
 
 def pressure(s, cfg):
@@ -201,15 +242,56 @@ def pressure(s, cfg):
         why.append("load %.1f/%.1f over %.0f" % (s["load1"], s["load5"], cfg["high_load5"]))
     if s["ssh_ms"] is None or s["ssh_ms"] >= cfg["ssh_slow_ms"]:
         why.append("sshd %s" % ("down" if s["ssh_ms"] is None else "%.0f ms" % s["ssh_ms"]))
-    if s["mem_free"] < cfg["mem_free_low"]:
+    lvl = s.get("vm_level") or 1
+    so = s.get("swapout_mbps")
+    if lvl >= 4:
+        why.append("memory pressure critical")
+    elif s["mem_free"] < cfg["mem_free_low"]:
         why.append("memory free %.0f%%" % s["mem_free"])
-    if cfg["swap_high_mb"] and s["swap_mb"] >= cfg["swap_high_mb"]:
-        why.append("swap %.0f MB" % s["swap_mb"])
+    elif lvl >= 2 and so is not None and so >= cfg["swapout_mbps_high"]:
+        why.append("memory pressure warn, swapping out %.0f MB/s" % so)
     if cfg["high_load5"]:
         low = (not why) and s["load5"] <= cfg["low_load5"] and s["load1"] <= 1.2 * cfg["low_load5"]
     else:
-        low = (not why) and s["ssh_ms"] < cfg["ssh_slow_ms"] / 3.0
+        low = (not why) and s["ssh_ms"] is not None and s["ssh_ms"] < cfg["ssh_slow_ms"] / 3.0
     return why, low
+
+
+def warn_once(st, key, msg, t, every=1800):
+    if t - st["warned"].get(key, 0) > every:
+        st["warned"][key] = t
+        log(msg)
+
+
+def stamp_ts(job):
+    m = re.match(r"(\d{8}T\d{6}Z)", job)
+    if not m:
+        return None
+    try:
+        return float(calendar.timegm(time.strptime(m.group(1), "%Y%m%dT%H%M%SZ")))
+    except (ValueError, OverflowError):
+        return None
+
+
+def session_elsewhere(sid, since, exclude, jobs):
+    live = {j["job"] for j in jobs if j["state"] in ("running", "paused", "queued")}
+    try:
+        names = sorted(os.listdir(JOBS_DIR))
+    except OSError:
+        return None
+    for name in names:
+        if name == exclude:
+            continue
+        started = stamp_ts(name)
+        if name not in live and not (started is not None and since and started >= since - 1):
+            continue
+        d = os.path.join(JOBS_DIR, name)
+        if not os.path.isdir(d):
+            continue
+        env = read_env(os.path.join(d, "job.env"))
+        if (env.get("RESUME") == sid and env.get("FORK", "0") != "1") or session_id(d) == sid:
+            return name
+    return None
 
 
 def read_env(path):
@@ -481,8 +563,12 @@ def do_convert(st, job):
     return True
 
 
-def relaunch(st, job):
+def relaunch(st, job, jobs=None):
     meta = st["gov_stopped"].pop(job)
+    other = session_elsewhere(meta["sid"], meta.get("at", 0), job, jobs if jobs is not None else scan(st))
+    if other:
+        log("DROP-STOPPED %s: session %s was already resumed by %s; no governor relaunch" % (job, meta["sid"][:8], other))
+        return False
     stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(now()))
     label = re.sub(r"[^a-zA-Z0-9._-]", "_", meta["name"])
     new = "%s-%s-resume-%s" % (stamp, label, meta["sid"][:8])
@@ -617,45 +703,75 @@ def tick(st, actor="governor"):
     if mode == "off":
         return {"mode": mode, "actions": []}
     rows = procs()
-    s = sample()
+    s = add_rates(sample(), st.get("last_sample"))
     jobs = scan(st, rows)
     alive = {j["job"] for j in jobs if j["state"] in ("running", "paused")}
     for job in list(st["paused"]):
         if job not in alive:
             st["paused"].pop(job, None)
             log("DROP %s: no longer running" % job)
+    for job, meta in list(st["gov_stopped"].items()):
+        other = session_elsewhere(meta.get("sid", ""), meta.get("at", 0), job, jobs)
+        if other:
+            st["gov_stopped"].pop(job, None)
+            log("DROP-STOPPED %s: session %s was already resumed by %s; no governor relaunch" % (job, meta.get("sid", "")[:8], other))
+            notify("↩️ `%s` 는 이미 `%s` 로 재개됨 → 거버너 재개 생략" % (meta.get("name") or job, other))
     why, low = pressure(s, cfg)
     if low:
         st["low_since"] = st.get("low_since") or t
     else:
         st["low_since"] = None
+    prev_since = st.get("high_since") if isinstance(st.get("high_since"), dict) else {}
+    since = {}
+    for w in why:
+        kind = w.split()[0]
+        since[kind] = prev_since.get(kind, t)
+    st["high_since"] = since
+    held_kinds = [k for k, v in since.items() if t - v >= cfg["high_hold_s"]]
+    sustained = bool(held_kinds)
+    ssh_failing = "sshd" in held_kinds
+    acting_why = [w for w in why if w.split()[0] in held_kinds]
     act = mode == "enforce"
     can_act = t - st.get("last_action", 0) >= cfg["cooldown_s"]
     actions = []
 
     for job, rec in list(st["paused"].items()):
-        if t - rec.get("at", t) >= cfg["max_pause_min"] * 60:
-            actions.append(("convert", job, "paused %.0f min" % ((t - rec["at"]) / 60)))
+        if t - rec.get("at", t) < cfg["max_pause_min"] * 60:
+            continue
+        mins = (t - rec["at"]) / 60
+        if sustained:
+            actions.append(("convert", job, "paused %.0f min and still %s" % (mins, ", ".join(acting_why))))
             if act:
                 do_convert(st, job)
                 st["last_action"] = t
+        else:
+            actions.append(("resume", job, "paused %.0f min; pressure is gone" % mins))
+            if act:
+                do_resume(st, job, actor, rows)
+                st["last_action"] = t
 
     running = [j for j in jobs if j["state"] == "running"]
-    if why and can_act:
+    held = len(st["paused"]) + len(st["gov_stopped"])
+    if why and not sustained:
+        kinds = sorted(since)
+        warn_once(st, "rising:" + ",".join(kinds), "HIGH %s for %.0f s; waiting %.0f s before acting" % (
+            ", ".join(why), max(t - since[k] for k in kinds), cfg["high_hold_s"]), t, 600)
+    elif sustained and can_act:
         cands = [j for j in running if not j["critical"] and j["cpu"] >= cfg["heavy_cpu"]]
         cands.sort(key=lambda j: (RANK[j["priority"]], -started_ts(j)))
-        if cands:
+        if held >= cfg["max_paused"]:
+            warn_once(st, "cap", "HIGH %s but %d job(s) already held back (cap %d); pausing nothing more" % (", ".join(acting_why), held, cfg["max_paused"]), t)
+        elif not ssh_failing and len(running) - 1 < cfg["min_running"]:
+            warn_once(st, "floor", "HIGH %s but only %d job(s) running (floor %d); pausing nothing" % (", ".join(acting_why), len(running), cfg["min_running"]), t)
+        elif cands:
             j = cands[0]
-            actions.append(("pause", j["job"], ", ".join(why)))
+            actions.append(("pause", j["job"], ", ".join(acting_why)))
             if act:
-                do_pause(st, j, ", ".join(why), actor)
+                do_pause(st, j, ", ".join(acting_why), actor)
                 st["last_action"] = t
         else:
-            key = "nopause"
-            if t - st["warned"].get(key, 0) > 1800:
-                st["warned"][key] = t
-                busy = sorted(running, key=lambda j: -j["cpu"])[:3]
-                log("HIGH %s but no pausable heavy job (%s)" % (", ".join(why), ", ".join("%s cpu=%.0f%s" % (j["job"], j["cpu"], " critical" if j["critical"] else "") for j in busy) or "no jobs"))
+            busy = sorted(running, key=lambda j: -j["cpu"])[:3]
+            warn_once(st, "nopause", "HIGH %s but no pausable heavy job (%s)" % (", ".join(acting_why), ", ".join("%s cpu=%.0f%s" % (j["job"], j["cpu"], " critical" if j["critical"] else "") for j in busy) or "no jobs"), t)
     elif not why and can_act:
         held_low = st.get("low_since") and t - st["low_since"] >= cfg["low_hold_min"] * 60
         paused = sorted(st["paused"].items(), key=lambda kv: (-RANK.get(kv[1].get("priority", "normal"), 1), kv[1].get("at", 0)))
@@ -671,7 +787,7 @@ def tick(st, actor="governor"):
             job = stopped[0][0]
             actions.append(("relaunch", job, "load %.1f" % s["load5"]))
             if act:
-                relaunch(st, job)
+                relaunch(st, job, jobs)
                 st["last_action"] = t
         elif not paused and not stopped and queued and (not cfg["start_load5"] or s["load5"] < cfg["start_load5"]):
             for j in queued:
@@ -683,6 +799,16 @@ def tick(st, actor="governor"):
                     start_queued(j)
                     st["last_action"] = t
                 break
+    queued_now = [j for j in jobs if j["state"] == "queued"]
+    if not actions and can_act and queued_now and len(running) < cfg["min_running"] and not ssh_failing:
+        for j in sorted(queued_now, key=lambda j: (-RANK[j["priority"]], j["job"])):
+            if fable_stagger_reason(jobs, cfg, j.get("model"), j.get("effort")):
+                continue
+            actions.append(("start", j["job"], "only %d job(s) running (floor %.0f)" % (len(running), cfg["min_running"])))
+            if act:
+                start_queued(j)
+                st["last_action"] = t
+            break
     for a in actions:
         if not act:
             log("WOULD %s %s: %s" % (a[0].upper(), a[1], a[2]))
@@ -701,15 +827,19 @@ def admit(argv, st):
     mode = mode_of(st)
     if "--now" in argv or prio == "critical" or steer or mode == "off":
         return {"decision": "start", "reason": "now" if "--now" in argv else ("critical" if prio == "critical" else ("steer" if steer else "governor off")), "priority": prio}
-    s = sample()
+    s = add_rates(sample(), st.get("last_sample"))
     why, _ = pressure(s, cfg)
+    jobs = scan(st)
+    running = [j for j in jobs if j["state"] == "running"]
+    ssh_bad = any(w.startswith("sshd") for w in why)
     reason = ""
-    if why:
-        reason = "load: " + ", ".join(why)
-    elif cfg["high_load5"] and s["load5"] >= cfg["high_load5"]:
-        reason = "load: 5-min load %.1f over %.0f" % (s["load5"], cfg["high_load5"])
-    else:
-        reason = fable_stagger_reason(scan(st), cfg, model, effort)
+    if len(running) >= cfg["min_running"] or ssh_bad:
+        if why:
+            reason = "load: " + ", ".join(why)
+        elif cfg["high_load5"] and s["load5"] >= cfg["high_load5"]:
+            reason = "load: 5-min load %.1f over %.0f" % (s["load5"], cfg["high_load5"])
+    if not reason:
+        reason = fable_stagger_reason(jobs, cfg, model, effort)
     if not reason:
         return {"decision": "start", "reason": "capacity ok", "priority": prio}
     if mode != "enforce":
@@ -833,7 +963,7 @@ def status(argv):
     ensure_dirs()
     st = load_state()
     rows = procs()
-    s = sample()
+    s = add_rates(sample(), st.get("last_sample"))
     jobs = scan(st, rows)
     why, low = pressure(s, cfg)
     running_fable = sum(1 for j in jobs if j["state"] in ("running", "paused") and is_fable(j.get("model")))
@@ -844,11 +974,19 @@ def status(argv):
                           "gov_stopped": st["gov_stopped"], "pinned": st["pinned"]}, indent=1))
         return 0
     dp = daemon_pid()
-    print("Mini governor: mode=%s  daemon=%s  load %.1f/%.1f/%.1f (%d cores; pause above %.0f, resume below %.0f, start queued below %.0f)" % (
-        mode_of(st), "running (pid %d)" % dp if dp else "not running", s["load1"], s["load5"], s["load15"], NCPU,
-        cfg["high_load5"], cfg["low_load5"], cfg["start_load5"]))
-    print("  memory free %.0f%%  swap %.0f MB  sshd %s  pressure: %s" % (
-        s["mem_free"], s["swap_mb"], "down" if s["ssh_ms"] is None else "%.0f ms" % s["ssh_ms"], ", ".join(why) or ("low" if low else "normal")))
+    if cfg["high_load5"]:
+        load_rule = "pause above %.0f, resume below %.0f, start queued below %.0f" % (cfg["high_load5"], cfg["low_load5"], cfg["start_load5"])
+    else:
+        load_rule = "load never pauses; sshd slower than %.0f ms or memory pressure does" % cfg["ssh_slow_ms"]
+    print("Mini governor: mode=%s  daemon=%s  load %.1f/%.1f/%.1f (%d cores; %s)" % (
+        mode_of(st), "running (pid %d)" % dp if dp else "not running", s["load1"], s["load5"], s["load15"], NCPU, load_rule))
+    rate = lambda v: "?" if v is None else "%.1f" % v
+    print("  memory free %.0f%% (kernel pressure %s)  swap-out %s MB/s  swap-in %s MB/s  sshd %s  pressure: %s" % (
+        s["mem_free"], VM_LEVELS.get(s.get("vm_level"), s.get("vm_level")), rate(s.get("swapout_mbps")), rate(s.get("swapin_mbps")),
+        "down" if s["ssh_ms"] is None else "%.0f ms" % s["ssh_ms"], ", ".join(why) or ("low" if low else "normal")))
+    held = len(st["paused"]) + len(st["gov_stopped"])
+    print("  held back %d (cap %.0f), running floor %.0f, act after %.0f s of pressure; swap used %.0f MB (shown only, never a trigger)" % (
+        held, cfg["max_paused"], cfg["min_running"], cfg["high_hold_s"], s["swap_mb"]))
     if p:
         print("  quota: Fable headroom %.0f%% of pool, projected %.0f%% with %d Fable worker(s); %d/%d accounts with Fable headroom (sume-bg-launch --quota)" % (
             p["fable_headroom_pct"], p["projected_pct"], running_fable, p["fable_ok_accounts"], p["usable"]))

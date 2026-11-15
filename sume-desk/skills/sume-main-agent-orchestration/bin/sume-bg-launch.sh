@@ -372,13 +372,23 @@ mini_fail_closed() {
   exit 3
 }
 
+point_latest() {
+  local tmp
+  tmp=$(mktemp "$2.XXXXXX" 2>/dev/null) || return 0
+  if ln -sfn "$1" "$tmp" 2>/dev/null && mv -f "$tmp" "$2" 2>/dev/null; then
+    return 0
+  fi
+  rm -f "$tmp"
+  return 0
+}
+
 # Streams the Mini worker log into the local replica live log and stdout.
 # Appends replica registry rows on 📎 session_id= and at the end.
 # One writer: this process is the only thing that touches the replica file.
 mini_attach() {
   mkdir -p "$LIVE_DIR"
   : >"$LIVE_LOG"
-  ln -sfn "$LIVE_LOG" "$LIVE_DIR/LATEST.log"
+  point_latest "$LIVE_LOG" "$LIVE_DIR/LATEST.log"
   echo "host: mini ($MINI_SSH)  job: $JOB" >&2
   echo "👁 live_log: $LIVE_LOG  (replica of the Mini; liveness = --status $JOB)" >&2
   echo "👁 watch:    tail -f $(printf %q "$LIVE_LOG")" >&2

@@ -94,6 +94,12 @@ What happens:
 Laptop sleep, lid close or an ssh drop end **only the attach** (exit 255,
 registry row `attach-lost`). The job keeps running.
 
+`opus-live/LATEST.log` is repointed by building the new link under a unique
+name and renaming it over the old one, and a failure there never fails the
+launch. Until 2026-11-15 it was `ln -sfn`, and two launches in the same second
+could lose the race: `ln: …/LATEST.log: File exists`, rc=1, nothing started
+(`seo-geo-100` at 13:42:35 KST).
+
 Before step 3 starts anything, `sume-bg-remote start` checks Fable quota for a
 Fable model and asks the [governor](#governor-load-admission-quota) for
 admission. A busy Mini answers `queued: job … waits for Mini capacity`; the
@@ -251,8 +257,19 @@ a live script.
 workers running without overloading the Mini or burning the Fable pool. One
 instance: the daemon holds `governor/daemon.lock`; a second one exits.
 
-Every 30 s it samples 1/5-min load, `kern.memorystatus_level` (memory free
-%), swap used and an sshd probe (TCP banner time on 127.0.0.1:22).
+Every 30 s it samples 1/5-min load, the kernel memory pressure level
+(`kern.memorystatus_vm_pressure_level`: 1 normal, 2 warn, 4 critical),
+memory free % (`kern.memorystatus_level`, what `memory_pressure` prints),
+the swap-out and swap-in rate (`vm_stat` Swapouts / Swapins per second) and
+an sshd probe (TCP banner time on 127.0.0.1:22).
+
+**Swap used is never a trigger.** On 2026-11-15 12:47–13:18 KST the governor
+paused 7 workers on "swap 4164 MB … 10336 MB" while load was 7–15 on 18 cores
+and memory was 84 % free, then stopped 4 of them as "paused too long", and all
+work stalled for about an hour. macOS keeps swapped pages counted as used
+until the owner touches them, and a SIGSTOPped process never does, so pausing
+made the number grow (4 → 10 GB) and the low-water mark could never be met.
+`--status` still prints swap used, marked "shown only".
 
 | setting (env on the agent) | default (18 cores) | meaning |
 |---|---|---|
@@ -262,29 +279,58 @@ Every 30 s it samples 1/5-min load, `kern.memorystatus_level` (memory free
 | `GOV_COOLDOWN_S` | 180 | one pause / resume / start per cooldown |
 | `GOV_START_LOAD5` | 0 (off; midpoint when load is on) | a queued job starts only below this |
 | `GOV_SSH_SLOW_MS` | 3000 | sshd slower than this (or down) counts as high |
-| `GOV_MEM_FREE_LOW` / `GOV_SWAP_HIGH_MB` | 5 % / 0 (off) | memory / swap pressure counts as high |
+| `GOV_MEM_FREE_LOW` | 5 % | memory free below this counts as high |
+| `GOV_SWAPOUT_MBPS_HIGH` | 16 MB/s | swap-out rate that, with kernel pressure warn, counts as high |
+| `GOV_HIGH_HOLD_S` | 90 | a signal must stay high this long (each signal on its own) before any pause |
+| `GOV_MAX_PAUSED` | 2 | at most this many jobs held back (paused + stopped awaiting relaunch) |
+| `GOV_MIN_RUNNING` | 3 | never pause below this many running jobs, unless sshd is failing |
 | `GOV_HEAVY_CPU` | 15 | only a job using ≥ this % CPU is worth pausing |
-| `GOV_MAX_PAUSE_MIN` | 30 | longer pauses become a clean stop + resume |
+| `GOV_MAX_PAUSE_MIN` | 30 | a longer pause resumes if the pressure is gone, else becomes a clean stop |
 | `GOV_FABLE_STAGGER_PCT` / `GOV_FABLE_HEAVY_MAX` | 25 / 2 | Fable stagger (below) |
 | `GOV_NOTIFY_MIN` | 10 | Slack batch interval |
 
 **Policy (Chase 2026-11-15):** load is fine as long as sshd answers. By
-default only an sshd probe that is down or slower than `GOV_SSH_SLOW_MS`, or
-memory free under `GOV_MEM_FREE_LOW`, counts as high. Load and swap are off:
-on 2026-11-15 a 4 GB swap trigger paused all 8 jobs at load 3–9 with 86 %
-memory free, and the paused jobs' pages pushed swap higher, so it kept pausing.
+default **high** means only:
 
-**Pause.** Above high water it pauses one job per cooldown: the lowest
+- sshd slower than `GOV_SSH_SLOW_MS` or not answering;
+- kernel memory pressure critical, or memory free below `GOV_MEM_FREE_LOW`;
+- kernel memory pressure warn **and** swap-out ≥ `GOV_SWAPOUT_MBPS_HIGH`.
+
+Load counts only when `GOV_HIGH_LOAD5` is set (5-min load ≥ it and 1-min ≥
+90 % of it). Swap used never counts (above). With load off, low = nothing high
+and sshd faster than ⅓ of `GOV_SSH_SLOW_MS`.
+
+A signal must stay high for `GOV_HIGH_HOLD_S` (each signal is timed on its
+own, and a dip resets the timer) before the governor acts; until then it only
+logs `HIGH … waiting`.
+
+**Pause.** While high holds it pauses one job per cooldown: the lowest
 priority first, newest first within a priority. A pause is `SIGSTOP` of every
 process in the job's tree (descendants of the job pid plus its process
 group), recorded in `governor/state.json` and a `governor-paused` marker.
-After `GOV_LOW_HOLD_MIN` below low water it resumes one job per cooldown
-(`SIGCONT`), highest priority first, oldest pause first. Between the marks
-nothing changes (hysteresis). A pause longer than `GOV_MAX_PAUSE_MIN` becomes
-a clean stop: `SIGCONT`, then `sume-bg-remote kill` (the `stopped` marker, so
-no death alert and no auto-resume), and when the load is low again a new job
+It never takes the whole fleet: at most `GOV_MAX_PAUSED` jobs are held back
+at once (paused plus stopped-awaiting-relaunch), and it never pauses below
+`GOV_MIN_RUNNING` running jobs unless sshd is failing (the cap still holds
+then). Each limit is logged once per 30 min.
+
+**Resume.** After `GOV_LOW_HOLD_MIN` below low water it resumes one job per
+cooldown (`SIGCONT`), highest priority first, oldest pause first. Between
+the marks nothing changes (hysteresis). A pause that reaches
+`GOV_MAX_PAUSE_MIN` resumes at once if the pressure is gone; only if the same
+pressure is still held does it become a clean stop: `SIGCONT`, then
+`sume-bg-remote kill` (the `stopped` marker, so no death alert and no
+auto-resume). When the load is low again a new job
 `<stamp>-<name>-resume-<sid8>` resumes the **same session** with the same
 backend flags and a `PAUSED BY GOVERNOR, continue:` prompt.
+
+**No twins.** Before it relaunches a stopped session, and on every tick, the
+governor looks for another job on that session: one that is running, paused
+or queued, or one started after the governor's stop (a steer resume, not a
+fork). If there is one, it drops its own relaunch (`DROP-STOPPED … already
+resumed by <job>`). On 2026-11-15 13:42 KST the main agent resumed
+`sandbox-exec-build`; 44 s later the governor's relaunch stopped that job and
+replaced its prompt (which said Higgsfield login was now available) with the
+generic one.
 
 **Never paused** (the `NOTE` column of `--status` says why):
 
@@ -328,8 +374,10 @@ a `queued` marker is set, no process starts, and the launcher prints
 `queued: job … waits for Mini capacity` and exits 0 without attaching. The
 governor starts queued jobs (highest priority, then oldest) when nothing is
 paused and the 5-min load is below `GOV_START_LOAD5`. Never queued: `--now`,
-priority `critical`, a steer (`--resume` without `--fork-session`), and every
-auto-resume / governor relaunch. Start one by hand with
+priority `critical`, a steer (`--resume` without `--fork-session`), every
+auto-resume / governor relaunch, and any job while fewer than
+`GOV_MIN_RUNNING` jobs run (unless sshd is failing); the governor also starts
+a queued job whenever the running count is below that floor. Start one by hand with
 `sume-bg-launch --host mini --governor start <job>`; drop one with `--kill`.
 Attach after it starts with `--attach <job>`.
 
@@ -476,7 +524,11 @@ reaches stdin and never argv.
 `GOV_FAKE_LOAD` and friends instead of the real machine) covers the quota
 reader, `fable-plan`, the launch warning and `--fable-downgrade`, the Fable
 limit death (swap, swap through the daemon when the keychain is unreadable,
-Opus fallback at the same effort, all-exhausted), observe
+Opus fallback at the same effort, all-exhausted), the 2026-11-15 replay
+(swap used 4 → 10 GB at load 7–15 and 84 % free must pause nothing), the 90 s
+hold, the cap of 2 and the floor of 3 (lifted only when sshd fails), memory
+pressure (critical, or warn + swap-out rate), resume-not-stop after a long
+calm pause, no twin relaunch, observe
 mode, pause order and cooldown, critical phases (release name, merge-queue
 wait), hysteresis, pin / manual pause / resume, the long-pause clean stop and
 relaunch, the admission queue (manual start, `--now`, release bypass), Fable

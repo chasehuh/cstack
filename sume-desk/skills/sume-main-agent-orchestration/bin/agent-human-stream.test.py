@@ -286,6 +286,36 @@ else:
                 parent_proc.wait()
 
 
+def test_latest_link_race() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        env = os.environ.copy()
+        for key in list(env):
+            if key.startswith(("AGENT_", "CLAUDE_", "GROK_", "SUME_")):
+                env.pop(key)
+        env.update(PATH=f"{tmp}:{env['PATH']}", TOKENMAXXING_REQUIRE_SUPERVISOR="0",
+                   AGENT_HUMAN_STREAM_REGISTRY=str(base / "registry.jsonl"),
+                   AGENT_HUMAN_STREAM_LIVE_DIR=str(base / "live"),
+                   CSTACK_SLACK_REPORT="0")
+        claude = base / "claude"
+        claude.write_text("#!/usr/bin/env python3\nimport json, sys\nsys.stdin.read()\n"
+                          "print(json.dumps({'type': 'system', 'subtype': 'init', 'session_id': 'cccccccc-cccc-cccc-cccc-cccccccccccc'}))\n")
+        claude.chmod(0o755)
+        ln = base / "ln"
+        ln.write_text('#!/bin/sh\nfor a in "$@"; do last=$a; done\n'
+                      'case "$last" in */LATEST.log) echo "ln: $last: File exists" >&2; exit 1 ;; esac\n'
+                      'exec /bin/ln "$@"\n')
+        ln.chmod(0o755)
+        prompt = base / "prompt.md"
+        prompt.write_text("race fixture")
+        proc = subprocess.run([str(ROOT / "agent-human-stream.sh"), "--backend", "claude", "--name", "race-test",
+                               "--prompt-file", str(prompt)], env=env, text=True, capture_output=True)
+        assert proc.returncode == 0, proc.stderr
+        latest = base / "live" / "LATEST.log"
+        assert latest.is_symlink(), list((base / "live").iterdir())
+        assert "race-test" in os.readlink(latest), os.readlink(latest)
+
+
 def test_codex_file_drain() -> None:
     """A fat writer must see a regular stdout file, preserve rc, and drain EOF."""
     with tempfile.TemporaryDirectory() as tmp:
@@ -411,6 +441,7 @@ def main() -> None:
     test_codex_file_drain()
     test_fork_launchers()
     test_worker_preamble_and_nested_guard()
+    test_latest_link_race()
     claude = run_stream(CLAUDE_STREAM, "claude")
     require(claude, "📎 session_id=11111111-1111-1111-1111-111111111111")
     require(claude, "backend=claude")

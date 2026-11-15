@@ -3,6 +3,28 @@
 Newest first. What changed in how the desk runs, and what was removed, so a
 stale habit can be traced to the day it stopped being true.
 
+## 2026-11-15 — Governor misfire fixed: real pressure only, never the whole fleet (mini-governor-fix)
+
+- 12:47–13:18 KST the governor paused 7 workers on "swap used 4–10 GB" while
+  load was 7–15 / 18 cores and memory 84 % free, then stopped 4 as "paused too
+  long"; all work stalled ~1 hour. Swap used on macOS is sticky and grows
+  while jobs are SIGSTOPped, so the low-water mark could never be met.
+- #46 (Chase: load is fine while sshd answers) turned load and swap off by
+  default. On top of it: swap used is gone as a trigger, and high = sshd slow
+  or down, kernel memory pressure critical / memory free < 5 %, or pressure
+  warn + swap-out ≥ 16 MB/s (load only when `GOV_HIGH_LOAD5` is set), each
+  held 90 s.
+- At most 2 jobs held back at once; never below 3 running unless sshd is
+  failing. A 30-min pause resumes if the pressure is gone; it is stopped only
+  while the same pressure still holds.
+- No twins: a governor relaunch is dropped when another job already resumed
+  that session (13:42 KST it had replaced the main agent's `sandbox-exec-build`
+  resume and its new prompt).
+- `opus-live/LATEST.log` is updated by rename and never fails a launch (two
+  launches in one second died with `ln: … File exists`).
+- `cstack-slack-post` falls back to a new ego space name when `slack post
+  <job>` is user-owned (the governor's own Slack notes failed that way).
+
 ## 2026-11-14 — Mini governor + Fable quota fallback (mini-governor)
 
 - 채원님 ask: launch many Mini workers, leave, and nothing overloads the Mini

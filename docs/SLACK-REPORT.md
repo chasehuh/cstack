@@ -93,6 +93,10 @@ cstack-slack-post --job <slug> [--issue N] [--title "<short what>"] \
   (with no match it posts the short parent first).
 - `--new-thread` is accepted and does nothing (it is the default).
 - `--dry-run` shows what it would post and posts nothing.
+- It works in the ego task space `slack post <job>`. When that space is
+  user-owned (a dry run or an earlier post kept its Slack tab), ego refuses
+  it; the script then uses `slack post <job> <UTC yyyymmddHHMMSS>` instead of
+  failing with rc=1 before any Slack call.
 - The token stays in the page. It is never printed.
 
 A worker with a Slack MCP tool may use that instead; the format and the

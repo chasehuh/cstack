@@ -31,6 +31,16 @@ CSTACK_FABLE_LATEST="${CSTACK_FABLE_LATEST:-claude-fable-5-2}"
 # Claude Code CLI 2.1.x (SDK + changelog): low|medium|high|xhigh|max.
 # Fable / Opus 4.7+ take `max` natively. Do NOT remap max → high.
 # Desk aliases: mid → medium, maximum → max, x-high → xhigh.
+point_latest() {
+  local tmp
+  tmp=$(mktemp "$2.XXXXXX" 2>/dev/null) || return 0
+  if ln -sfn "$1" "$tmp" 2>/dev/null && mv -f "$tmp" "$2" 2>/dev/null; then
+    return 0
+  fi
+  rm -f "$tmp"
+  return 0
+}
+
 _claude_effort_wire() {
   local lc
   lc=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
@@ -1421,7 +1431,7 @@ if [[ -n "$RESUME" ]]; then
 fi
 LIVE_LOG="$LIVE_DIR/${LIVE_STAMP}-${LIVE_LABEL}.log"
 : >"$LIVE_LOG"
-ln -sfn "$LIVE_LOG" "$LIVE_DIR/LATEST.log"
+point_latest "$LIVE_LOG" "$LIVE_DIR/LATEST.log"
 export AGENT_HUMAN_STREAM_LIVE_LOG="$LIVE_LOG"
 PROMPT_STDIN="${LIVE_LOG%.log}.prompt.md"
 (umask 077 && printf '%s' "$PROMPT" >"$PROMPT_STDIN")
