@@ -59,20 +59,20 @@ def env_f(name, default):
 
 
 def config():
-    high = env_f("GOV_HIGH_LOAD5", round(1.22 * NCPU))
-    low = env_f("GOV_LOW_LOAD5", round(0.67 * NCPU))
+    high = env_f("GOV_HIGH_LOAD5", 0)
+    low = env_f("GOV_LOW_LOAD5", round(0.67 * NCPU) if high else 0)
     return {
         "interval_s": env_f("GOV_INTERVAL_S", 30),
         "high_load5": high,
         "low_load5": low,
-        "start_load5": env_f("GOV_START_LOAD5", (high + low) / 2.0),
+        "start_load5": env_f("GOV_START_LOAD5", (high + low) / 2.0 if high else 0),
         "low_hold_min": env_f("GOV_LOW_HOLD_MIN", 5),
         "cooldown_s": env_f("GOV_COOLDOWN_S", 180),
         "max_pause_min": env_f("GOV_MAX_PAUSE_MIN", 30),
         "heavy_cpu": env_f("GOV_HEAVY_CPU", 15),
         "ssh_slow_ms": env_f("GOV_SSH_SLOW_MS", 3000),
-        "mem_free_low": env_f("GOV_MEM_FREE_LOW", 10),
-        "swap_high_mb": env_f("GOV_SWAP_HIGH_MB", 4096),
+        "mem_free_low": env_f("GOV_MEM_FREE_LOW", 5),
+        "swap_high_mb": env_f("GOV_SWAP_HIGH_MB", 0),
         "fable_stagger_pct": env_f("GOV_FABLE_STAGGER_PCT", 25),
         "fable_heavy_max": env_f("GOV_FABLE_HEAVY_MAX", 2),
         "notify_min": env_f("GOV_NOTIFY_MIN", 10),
@@ -197,15 +197,18 @@ def sample():
 
 def pressure(s, cfg):
     why = []
-    if s["load5"] >= cfg["high_load5"] and s["load1"] >= 0.9 * cfg["high_load5"]:
+    if cfg["high_load5"] and s["load5"] >= cfg["high_load5"] and s["load1"] >= 0.9 * cfg["high_load5"]:
         why.append("load %.1f/%.1f over %.0f" % (s["load1"], s["load5"], cfg["high_load5"]))
     if s["ssh_ms"] is None or s["ssh_ms"] >= cfg["ssh_slow_ms"]:
         why.append("sshd %s" % ("down" if s["ssh_ms"] is None else "%.0f ms" % s["ssh_ms"]))
     if s["mem_free"] < cfg["mem_free_low"]:
         why.append("memory free %.0f%%" % s["mem_free"])
-    if s["swap_mb"] >= cfg["swap_high_mb"]:
+    if cfg["swap_high_mb"] and s["swap_mb"] >= cfg["swap_high_mb"]:
         why.append("swap %.0f MB" % s["swap_mb"])
-    low = (not why) and s["load5"] <= cfg["low_load5"] and s["load1"] <= 1.2 * cfg["low_load5"]
+    if cfg["high_load5"]:
+        low = (not why) and s["load5"] <= cfg["low_load5"] and s["load1"] <= 1.2 * cfg["low_load5"]
+    else:
+        low = (not why) and s["ssh_ms"] < cfg["ssh_slow_ms"] / 3.0
     return why, low
 
 
@@ -670,7 +673,7 @@ def tick(st, actor="governor"):
             if act:
                 relaunch(st, job)
                 st["last_action"] = t
-        elif not paused and not stopped and queued and s["load5"] < cfg["start_load5"]:
+        elif not paused and not stopped and queued and (not cfg["start_load5"] or s["load5"] < cfg["start_load5"]):
             for j in queued:
                 stag = fable_stagger_reason(jobs, cfg, j.get("model"), j.get("effort"))
                 if stag:
@@ -703,7 +706,7 @@ def admit(argv, st):
     reason = ""
     if why:
         reason = "load: " + ", ".join(why)
-    elif s["load5"] >= cfg["high_load5"]:
+    elif cfg["high_load5"] and s["load5"] >= cfg["high_load5"]:
         reason = "load: 5-min load %.1f over %.0f" % (s["load5"], cfg["high_load5"])
     else:
         reason = fable_stagger_reason(scan(st), cfg, model, effort)
