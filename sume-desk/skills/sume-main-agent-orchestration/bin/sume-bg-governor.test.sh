@@ -261,6 +261,17 @@ fake_job() {
 
 stopped() { [[ "$(ps -o stat= -p "$(cat "$SUME_BG_REMOTE_JOBS_DIR/$1/pid")" | tr -d ' ')" == T* ]]; }
 
+export GOV_DIR="$T/gov-default"
+rm -rf "$SUME_BG_REMOTE_JOBS_DIR"/*
+fake_job 20260101T000500Z-busy-feat busy-feat 2026-01-01T00:05:00Z
+"$PY" "$GOV" mode enforce >/dev/null
+GOV_HEAVY_CPU=-1 GOV_FAKE_LOAD="60,55,50" GOV_FAKE_SWAP_MB=12000 "$PY" "$GOV" once >/dev/null
+stopped 20260101T000500Z-busy-feat && fail "default: high load and swap with sshd up must not pause"
+GOV_HEAVY_CPU=-1 GOV_FAKE_LOAD="60,55,50" GOV_FAKE_SSH_MS=down "$PY" "$GOV" once >/dev/null
+stopped 20260101T000500Z-busy-feat || fail "default: sshd down must pause"
+"$PY" "$GOV" resume 20260101T000500Z-busy-feat >/dev/null
+pass "default policy: only sshd (or memory) pressure pauses; load and swap alone never do"
+
 export GOV_DIR="$T/gov"
 export GOV_HEAVY_CPU=-1 GOV_HIGH_LOAD5=22 GOV_LOW_LOAD5=12 GOV_COOLDOWN_S=60 GOV_LOW_HOLD_MIN=5 GOV_MAX_PAUSE_MIN=30
 rm -rf "$SUME_BG_REMOTE_JOBS_DIR"/*

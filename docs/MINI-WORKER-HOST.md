@@ -256,17 +256,23 @@ Every 30 s it samples 1/5-min load, `kern.memorystatus_level` (memory free
 
 | setting (env on the agent) | default (18 cores) | meaning |
 |---|---|---|
-| `GOV_HIGH_LOAD5` | 22 (1.22 × cores) | high water: 5-min load ≥ this **and** 1-min ≥ 90 % of it |
-| `GOV_LOW_LOAD5` | 12 (0.67 × cores) | low water: 5-min ≤ this and 1-min ≤ 1.2 × it, nothing else high |
+| `GOV_HIGH_LOAD5` | 0 (off) | when set: high water, 5-min load ≥ this **and** 1-min ≥ 90 % of it |
+| `GOV_LOW_LOAD5` | 0 (off; 12 when high is set) | low water when load is on; with load off, low = nothing high and sshd < ⅓ of `GOV_SSH_SLOW_MS` |
 | `GOV_LOW_HOLD_MIN` | 5 | low must hold this long before a resume |
 | `GOV_COOLDOWN_S` | 180 | one pause / resume / start per cooldown |
-| `GOV_START_LOAD5` | 17 (midpoint) | a queued job starts only below this |
+| `GOV_START_LOAD5` | 0 (off; midpoint when load is on) | a queued job starts only below this |
 | `GOV_SSH_SLOW_MS` | 3000 | sshd slower than this (or down) counts as high |
-| `GOV_MEM_FREE_LOW` / `GOV_SWAP_HIGH_MB` | 10 % / 4096 | memory / swap pressure counts as high |
+| `GOV_MEM_FREE_LOW` / `GOV_SWAP_HIGH_MB` | 5 % / 0 (off) | memory / swap pressure counts as high |
 | `GOV_HEAVY_CPU` | 15 | only a job using ≥ this % CPU is worth pausing |
 | `GOV_MAX_PAUSE_MIN` | 30 | longer pauses become a clean stop + resume |
 | `GOV_FABLE_STAGGER_PCT` / `GOV_FABLE_HEAVY_MAX` | 25 / 2 | Fable stagger (below) |
 | `GOV_NOTIFY_MIN` | 10 | Slack batch interval |
+
+**Policy (Chase 2026-11-15):** load is fine as long as sshd answers. By
+default only an sshd probe that is down or slower than `GOV_SSH_SLOW_MS`, or
+memory free under `GOV_MEM_FREE_LOW`, counts as high. Load and swap are off:
+on 2026-11-15 a 4 GB swap trigger paused all 8 jobs at load 3–9 with 86 %
+memory free, and the paused jobs' pages pushed swap higher, so it kept pausing.
 
 **Pause.** Above high water it pauses one job per cooldown: the lowest
 priority first, newest first within a priority. A pause is `SIGSTOP` of every
