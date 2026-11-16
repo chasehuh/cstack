@@ -33,7 +33,7 @@ echo "🔧 Bash git status"
 if [[ -n "\${FAKE_WRAPPER_SLEEP:-}" ]]; then sleep "\$FAKE_WRAPPER_SLEEP"; fi
 echo "📎 session_id=\${FAKE_WRAPPER_SID:-$SID}  backend=grok"
 echo "—— final ——"
-echo "fake done"
+echo "\${FAKE_WRAPPER_FINAL:-fake done}"
 exit "\${FAKE_WRAPPER_RC:-0}"
 EOF
 chmod +x "$T/bin/fake-wrapper.sh"
@@ -99,7 +99,7 @@ echo "SLACK: fake"
 EOS
 chmod +x "$T/bin/fake-slack-post"
 export SUME_BG_SLACK_POST_BIN="$T/bin/fake-slack-post" FAKE_SLACK_LOG="$T/slack.log"
-export SUME_BG_ALERT_BATCH_S=0 SUME_BG_KILL_RESUME_DELAY=0 SUME_BG_LIMIT_RESUME_DELAY=0
+export SUME_BG_ALERT_BATCH_S=0 SUME_BG_KILL_RESUME_DELAY=0 SUME_BG_LIMIT_RESUME_DELAY=0 SUME_BG_API_ERROR_RESUME_DELAY=0
 export AGENT_HUMAN_STREAM_REGISTRY="$LAPTOP/state/opus-sessions.jsonl"
 export AGENT_HUMAN_STREAM_LIVE_DIR="$LAPTOP/state/opus-live"
 export SUME_BG_SSH="$T/bin/fake-ssh"
@@ -543,5 +543,51 @@ sleep 1
 ! ls -d "$JOBS_MINI"/*-stopme-resume-* >/dev/null 2>&1 || fail "--kill must not auto-resume"
 [[ ! -s "$T/slack.log" ]] || fail "--kill must not alert: $(cat "$T/slack.log")"
 pass "unexpected death auto-resumes (capped) and alerts; --kill does not"
+
+# 20) a job that ends on a transient API error (529 overloaded, 5xx, 429)
+#     resumes its own session, at most three times, and alerts. Before, it
+#     ended with rc=1, no alert and no resume (fable-robustness-r5, 2026-11-13:
+#     dead for 2.5 days with unpushed commits).
+SID_API="deadbeef-0000-4000-8000-0000000a9101"
+: >"$T/slack.log"
+FAKE_WRAPPER_SID="$SID_API" FAKE_WRAPPER_RC=1 \
+  FAKE_WRAPPER_FINAL="API Error: 529 Overloaded. This is a server-side issue, usually temporary — try again in a moment." \
+  "$LAUNCH" --host mini --backend grok --name apidier --prompt-file "$PROMPT" >/dev/null 2>"$T/err20.txt" || true
+for _ in $(seq 1 200); do
+  n=$(ls -d "$JOBS_MINI"/*-apidier-resume-deadbeef 2>/dev/null | wc -l | tr -d ' ' || true)
+  [[ "$n" -ge 3 ]] && grep -q -- "--resume $SID_API" "$T/slack.log" && break
+  sleep 0.2
+done
+sleep 1
+n=$(ls -d "$JOBS_MINI"/*-apidier-resume-deadbeef 2>/dev/null | wc -l | tr -d ' ' || true)
+[[ "$n" -eq 3 ]] || fail "an API error death must auto-resume exactly three times (got $n)"
+A1=$(ls -d "$JOBS_MINI"/*-apidier-resume-deadbeef | head -n 1)
+grep -q "^RESUME=$SID_API" "$A1/job.env" && grep -q '^AUTO_RESUME_DEPTH=1' "$A1/job.env" \
+  || fail "API error auto-resume must steer the dead session: $(cat "$A1/job.env")"
+grep -q 'API error (rc=1)' "$A1/prompt.md" || fail "auto-resume prompt must name the API error: $(cat "$A1/prompt.md")"
+grep -q 'API error (rc=1) → 자동 재개' "$T/slack.log" || fail "alert must list the API error auto-resume: $(cat "$T/slack.log")"
+grep -q -- "--resume $SID_API" "$T/slack.log" || fail "the capped API error run must alert with its resume id: $(cat "$T/slack.log")"
+pass "transient API error death auto-resumes (capped at 3) and alerts"
+
+# 21) any other non-zero exit is not resumed (the cause may need a person:
+#     an expired sign-in, a bad flag) but it alerts with the resume id.
+#     Before, it was silent.
+SID_ERR="deadbeef-0000-4000-8000-0000000e4401"
+: >"$T/slack.log"
+FAKE_WRAPPER_SID="$SID_ERR" FAKE_WRAPPER_RC=1 \
+  FAKE_WRAPPER_FINAL="Failed to authenticate: OAuth session expired and could not be refreshed" \
+  "$LAUNCH" --host mini --backend grok --name errexit --prompt-file "$PROMPT" >/dev/null 2>"$T/err21.txt" || true
+for _ in $(seq 1 100); do
+  grep -q -- "--resume $SID_ERR" "$T/slack.log" && break
+  sleep 0.2
+done
+sleep 1
+grep -q 'error exit (rc=1) → 재개 필요' "$T/slack.log" || fail "a plain error exit must alert: $(cat "$T/slack.log")"
+! ls -d "$JOBS_MINI"/*-errexit-resume-* >/dev/null 2>&1 || fail "a plain error exit must not auto-resume"
+: >"$T/slack.log"
+"$LAUNCH" --host mini --backend grok --name cleanexit --prompt-file "$PROMPT" >/dev/null 2>"$T/err21b.txt" || true
+sleep 1
+[[ ! -s "$T/slack.log" ]] || fail "a clean exit must not alert: $(cat "$T/slack.log")"
+pass "other non-zero exit alerts without resuming; a clean exit stays quiet"
 
 echo "sume-bg-launch host tests: all ok"

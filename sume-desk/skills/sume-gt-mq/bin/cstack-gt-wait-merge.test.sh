@@ -65,4 +65,63 @@ assert_validate failed '{"statusCheckRollup":[{"context":"validate","state":"ERR
 assert_validate pending '{"statusCheckRollup":[{"context":"validate","state":"PENDING"}]}'
 assert_validate error 'not json'
 
+T="$(mktemp -d)"
+trap 'rm -rf "$T"' EXIT
+mkdir -p "$T/bin"
+cat >"$T/bin/gh" <<'FAKE'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$FAKE_GH_LOG"
+case "$1 $2" in
+  "repo view") echo '{"owner":{"login":"acme"},"name":"repo","defaultBranchRef":{"name":"main"}}' ;;
+  "api graphql")
+    if printf '%s' "$*" | grep -q 'mergeQueue(branch'; then echo true
+    elif [ -f "$FAKE_GH_STATE/queued" ]; then echo queued
+    else echo open; fi ;;
+  "pr list") echo '[{"number": 20, "headRefName": "last-layer", "baseRefName": "main"}]' ;;
+  "pr view")
+    case "$*" in
+      *"--json number"*) echo 20 ;;
+      *isDraft*) echo false ;;
+      *statusCheckRollup*) echo '{"statusCheckRollup":[{"name":"validate","status":"COMPLETED","conclusion":"SUCCESS"}]}' ;;
+      *autoMergeRequest*) echo false ;;
+    esac ;;
+  "pr merge")
+    echo "$FAKE_GH_MERGE_ERROR" >&2
+    exit 1 ;;
+  "stack merge")
+    echo "✓ Added #20 to the merge queue for main"
+    : >"$FAKE_GH_STATE/queued" ;;
+esac
+FAKE
+chmod +x "$T/bin/gh"
+
+run_helper() {
+  mkdir -p "$T/state"
+  rm -f "$T/state/queued"
+  : >"$T/gh.log"
+  set +e
+  PATH="$T/bin:$PATH" FAKE_GH_LOG="$T/gh.log" FAKE_GH_STATE="$T/state" FAKE_GH_MERGE_ERROR="$1" \
+    CSTACK_WAIT_MERGE_STACK_POLL=0 "$BIN" --interval 0 >"$T/out.txt" 2>"$T/err.txt"
+  HELPER_RC=$?
+  set -e
+}
+
+run_helper "GraphQL: Auto-merge is not supported for stacked pull requests. (enablePullRequestAutoMerge)"
+if [ "$HELPER_RC" -ne 0 ]; then
+  echo "FAIL last layer of a stack: exit $HELPER_RC, want 0 ($(tail -n 3 "$T/err.txt"))" >&2
+  exit 1
+fi
+grep -q '^stack merge 20 --yes$' "$T/gh.log" || { echo "FAIL last layer of a stack: gh stack merge was not called ($(cat "$T/gh.log"))" >&2; exit 1; }
+grep -q 'QUEUED #20' "$T/err.txt" || { echo "FAIL last layer of a stack: no QUEUED line ($(tail -n 3 "$T/err.txt"))" >&2; exit 1; }
+
+run_helper "GraphQL: Pull request is in clean status (enablePullRequestAutoMerge)"
+if [ "$HELPER_RC" -ne 5 ]; then
+  echo "FAIL other auto-merge error: exit $HELPER_RC, want 5" >&2
+  exit 1
+fi
+if grep -q '^stack merge' "$T/gh.log"; then
+  echo "FAIL other auto-merge error: gh stack merge must not be called" >&2
+  exit 1
+fi
+
 echo "cstack-gt-wait-merge tests: ok"

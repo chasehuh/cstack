@@ -214,6 +214,17 @@ Runbook in sume-com: `docs/operations/merge-queue-failures.md`.
    landed; the helper queues what is left.
 3. Known flake → § F.
 
+### A2. The last layer of a stack left the queue when the lower layers landed
+
+When the lower layers of a stack merge, GitHub retargets the top layer to
+`main`, pushes its rebased head and drops it from the queue; `validate` runs
+again on the new head. Run `cstack-gt-wait-merge` again from that branch
+(`git fetch` and check the branch out at `origin/<branch>` first). The helper
+waits for `validate`; `gh pr merge --auto` then answers "Auto-merge is not
+supported for stacked pull requests", and since 2026-11-16 the helper queues
+the layer with `gh stack merge <PR> --yes` by itself. Before that it exited 5
+and every author had to know the command.
+
 ### B. Helper exit 3 (`validate` failed on a PR head)
 
 Review CI is thin: a red PR `validate` means a review job failed (Format,

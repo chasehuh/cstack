@@ -239,6 +239,14 @@ death_reason() {
     printf 'usage limit (rc=%s)' "$rc"
     return 0
   fi
+  if [[ "$rc" -ne 0 ]] && tail -n 40 "$DIR/worker.log" 2>/dev/null | LC_ALL=C grep -Eiq "API Error: (429|5[0-9][0-9])|overloaded_error|API Error: (Connection error|Request timed out)"; then
+    printf 'API error (rc=%s)' "$rc"
+    return 0
+  fi
+  if [[ "$rc" -ne 0 ]]; then
+    printf 'error exit (rc=%s)' "$rc"
+    return 0
+  fi
   return 1
 }
 
@@ -285,6 +293,8 @@ auto_resume() {
   depth=${depth:-0}
   case "$reason" in
     usage*) max=3; delay=${SUME_BG_LIMIT_RESUME_DELAY:-120} ;;
+    API*) max=3; delay=$(( ${SUME_BG_API_ERROR_RESUME_DELAY:-300} * (depth + 1) )) ;;
+    error*) return 1 ;;
     *) max=2; delay=${SUME_BG_KILL_RESUME_DELAY:-5} ;;
   esac
   [[ -n "$sid" && "$depth" -lt "$max" ]] || return 1
