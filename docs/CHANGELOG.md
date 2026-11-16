@@ -3,6 +3,21 @@
 Newest first. What changed in how the desk runs, and what was removed, so a
 stale habit can be traced to the day it stopped being true.
 
+## 2026-11-16 — A worker that dies on an API error resumes; any error exit alerts (fable-robustness-r6)
+
+- `fable-robustness-r5` ended on "API Error: 529 Overloaded" (rc=1) on
+  2026-11-13 22:24 KST. The supervisor knew only signals and usage limits, so
+  it treated the exit as a normal end: no alert, no auto-resume. The job sat
+  dead for 2.5 days with five unpushed commits until a new launch found them.
+- `sume-bg-remote`: a non-zero exit with a transient API error in the last
+  lines (529, other 5xx, 429, connection error, timeout) resumes the same
+  session after 5, 10 and 15 minutes, at most 3 times, and is listed in the
+  death alert. Any other non-zero exit is listed in the alert with its
+  `--resume <uuid>` and is not resumed. Job history to this date: 1 exit on a
+  529, 6 on API 400/403 pages, 12 on an expired sign-in, 25 with "(no result
+  field)", all silent before.
+- Removed: nothing.
+
 ## 2026-11-15 — Governor misfire fixed: real pressure only, never the whole fleet (mini-governor-fix)
 
 - 12:47–13:18 KST the governor paused 7 workers on "swap used 4–10 GB" while

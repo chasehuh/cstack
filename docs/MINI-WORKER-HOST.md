@@ -208,7 +208,20 @@ Rules the launcher enforces:
   session with an `AUTO-RESUME:` prompt (check what already happened, restart
   needed watchers). Delay: 5 s after a signal, 120 s after a usage limit (time
   for the tokenmaxxing swap). Cap: 2 resumes after signals, 3 after limits,
-  counted by `AUTO_RESUME_DEPTH` in `job.env`. Every death also writes one
+  counted by `AUTO_RESUME_DEPTH` in `job.env`.
+- **A transient API error resumes too.** A wrapper that exits non-zero with
+  "API Error: 529" (overloaded), another 5xx, 429, "Connection error" or
+  "Request timed out" in its last lines ends as `API error (rc=N)`: the same
+  session resumes after 5, 10 and 15 minutes (`SUME_BG_API_ERROR_RESUME_DELAY`
+  × the attempt), at most 3 times. Until 2026-11-16 such an exit counted as a
+  normal end: no alert, no resume (`fable-robustness-r5` died on a 529 on
+  2026-11-13 and sat for 2.5 days with five unpushed commits).
+- **Any other non-zero exit alerts and waits.** An expired sign-in, a refused
+  flag or "(no result field)" ends as `error exit (rc=N)`. It is not resumed,
+  because the cause may need a person, but it is listed in the alert with its
+  `--resume <uuid>`. Before, it was silent (60 such exits in the job history
+  to 2026-11-16). A clean exit (rc 0) and a `--kill` stay quiet.
+- **Alerts.** Every death also writes one
   line to `~/.cstack/state/job-alerts/`; the first dying job holds
   `job-alerts/.lock`, waits 20 s for the rest, and posts one
   `#coding-agents` message, "Mini 워커 비정상 종료 N건", that lists each job
