@@ -282,12 +282,8 @@ while :; do
   sleep "$INTERVAL"
 done
 
-if [ "${#layers[@]}" -eq 1 ]; then
-  if ! gh pr merge "$tip" --auto --squash >&2; then
-    echo "cstack-gt-wait-merge: gh pr merge --auto failed on #${tip}" >&2
-    exit 5
-  fi
-else
+queue_with_stack_merge() {
+  local out pid
   out="$(mktemp)"
   gh stack merge "$tip" --yes </dev/null >"$out" 2>&1 &
   pid=$!
@@ -295,12 +291,33 @@ else
     if grep -qE 'Added #|merged|error|Error|failed' "$out" || ! kill -0 "$pid" 2>/dev/null; then
       break
     fi
-    sleep 2
+    sleep "${CSTACK_WAIT_MERGE_STACK_POLL:-2}"
   done
   kill "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
   cat "$out" >&2
   rm -f "$out"
+}
+
+if [ "${#layers[@]}" -eq 1 ]; then
+  merge_err="$(mktemp)"
+  if ! gh pr merge "$tip" --auto --squash >&2 2>"$merge_err"; then
+    cat "$merge_err" >&2
+    if grep -q "not supported for stacked pull requests" "$merge_err"; then
+      rm -f "$merge_err"
+      echo "cstack-gt-wait-merge: #${tip} is the last open layer of a stack — queueing it with gh stack merge" >&2
+      queue_with_stack_merge
+    else
+      rm -f "$merge_err"
+      echo "cstack-gt-wait-merge: gh pr merge --auto failed on #${tip}" >&2
+      exit 5
+    fi
+  else
+    cat "$merge_err" >&2
+    rm -f "$merge_err"
+  fi
+else
+  queue_with_stack_merge
 fi
 
 for _ in $(seq 1 15); do

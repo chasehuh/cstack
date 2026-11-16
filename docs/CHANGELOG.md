@@ -16,6 +16,11 @@ stale habit can be traced to the day it stopped being true.
   `--resume <uuid>` and is not resumed. Job history to this date: 1 exit on a
   529, 6 on API 400/403 pages, 12 on an expired sign-in, 25 with "(no result
   field)", all silent before.
+- `cstack-gt-wait-merge`: the last open layer of a stack (its lower layers
+  already landed) is queued with `gh stack merge <PR> --yes` when
+  `gh pr merge --auto` answers "Auto-merge is not supported for stacked pull
+  requests". The helper used to exit 5 there; at least five jobs since
+  2026-11-12 wrote the manual step down as a trap.
 - Removed: nothing.
 
 ## 2026-11-15 — Governor misfire fixed: real pressure only, never the whole fleet (mini-governor-fix)
